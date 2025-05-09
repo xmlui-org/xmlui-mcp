@@ -17,6 +17,9 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner', 'AppState', or 'delay=\"1000\"'")),
 	)
 
+	// Set tool annotations - remove for now as they're causing build issues
+	// tool.Annotations = ...
+
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		log := func(msg string, args ...any) {
 			fmt.Fprintf(os.Stderr, msg+"\n", args...)
@@ -33,15 +36,20 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 		component, _ := req.Params.Arguments["component"].(string)
 		component = strings.ToLower(component)
 
-		type exampleHit struct {
-			Label   string   `json:"label"`
-			Path    string   `json:"path"`
-			Matches []string `json:"matches"`
-			Content string   `json:"content"`
+		// Define output types that only include what's needed
+		type MatchingLine struct {
+			LineNum int    `json:"lineNum"`
+			Text    string `json:"text"`
 		}
 
-		hits := []exampleHit{}
-		seen := 0
+		type MatchResult struct {
+			Path          string         `json:"path"`
+			MatchingLines []MatchingLine `json:"matchingLines"`
+			Content       string         `json:"content"`
+		}
+
+		results := []MatchResult{}
+		matchCount := 0
 		maxTotal := 50
 		maxPerFile := 6
 
@@ -67,6 +75,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 				log("📄 Checking file: %s", path)
 
+				// First read the file to find matching lines
 				file, err := os.Open(path)
 				if err != nil {
 					log("❌ Could not open %s: %v", path, err)
@@ -74,39 +83,29 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 				}
 				defer file.Close()
 
-				var lines []string
+				// Scan for matching lines only
+				var matchingLines []MatchingLine
 				scanner := bufio.NewScanner(file)
+				lineNum := 1
 				for scanner.Scan() {
-					lines = append(lines, scanner.Text())
-				}
-
-				var found []string
-				contextBefore := 10
-				contextAfter := 10
-
-				for i, line := range lines {
+					line := scanner.Text()
 					lower := strings.ToLower(line)
-					if strings.Contains(lower, query) || (component != "" && strings.Contains(lower, component)) {
-						start := i - contextBefore
-						if start < 0 {
-							start = 0
-						}
-						end := i + contextAfter + 1
-						if end > len(lines) {
-							end = len(lines)
-						}
-						for j := start; j < end; j++ {
-							found = append(found, fmt.Sprintf("%5d: %s", j+1, strings.TrimSpace(lines[j])))
-						}
-						found = append(found, "") // blank line between blocks
 
-						if len(found) >= maxPerFile*contextAfter {
+					if strings.Contains(lower, query) || (component != "" && strings.Contains(lower, component)) {
+						matchingLines = append(matchingLines, MatchingLine{
+							LineNum: lineNum,
+							Text:    strings.TrimSpace(line),
+						})
+						matchCount++
+						
+						if len(matchingLines) >= maxPerFile {
 							break
 						}
 					}
+					lineNum++
 				}
 
-				if len(found) > 0 {
+				if len(matchingLines) > 0 {
 					relPath := path
 					for _, rootBase := range exampleRoots {
 						if strings.HasPrefix(path, rootBase) {
@@ -117,25 +116,24 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 						}
 					}
 
-					fullContentBytes, err := os.ReadFile(path)
+					// Read full file content separately
+					fullContent, err := os.ReadFile(path)
 					if err != nil {
 						log("❌ Failed to read full content of %s: %v", path, err)
 						return nil
 					}
 
-					log("✅ Match in %s (%d lines)", relPath, len(found))
+					log("✅ Match in %s (%d lines)", relPath, len(matchingLines))
 
-					hits = append(hits, exampleHit{
-						Label:   fmt.Sprintf("Matches in %s", relPath),
-						Path:    relPath,
-						Matches: found,
-						Content: string(fullContentBytes),
+					results = append(results, MatchResult{
+						Path:          relPath,
+						MatchingLines: matchingLines,
+						Content:       string(fullContent),
 					})
-					seen += len(found)
 				}
 
-				if seen >= maxTotal {
-					log("🚦 Reached result limit (%d total lines)", seen)
+				if matchCount >= maxTotal {
+					log("🚦 Reached result limit (%d total matches)", matchCount)
 					return filepath.SkipDir
 				}
 				return nil
@@ -146,15 +144,31 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			}
 		}
 
-		if len(hits) == 0 {
+		if len(results) == 0 {
 			log("❌ No matches found.")
 			return mcp.NewToolResultText("No examples found."), nil
 		}
 
-		log("✅ Search complete. Total matched lines: %d", seen)
-		return &mcp.CallToolResult{
-			Result: hits,
-		}, nil
+		log("✅ Search complete. Found %d files with %d matching lines", len(results), matchCount)
+
+		// Format output as text with markdown
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("Found %d files matching query: %q\n\n", len(results), query))
+
+		for _, result := range results {
+			out.WriteString(fmt.Sprintf("## File: %s\n\n", result.Path))
+			
+			out.WriteString("### Matching Lines:\n\n")
+			for _, line := range result.MatchingLines {
+				out.WriteString(fmt.Sprintf("%5d: %s\n", line.LineNum, line.Text))
+			}
+			
+			out.WriteString("\n### Complete File:\n\n```xml\n")
+			out.WriteString(result.Content)
+			out.WriteString("\n```\n\n")
+		}
+
+		return mcp.NewToolResultText(out.String()), nil
 	}
 
 	return tool, handler
