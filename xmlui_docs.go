@@ -10,7 +10,7 @@ import (
 )
 
 func NewXmluiDocsTool(docsDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	tool := mcp.NewTool("xmlui_docs",
+		tool := mcp.NewTool("xmlui.docs",
 		mcp.WithDescription("Returns the documentation content for a given XMLUI component"),
 		mcp.WithString("component",
 			mcp.Required(),

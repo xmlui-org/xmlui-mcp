@@ -12,7 +12,7 @@ import (
 )
 
 func NewListComponentsTool(docsDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	tool := mcp.NewTool("list_components",
+	tool := mcp.NewTool("xmlui.	list_components",
 		mcp.WithDescription("Lists all available XMLUI components from .mdx files in src/components"),
 	)
 
