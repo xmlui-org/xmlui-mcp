@@ -4,16 +4,46 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
 	"github.com/mark3labs/mcp-go/server"
 )
 
 func main() {
-	// Create a new MCP server
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: ./xmlui-mcp <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]")
+		os.Exit(1)
+	}
+
+	xmluiDir := os.Args[1]
+	exampleRoot := ""
+	exampleDirs := []string{}
+	exampleRoots := []string{}
+
+	// Optional arg 2: example root
+	if len(os.Args) >= 3 {
+		exampleRoot = os.Args[2]
+	}
+
+	// Optional arg 3: comma-separated subdirs
+	if len(os.Args) >= 4 {
+		exampleDirs = strings.Split(os.Args[3], ",")
+	}
+
+	// Construct exampleRoots if exampleRoot and dirs are present
+	if exampleRoot != "" && len(exampleDirs) > 0 {
+		for _, d := range exampleDirs {
+			trimmed := strings.TrimSpace(d)
+			if trimmed != "" {
+				exampleRoots = append(exampleRoots, filepath.Join(exampleRoot, trimmed))
+			}
+		}
+	}
+
+	// Start MCP server
 	s := server.NewMCPServer("XMLUI", "0.1.0")
 
-	xmluiDir := os.Args[1] // Get from CLI argument
-	userHome, _ := os.UserHomeDir()
-
+	// Add tools
 	listComponentsTool, listComponentsHandler := NewListComponentsTool(xmluiDir)
 	s.AddTool(listComponentsTool, listComponentsHandler)
 
@@ -29,22 +59,14 @@ func main() {
 	readFileTool, readFileHandler := NewReadFileTool(xmluiDir)
 	s.AddTool(readFileTool, readFileHandler)
 
-	exampleRoots := []string{
-		filepath.Join(userHome, "xmlui-hn"),
-		filepath.Join(userHome, "xmlui-invoice"),
-		filepath.Join(userHome, "xmlui-cms"),
-		filepath.Join(userHome, "xmlui-hn"),
-		filepath.Join(userHome, "xmlui-hubspot"),
-		filepath.Join(userHome, "xmlui-mastodon"),
-	}
-
-    examplesTool, examplesHandler := NewExamplesTool(exampleRoots)
+	examplesTool, examplesHandler := NewExamplesTool(exampleRoots)
 	s.AddTool(examplesTool, examplesHandler)
 
+	fmt.Fprintf(os.Stderr, "✅ Registered tool: %s\n", examplesTool.Name)
 
-	// Start the server using stdio transport
+	// Launch
 	if err := server.ServeStdio(s); err != nil {
-		fmt.Printf("Server error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
 }

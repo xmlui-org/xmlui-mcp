@@ -18,7 +18,6 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 	)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-
 		log := func(msg string, args ...any) {
 			fmt.Fprintf(os.Stderr, msg+"\n", args...)
 		}
@@ -34,7 +33,14 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 		component, _ := req.Params.Arguments["component"].(string)
 		component = strings.ToLower(component)
 
-		matches := []string{}
+		type exampleHit struct {
+			Label   string   `json:"label"`
+			Path    string   `json:"path"`
+			Matches []string `json:"matches"`
+			Content string   `json:"content"`
+		}
+
+		hits := []exampleHit{}
 		seen := 0
 		maxTotal := 50
 		maxPerFile := 6
@@ -68,19 +74,35 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 				}
 				defer file.Close()
 
+				var lines []string
 				scanner := bufio.NewScanner(file)
-				lineNum := 1
-				found := []string{}
 				for scanner.Scan() {
-					line := scanner.Text()
-					lower := strings.ToLower(line)
+					lines = append(lines, scanner.Text())
+				}
 
+				var found []string
+				contextBefore := 10
+				contextAfter := 10
+
+				for i, line := range lines {
+					lower := strings.ToLower(line)
 					if strings.Contains(lower, query) || (component != "" && strings.Contains(lower, component)) {
-						found = append(found, fmt.Sprintf("%5d: %s", lineNum, strings.TrimSpace(line)))
-					}
-					lineNum++
-					if len(found) >= maxPerFile {
-						break
+						start := i - contextBefore
+						if start < 0 {
+							start = 0
+						}
+						end := i + contextAfter + 1
+						if end > len(lines) {
+							end = len(lines)
+						}
+						for j := start; j < end; j++ {
+							found = append(found, fmt.Sprintf("%5d: %s", j+1, strings.TrimSpace(lines[j])))
+						}
+						found = append(found, "") // blank line between blocks
+
+						if len(found) >= maxPerFile*contextAfter {
+							break
+						}
 					}
 				}
 
@@ -94,8 +116,21 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 							}
 						}
 					}
+
+					fullContentBytes, err := os.ReadFile(path)
+					if err != nil {
+						log("❌ Failed to read full content of %s: %v", path, err)
+						return nil
+					}
+
 					log("✅ Match in %s (%d lines)", relPath, len(found))
-					matches = append(matches, fmt.Sprintf("### %s\n%s\n", relPath, strings.Join(found, "\n")))
+
+					hits = append(hits, exampleHit{
+						Label:   fmt.Sprintf("Matches in %s", relPath),
+						Path:    relPath,
+						Matches: found,
+						Content: string(fullContentBytes),
+					})
 					seen += len(found)
 				}
 
@@ -111,13 +146,15 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			}
 		}
 
-		if len(matches) == 0 {
+		if len(hits) == 0 {
 			log("❌ No matches found.")
 			return mcp.NewToolResultText("No examples found."), nil
 		}
 
 		log("✅ Search complete. Total matched lines: %d", seen)
-		return mcp.NewToolResultText(strings.Join(matches, "\n")), nil
+		return &mcp.CallToolResult{
+			Result: hits,
+		}, nil
 	}
 
 	return tool, handler
