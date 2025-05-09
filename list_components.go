@@ -11,13 +11,22 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-func NewListComponentsTool(docsDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	tool := mcp.NewTool("xmlui.	list_components",
-		mcp.WithDescription("Lists all available XMLUI components from .mdx files in src/components"),
+func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+
+	tool := mcp.NewTool("xmlui_list_components",
+		mcp.WithDescription("Lists all available XMLUI components based on .mdx files in docs/pages/components."),
 	)
 
+	tool.Annotations = mcp.ToolAnnotation{
+		ReadOnlyHint:    true,
+		DestructiveHint: false,
+		IdempotentHint:  true,
+		OpenWorldHint:   false,
+	}
+
+
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		componentRoot := filepath.Join(docsDir, "xmlui", "src", "components")
+		componentRoot := filepath.Join(homeDir, "docs", "pages", "components")
 		components := []string{}
 
 		err := filepath.WalkDir(componentRoot, func(path string, d os.DirEntry, err error) error {

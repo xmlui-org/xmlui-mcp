@@ -11,17 +11,22 @@ func main() {
 	// Create a new MCP server
 	s := server.NewMCPServer("XMLUI", "0.1.0")
 
-	docsDir := os.Args[1] // Get from CLI argument
+	homeDir := os.Args[1] // Get from CLI argument
 
-	listComponentsTool, listComponentsHandler := NewListComponentsTool(docsDir)
+	listComponentsTool, listComponentsHandler := NewListComponentsTool(homeDir)
 	s.AddTool(listComponentsTool, listComponentsHandler)
 
+	componentDocsTool, componentDocsHandler := NewComponentDocsTool(homeDir)
+	s.AddTool(componentDocsTool, componentDocsHandler)
 
-	xmluiDocsTool, xmluiDocsHandler := NewXmluiDocsTool(docsDir)
-	s.AddTool(xmluiDocsTool, xmluiDocsHandler)
-
-	searchDocsTool, searchDocsHandler := NewSearchDocsTool(docsDir)
+	searchDocsTool, searchDocsHandler := NewSearchTool(homeDir)
 	s.AddTool(searchDocsTool, searchDocsHandler)
+
+	metadataTool, metadataHandler := NewMetadataTool()
+	s.AddTool(metadataTool, metadataHandler)
+
+	readFileTool, readFileHandler := NewReadFileTool(homeDir)
+	s.AddTool(readFileTool, readFileHandler)
 
 
 	// Start the server using stdio transport
