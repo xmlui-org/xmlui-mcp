@@ -50,4 +50,4 @@ jobs:
           tag_name: ${{ github.event.inputs.tag }}
           files: build/*.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
