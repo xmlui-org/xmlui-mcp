@@ -1,53 +1,42 @@
 # .github/workflows/release.yml
-name: Release Binaries
+name: Build & Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.2.3)'
+        description: 'Release tag (e.g. v1.0.0)'
         required: true
 
 jobs:
-  build:
-    name: Build and Release
+  release:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, windows, darwin, darwin]
-        goarch: [amd64, amd64, amd64, arm64]
-        exclude:
-          - goos: linux
-            goarch: arm64
-          - goos: windows
-            goarch: arm64
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
         with:
           go-version: '1.21'
 
-      - name: Set env vars
+      - name: Build all targets
         run: |
-          echo "EXT=$([[ '${{ matrix.goos }}' == 'windows' ]] && echo '.exe' || echo '')" >> $GITHUB_ENV
+          mkdir out
 
-      - name: Build
-        run: |
-          mkdir -p build
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -v -o build/xmlui-mcp-${{ matrix.goos }}-${{ matrix.goarch }}$EXT
+          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-linux-amd64
+          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-windows-amd64.exe
+          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-macos-amd64
+          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-macos-arm64
 
-      - name: Archive
-        run: |
-          cd build
-          zip xmlui-mcp-${{ matrix.goos }}-${{ matrix.goarch }}.zip xmlui-mcp-${{ matrix.goos }}-${{ matrix.goarch }}$EXT
+          cd out
+          zip xmlui-mcp-linux-amd64.zip        xmlui-mcp-linux-amd64
+          zip xmlui-mcp-windows-amd64.zip      xmlui-mcp-windows-amd64.exe
+          zip xmlui-mcp-macos-amd64.zip        xmlui-mcp-macos-amd64
+          zip xmlui-mcp-macos-arm64.zip        xmlui-mcp-macos-arm64
 
-      - name: Upload Release Asset
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
-          files: build/*.zip
+          files: |
+            out/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
