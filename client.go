@@ -95,14 +95,14 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 	}
 	if input == "help" {
 		return `Available commands:
-  list                            - List all XMLUI components
-  docs <name>                     - Docs for a component
-  search <term>                   - Search XMLUI code/docs
-  read <path>                     - Read a file
-  examples <query> [component]    - Search usage examples (optionally bias toward component)
-  meta                            - Tool help
-  help                            - Show this help
-  quit                            - Quit`
+  list              - List all XMLUI components
+  docs <name>       - Docs for a component
+  search <term>     - Search XMLUI code/docs
+  read <path>       - Read a file
+  examples <query>  - Search usage examples
+  meta              - Tool help
+  help              - Show this help
+  quit              - Quit`
 	}
 
 	parts := strings.Fields(input)
@@ -126,13 +126,7 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 		args["path"] = arg
 	case "examples":
 		toolName = "xmlui_examples"
-		words := strings.Fields(arg)
-		if len(words) > 0 {
-			args["query"] = words[0]
-		}
-		if len(words) > 1 {
-			args["component"] = strings.Join(words[1:], " ")
-		}
+		args["query"] = arg
 	case "meta":
 		toolName = "xmlui_metadata"
 	default:

@@ -16,9 +16,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 	fmt.Fprintf(os.Stderr, "Example roots configured: %v\n", exampleRoots)
 
 	tool := mcp.NewTool("xmlui_examples",
-		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for. Optionally bias results by component name."),
+		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner', 'AppState', or 'delay=\"1000\"'")),
-		mcp.WithString("component", mcp.Description("Optional component name to bias results toward, e.g. 'Avatar'")),
 	)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -26,16 +25,13 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			fmt.Fprintf(os.Stderr, msg+"\n", args...)
 		}
 
-		log("\U0001F4E5 Received arguments: %+v", req.Params.Arguments)
+		log("📥 Received arguments: %+v", req.Params.Arguments)
 
 		rawQuery, ok := req.Params.Arguments["query"].(string)
 		if !ok || strings.TrimSpace(rawQuery) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
 		}
 		query := strings.ToLower(rawQuery)
-
-		component, _ := req.Params.Arguments["component"].(string)
-		component = strings.ToLower(component)
 
 		type MatchingLine struct {
 			LineNum int    `json:"lineNum"`
@@ -56,9 +52,9 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 		extensions := map[string]bool{".tsx": true, ".xmlui": true, ".mdx": true}
 
-		log("\U0001F50D Starting search for: %q (component bias: %q)", query, component)
+		log("🔍 Starting search for: %q", query)
 		for _, root := range exampleRoots {
-			log("\U0001F4C1 Walking root: %s", root)
+			log("📁 Walking root: %s", root)
 
 			err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
@@ -78,7 +74,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 					return nil
 				}
 
-				log("\U0001F4C4 Checking file: %s", path)
+				log("📄 Checking file: %s", path)
 
 				file, err := os.Open(path)
 				if err != nil {
@@ -96,16 +92,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 					line := scanner.Text()
 					lower := strings.ToLower(line)
 
-					lineMatched := false
 					if strings.Contains(lower, query) {
 						matchScore++
-						lineMatched = true
-					}
-					if component != "" && strings.Contains(lower, component) {
-						matchScore++
-						lineMatched = true
-					}
-					if lineMatched {
 						matchingLines = append(matchingLines, MatchingLine{
 							LineNum: lineNum,
 							Text:    strings.TrimSpace(line),
