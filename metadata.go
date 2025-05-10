@@ -9,7 +9,7 @@ import (
 
 func NewMetadataTool() (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool("xmlui_metadata",
-		mcp.WithDescription("Returns documentation about how to use XMLUI tools like component_docs and xmlui_search."),
+		mcp.WithDescription("Returns documentation about how to use XMLUI tools like xmlui_component_docs and xmlui_search."),
 	)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -20,13 +20,13 @@ This MCP server exposes tools for exploring the XMLUI component system, includin
 
 ## Tools
 
-### component_docs
+### xmlui_component_docs
 - Load .mdx documentation for a component.
 - Input: { "component": "Spinner" }
 - Loads from: docs/pages/components/{component}.mdx
 
 ### xmlui_list_components
-- Lists all available components defined in .mdx files.
+- List all available components defined in .mdx files.
 - Input: none
 - Loads from: docs/pages/components/**/*.mdx
 
@@ -37,13 +37,21 @@ This MCP server exposes tools for exploring the XMLUI component system, includin
   - docs/pages/components/**/*.mdx
   - xmlui/src/components/**/*.tsx
 
-⚠️ Use this instead of search_files when searching for XMLUI source code.
+### xmlui_examples
+- Search configured local sample repos  string.
+- Input: { "query": "Spinner" }
+
+### xmlui_read_file
+- Reads a .mdx or .tsx or .scss file from the XMLUI source or docs tree.
+- Input: { "path": "~/xmlui-invoice" }
+
+⚠️ Use this instead of read_files when reading XMLUI source and docs
 
 ## Best Practices
 
-- Combine component_docs and xmlui_search for complete insight.
+- Combine component_docs, xmlui_search, and xmlui_examples for complete insight.
 - Avoid using search_files, list_directory, or read_file — they are sandboxed and may not reflect actual layout.
-- The Spinner component is a good example: search for "Spinner" and then load its .mdx doc. Also look in src/components/Spinner for Spinner.tsx and SpinnerNative.tsx
+- The Slider component is a good example: search for "Spinner", load its .mdx doc. Also look in src/components/Spinner for Spinner.tsx and SpinnerNative.tsx, and find examples in local sample repos.
 
 
 This tool helps agents understand and route requests correctly when working with XMLUI.

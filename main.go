@@ -6,8 +6,39 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+func printToolRegistration(tool mcp.Tool) {
+	fmt.Fprintf(os.Stderr, "Registered tool: %s\n", tool.Name)
+	fmt.Fprintf(os.Stderr, " %s\n", tool.Description)
+
+	if len(tool.InputSchema.Properties) > 0 {
+		fmt.Fprintf(os.Stderr, " Input schema:\n")
+		for name, prop := range tool.InputSchema.Properties {
+			required := ""
+			for _, req := range tool.InputSchema.Required {
+				if req == name {
+					required = "(required)"
+					break
+				}
+			}
+
+			// Safely extract description if present
+			desc := "(no description)"
+			if propMap, ok := prop.(map[string]interface{}); ok {
+				if d, ok := propMap["description"].(string); ok {
+					desc = d
+				}
+			}
+
+			fmt.Fprintf(os.Stderr, "   - %s %s: %s\n", name, required, desc)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr)
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -43,26 +74,30 @@ func main() {
 	// Start MCP server
 	s := server.NewMCPServer("XMLUI", "0.1.0")
 
-	// Add tools
 	listComponentsTool, listComponentsHandler := NewListComponentsTool(xmluiDir)
 	s.AddTool(listComponentsTool, listComponentsHandler)
+	printToolRegistration(listComponentsTool)
 
 	componentDocsTool, componentDocsHandler := NewComponentDocsTool(xmluiDir)
 	s.AddTool(componentDocsTool, componentDocsHandler)
+	printToolRegistration(componentDocsTool)
 
 	searchDocsTool, searchDocsHandler := NewSearchTool(xmluiDir)
 	s.AddTool(searchDocsTool, searchDocsHandler)
+	printToolRegistration(searchDocsTool)
 
 	metadataTool, metadataHandler := NewMetadataTool()
 	s.AddTool(metadataTool, metadataHandler)
+	printToolRegistration(metadataTool)
 
 	readFileTool, readFileHandler := NewReadFileTool(xmluiDir)
 	s.AddTool(readFileTool, readFileHandler)
+	printToolRegistration(readFileTool)
 
 	examplesTool, examplesHandler := NewExamplesTool(exampleRoots)
 	s.AddTool(examplesTool, examplesHandler)
+	printToolRegistration(examplesTool)
 
-	fmt.Fprintf(os.Stderr, "✅ Registered tool: %s\n", examplesTool.Name)
 
 	// Launch
 	if err := server.ServeStdio(s); err != nil {

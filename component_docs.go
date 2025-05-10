@@ -11,7 +11,7 @@ import (
 
 func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
-	tool := mcp.NewTool("component_docs",
+	tool := mcp.NewTool("xmlui_component_docs",
 		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component from docs/pages/components."),
 		mcp.WithString("component",
 			mcp.Required(),

@@ -12,7 +12,7 @@ import (
 )
 
 func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	fmt.Fprintf(os.Stderr, "🔍 Example roots configured: %v\n", exampleRoots)
+	fmt.Fprintf(os.Stderr, "Example roots configured: %v\n", exampleRoots)
 
 	tool := mcp.NewTool("xmlui_examples",
 		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for. Optionally bias results by component name."),

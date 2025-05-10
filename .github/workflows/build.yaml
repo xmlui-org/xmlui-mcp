@@ -13,24 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v4
         with:
           go-version: '1.21'
 
       - name: Build all targets
         run: |
-          mkdir out
+          mkdir -p out
 
-          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-linux-amd64
-          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-windows-amd64.exe
-          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-macos-amd64
-          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-macos-arm64
+          # Build server binary
+          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-linux-amd64 ./main.go
+          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-windows-amd64.exe ./main.go
+          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-macos-amd64 ./main.go
+          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-macos-arm64 ./main.go
+
+          # Build client binary
+          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-client-linux-amd64 ./client.go
+          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-client-windows-amd64.exe ./client.go
+          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-client-macos-amd64 ./client.go
+          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-client-macos-arm64 ./client.go
 
           cd out
-          zip xmlui-mcp-linux-amd64.zip        xmlui-mcp-linux-amd64
-          zip xmlui-mcp-windows-amd64.zip      xmlui-mcp-windows-amd64.exe
-          zip xmlui-mcp-macos-amd64.zip        xmlui-mcp-macos-amd64
-          zip xmlui-mcp-macos-arm64.zip        xmlui-mcp-macos-arm64
+
+          # Package server and client bundles
+          zip xmlui-mcp-linux-amd64.zip        xmlui-mcp-linux-amd64        xmlui-mcp-client-linux-amd64
+          zip xmlui-mcp-windows-amd64.zip      xmlui-mcp-windows-amd64.exe  xmlui-mcp-client-windows-amd64.exe
+          zip xmlui-mcp-macos-amd64.zip        xmlui-mcp-macos-amd64        xmlui-mcp-client-macos-amd64
+          zip xmlui-mcp-macos-arm64.zip        xmlui-mcp-macos-arm64        xmlui-mcp-client-macos-arm64
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
