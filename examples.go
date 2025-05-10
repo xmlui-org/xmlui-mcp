@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -17,6 +18,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 	tool := mcp.NewTool("xmlui_examples",
 		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for. Optionally bias results by component name."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner', 'AppState', or 'delay=\"1000\"'")),
+		mcp.WithString("component", mcp.Description("Optional component name to bias results toward, e.g. 'Avatar'")),
 	)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -24,7 +26,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			fmt.Fprintf(os.Stderr, msg+"\n", args...)
 		}
 
-		log("📥 Received arguments: %+v", req.Params.Arguments)
+		log("\U0001F4E5 Received arguments: %+v", req.Params.Arguments)
 
 		rawQuery, ok := req.Params.Arguments["query"].(string)
 		if !ok || strings.TrimSpace(rawQuery) == "" {
@@ -35,7 +37,6 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 		component, _ := req.Params.Arguments["component"].(string)
 		component = strings.ToLower(component)
 
-		// Define output types that only include what's needed
 		type MatchingLine struct {
 			LineNum int    `json:"lineNum"`
 			Text    string `json:"text"`
@@ -45,6 +46,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			Path          string         `json:"path"`
 			MatchingLines []MatchingLine `json:"matchingLines"`
 			Content       string         `json:"content"`
+			Score         int            `json:"-"`
 		}
 
 		results := []MatchResult{}
@@ -54,9 +56,9 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 		extensions := map[string]bool{".tsx": true, ".xmlui": true, ".mdx": true}
 
-		log("🔍 Starting search for: %q (component bias: %q)", query, component)
+		log("\U0001F50D Starting search for: %q (component bias: %q)", query, component)
 		for _, root := range exampleRoots {
-			log("📁 Walking root: %s", root)
+			log("\U0001F4C1 Walking root: %s", root)
 
 			err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
@@ -64,7 +66,6 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 					return nil
 				}
 
-				// Skip .git directories
 				if d.IsDir() {
 					if d.Name() == ".git" {
 						return filepath.SkipDir
@@ -77,9 +78,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 					return nil
 				}
 
-				log("📄 Checking file: %s", path)
+				log("\U0001F4C4 Checking file: %s", path)
 
-				// First read the file to find matching lines
 				file, err := os.Open(path)
 				if err != nil {
 					log("❌ Could not open %s: %v", path, err)
@@ -87,21 +87,30 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 				}
 				defer file.Close()
 
-				// Scan for matching lines only
-				var matchingLines []MatchingLine
 				scanner := bufio.NewScanner(file)
 				lineNum := 1
+				var matchingLines []MatchingLine
+				matchScore := 0
+
 				for scanner.Scan() {
 					line := scanner.Text()
 					lower := strings.ToLower(line)
 
-					if strings.Contains(lower, query) || (component != "" && strings.Contains(lower, component)) {
+					lineMatched := false
+					if strings.Contains(lower, query) {
+						matchScore++
+						lineMatched = true
+					}
+					if component != "" && strings.Contains(lower, component) {
+						matchScore++
+						lineMatched = true
+					}
+					if lineMatched {
 						matchingLines = append(matchingLines, MatchingLine{
 							LineNum: lineNum,
 							Text:    strings.TrimSpace(line),
 						})
 						matchCount++
-
 						if len(matchingLines) >= maxPerFile {
 							break
 						}
@@ -120,19 +129,18 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 						}
 					}
 
-					// Read full file content separately
 					fullContent, err := os.ReadFile(path)
 					if err != nil {
 						log("❌ Failed to read full content of %s: %v", path, err)
 						return nil
 					}
 
-					log("✅ Match in %s (%d lines)", relPath, len(matchingLines))
-
+					log("✅ Match in %s (%d lines, score %d)", relPath, len(matchingLines), matchScore)
 					results = append(results, MatchResult{
 						Path:          relPath,
 						MatchingLines: matchingLines,
 						Content:       string(fullContent),
+						Score:         matchScore,
 					})
 				}
 
@@ -155,18 +163,19 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 		log("✅ Search complete. Found %d files with %d matching lines", len(results), matchCount)
 
-		// Format output as text with markdown
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Score > results[j].Score
+		})
+
 		var out strings.Builder
 		out.WriteString(fmt.Sprintf("Found %d files matching query: %q\n\n", len(results), query))
 
 		for _, result := range results {
 			out.WriteString(fmt.Sprintf("## File: %s\n\n", result.Path))
-
 			out.WriteString("### Matching Lines:\n\n")
 			for _, line := range result.MatchingLines {
 				out.WriteString(fmt.Sprintf("%5d: %s\n", line.LineNum, line.Text))
 			}
-
 			out.WriteString("\n### Complete File:\n\n```xml\n")
 			out.WriteString(result.Content)
 			out.WriteString("\n```\n\n")

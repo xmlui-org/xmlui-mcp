@@ -13,22 +13,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-var commands = `
-  list              - List all XMLUI components
-  docs <name>       - Docs for a component
-  search <term>     - Search XMLUI code/docs
-  read <path>       - Read a file
-  examples <query>  - Search usage examples
-  meta              - Tool help
-  help              - Show this help
-  quit              - Exit
-`
-
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./xmlui-mcp-client \"serverPath xmluiDir [examplesDir repo1,repo2]\"\n")
-		fmt.Println("Example: ./xmlui-mcp-client \"/Users/jonudell/xmlui-mcp/xmlui-mcp /Users/jonudell/xmlui /Users/jonudell xmlui-hn,xmlui-mastodon,xmlui-invoice\"\n")
-		fmt.Print("Available commands in the REPL" + commands)
+		fmt.Println("Usage: ./xmlui-mcp-client \"serverPath xmluiDir [examplesDir repo1,repo2]\"")
+		fmt.Println("Example ./xmlui-mcp-client \"~/xmlui-mcp/xmlui-mcp ~/xmlui ~ xmlui-hn,xmlui-mastodon,xmlui-invoice\"")
 		os.Exit(1)
 	}
 
@@ -68,12 +56,13 @@ func main() {
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          "> ",
-		HistoryFile:     "/tmp/xmlui-mcp-client.history",
+		HistoryFile:     "/tmp/xmlui-client-history.tmp",
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
+		HistoryLimit:    500,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to initialize input handler:", err)
+		fmt.Fprintln(os.Stderr, "Failed to initialize readline:", err)
 		os.Exit(1)
 	}
 	defer rl.Close()
@@ -81,7 +70,7 @@ func main() {
 	for {
 		line, err := rl.Readline()
 		if err != nil {
-			break // Ctrl+D or error
+			break
 		}
 		line = strings.TrimSpace(line)
 		if line == "quit" {
@@ -105,7 +94,15 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 		return "Please enter a command or type 'help'."
 	}
 	if input == "help" {
-		return commands
+		return `Available commands:
+  list                            - List all XMLUI components
+  docs <name>                     - Docs for a component
+  search <term>                   - Search XMLUI code/docs
+  read <path>                     - Read a file
+  examples <query> [component]    - Search usage examples (optionally bias toward component)
+  meta                            - Tool help
+  help                            - Show this help
+  quit                            - Quit`
 	}
 
 	parts := strings.Fields(input)
@@ -129,7 +126,13 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 		args["path"] = arg
 	case "examples":
 		toolName = "xmlui_examples"
-		args["query"] = arg
+		words := strings.Fields(arg)
+		if len(words) > 0 {
+			args["query"] = words[0]
+		}
+		if len(words) > 1 {
+			args["component"] = strings.Join(words[1:], " ")
+		}
 	case "meta":
 		toolName = "xmlui_metadata"
 	default:
@@ -146,7 +149,7 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 		}{
 			Name:      toolName,
 			Arguments: args,
-			Meta:      nil, // critical: match the field type
+			Meta:      nil,
 		},
 	})
 
