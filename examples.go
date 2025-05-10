@@ -12,13 +12,12 @@ import (
 )
 
 func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+	fmt.Fprintf(os.Stderr, "🔍 Example roots configured: %v\n", exampleRoots)
+
 	tool := mcp.NewTool("xmlui_examples",
 		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for. Optionally bias results by component name."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner', 'AppState', or 'delay=\"1000\"'")),
 	)
-
-	// Set tool annotations - remove for now as they're causing build issues
-	// tool.Annotations = ...
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		log := func(msg string, args ...any) {
@@ -64,7 +63,12 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 					log("⚠️  Error accessing %s: %v", path, err)
 					return nil
 				}
+
+				// Skip .git directories
 				if d.IsDir() {
+					if d.Name() == ".git" {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 
@@ -97,7 +101,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 							Text:    strings.TrimSpace(line),
 						})
 						matchCount++
-						
+
 						if len(matchingLines) >= maxPerFile {
 							break
 						}
@@ -157,12 +161,12 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 		for _, result := range results {
 			out.WriteString(fmt.Sprintf("## File: %s\n\n", result.Path))
-			
+
 			out.WriteString("### Matching Lines:\n\n")
 			for _, line := range result.MatchingLines {
 				out.WriteString(fmt.Sprintf("%5d: %s\n", line.LineNum, line.Text))
 			}
-			
+
 			out.WriteString("\n### Complete File:\n\n```xml\n")
 			out.WriteString(result.Content)
 			out.WriteString("\n```\n\n")
