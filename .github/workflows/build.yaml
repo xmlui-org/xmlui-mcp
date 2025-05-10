@@ -22,17 +22,17 @@ jobs:
         run: |
           mkdir -p out
 
-          # Build server binary
-          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-linux-amd64 ./main.go
-          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-windows-amd64.exe ./main.go
-          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-macos-amd64 ./main.go
-          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-macos-arm64 ./main.go
+          # Build server binary using build tag
+          GOOS=linux   GOARCH=amd64 go build -tags server -o out/xmlui-mcp-linux-amd64
+          GOOS=windows GOARCH=amd64 go build -tags server -o out/xmlui-mcp-windows-amd64.exe
+          GOOS=darwin  GOARCH=amd64 go build -tags server -o out/xmlui-mcp-macos-amd64
+          GOOS=darwin  GOARCH=arm64 go build -tags server -o out/xmlui-mcp-macos-arm64
 
-          # Build client binary
-          GOOS=linux   GOARCH=amd64 go build -o out/xmlui-mcp-client-linux-amd64 ./client.go
-          GOOS=windows GOARCH=amd64 go build -o out/xmlui-mcp-client-windows-amd64.exe ./client.go
-          GOOS=darwin  GOARCH=amd64 go build -o out/xmlui-mcp-client-macos-amd64 ./client.go
-          GOOS=darwin  GOARCH=arm64 go build -o out/xmlui-mcp-client-macos-arm64 ./client.go
+          # Build client binary using build tag
+          GOOS=linux   GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client-linux-amd64
+          GOOS=windows GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client-windows-amd64.exe
+          GOOS=darwin  GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client-macos-amd64
+          GOOS=darwin  GOARCH=arm64 go build -tags client -o out/xmlui-mcp-client-macos-arm64
 
           cd out
 

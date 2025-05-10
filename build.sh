@@ -1,1 +1,1 @@
-go build -o xmlui-mcp
+go build -tags server -o xmlui-mcp

@@ -1,3 +1,5 @@
+//go:build server
+// +build server
 package main
 
 import (
@@ -11,7 +13,7 @@ import (
 )
 
 func printToolRegistration(tool mcp.Tool) {
-	fmt.Fprintf(os.Stderr, "Registered tool: %s\n", tool.Name)
+	fmt.Fprintf(os.Stderr, "%s\n", tool.Name)
 	fmt.Fprintf(os.Stderr, " %s\n", tool.Description)
 
 	if len(tool.InputSchema.Properties) > 0 {

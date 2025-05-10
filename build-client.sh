@@ -1,1 +1,1 @@
-go build -o xmlui-mcp-client client.go
+go build -tags client   -o xmlui-mcp-client client.go
