@@ -16,7 +16,6 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: ./xmlui-mcp-client \"serverPath xmluiDir [examplesDir repo1,repo2]\"")
-		fmt.Println("Example ./xmlui-mcp-client \"~/xmlui-mcp/xmlui-mcp ~/xmlui ~ xmlui-hn,xmlui-mastodon,xmlui-invoice\"")
 		os.Exit(1)
 	}
 

@@ -36,7 +36,7 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 
 		searchRoots := []string{
 			filepath.Join(homeDir, "docs", "pages", "components"),
-			filepath.Join(homeDir, "xmlui", "src", "components"),
+			filepath.Join(homeDir, "src", "components"),
 		}
 
 		for _, root := range searchRoots {
