@@ -33,22 +33,29 @@ jobs:
           GOOS=darwin  GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client-mac-amd  # mac-amd (temp)
           GOOS=darwin  GOARCH=arm64 go build -tags client -o out/xmlui-mcp-client-mac-arm  # mac-arm (temp)
 
+          # Copy startup scripts into the build output
+          cp run-mcp-client.sh out/
+          cp run-mcp-client.bat out/
+
           cd out
 
-          # Rename mac binaries to match platform expectations
+          # Package mac-amd
           mv xmlui-mcp-mac-amd xmlui-mcp
           mv xmlui-mcp-client-mac-amd xmlui-mcp-client
-          zip xmlui-mcp-mac-amd.zip xmlui-mcp xmlui-mcp-client ../run-mcp-client.sh
+          zip xmlui-mcp-mac-amd.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
 
+          # Package mac-arm
           mv xmlui-mcp-mac-arm xmlui-mcp
           mv xmlui-mcp-client-mac-arm xmlui-mcp-client
-          zip xmlui-mcp-mac-arm.zip xmlui-mcp xmlui-mcp-client ../run-mcp-client.sh
+          zip xmlui-mcp-mac-arm.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
 
-          # Package other platforms
-          zip xmlui-mcp-linux-amd.zip xmlui-mcp xmlui-mcp-client ../run-mcp-client.sh
-          mv xmlui-mcp.exe xmlui-mcp.exe.bak && mv xmlui-mcp-client.exe xmlui-mcp-client.exe.bak
-          mv xmlui-mcp.exe.bak xmlui-mcp && mv xmlui-mcp-client.exe.bak xmlui-mcp-client
-          zip xmlui-mcp-windows.zip xmlui-mcp xmlui-mcp-client ../run-mcp-client.bat
+          # Package linux
+          zip xmlui-mcp-linux-amd.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
+
+          # Package windows
+          mv xmlui-mcp.exe xmlui-mcp
+          mv xmlui-mcp-client.exe xmlui-mcp-client
+          zip xmlui-mcp-windows.zip xmlui-mcp xmlui-mcp-client run-mcp-client.bat
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
