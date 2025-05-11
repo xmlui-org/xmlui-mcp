@@ -1,0 +1,3 @@
+@echo off
+:: for example...
+xmlui-mcp-client.exe "C:\Users\jonudell\xmlui-mcp\xmlui-mcp.exe C:\Users\jonudell\xmlui C:\Users\jonudell xmlui-hn,xmlui-mastodon,xmlui-invoice"
