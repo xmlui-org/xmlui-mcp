@@ -53,9 +53,7 @@ jobs:
           zip xmlui-mcp-linux-amd64.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
 
           # Package windows
-          mv xmlui-mcp.exe xmlui-mcp
-          mv xmlui-mcp-client.exe xmlui-mcp-client
-          zip xmlui-mcp-windows-amd64.zip xmlui-mcp xmlui-mcp-client run-mcp-client.bat
+          zip xmlui-mcp-windows-amd64.zip xmlui-mcp.exe xmlui-mcp-client.exe run-mcp-client.bat
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
