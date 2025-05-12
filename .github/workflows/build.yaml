@@ -50,7 +50,7 @@ jobs:
           zip xmlui-mcp-mac-arm.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
 
           # Package linux
-          zip xmlui-mcp-linux-amd.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
+          zip xmlui-mcp-linux-amd64.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
 
           # Package windows
           mv xmlui-mcp.exe xmlui-mcp
