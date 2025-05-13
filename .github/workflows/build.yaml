@@ -1,64 +1,103 @@
 name: Build & Release
-
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag (e.g. v1.0.0)'
         required: true
-
 jobs:
-  release:
+  create-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
+  build:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            server_ext: ""
+            client_ext: ""
+            archive: zip
+            label: linux-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            server_ext: ""
+            client_ext: ""
+            archive: tar.gz
+            label: mac-arm
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            server_ext: ""
+            client_ext: ""
+            archive: tar.gz
+            label: mac-amd
+          - os: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            server_ext: .exe
+            client_ext: .exe
+            archive: zip
+            label: windows-amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v4
         with:
           go-version: '1.21'
 
-      - name: Build all targets
+      - name: Build server
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          mkdir -p out
+          go build -tags server -o xmlui-mcp${{ matrix.server_ext }}
 
-          # Build server binaries
-          GOOS=linux   GOARCH=amd64 go build -tags server -o out/xmlui-mcp                 # linux
-          GOOS=windows GOARCH=amd64 go build -tags server -o out/xmlui-mcp.exe             # windows
-          GOOS=darwin  GOARCH=amd64 go build -tags server -o out/xmlui-mcp-mac-amd         # mac-amd (temp)
-          GOOS=darwin  GOARCH=arm64 go build -tags server -o out/xmlui-mcp-mac-arm         # mac-arm (temp)
+      - name: Build client
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -tags client -o xmlui-mcp-client${{ matrix.client_ext }}
 
-          # Build client binaries
-          GOOS=linux   GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client          # linux
-          GOOS=windows GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client.exe      # windows
-          GOOS=darwin  GOARCH=amd64 go build -tags client -o out/xmlui-mcp-client-mac-amd  # mac-amd (temp)
-          GOOS=darwin  GOARCH=arm64 go build -tags client -o out/xmlui-mcp-client-mac-arm  # mac-arm (temp)
+      - name: Prepare package contents
+        run: |
+          mkdir -p package
+          cp xmlui-mcp${{ matrix.server_ext }} package/
+          cp xmlui-mcp-client${{ matrix.client_ext }} package/
 
-          # Copy startup scripts into the build output
-          cp run-mcp-client.sh out/
-          cp run-mcp-client.bat out/
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            cp run-mcp-client.bat package/
+          else
+            cp run-mcp-client.sh package/
+            chmod +x package/run-mcp-client.sh
+            chmod +x package/xmlui-mcp${{ matrix.server_ext }}
+            chmod +x package/xmlui-mcp-client${{ matrix.client_ext }}
+          fi
 
-          cd out
+      - name: Create archive
+        run: |
+          cd package
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            zip ../xmlui-mcp-${{ matrix.label }}.zip *
+          else
+            tar -czf ../xmlui-mcp-${{ matrix.label }}.${{ matrix.archive }} *
+          fi
 
-          # Package mac-amd
-          mv xmlui-mcp-mac-amd xmlui-mcp
-          mv xmlui-mcp-client-mac-amd xmlui-mcp-client
-          zip xmlui-mcp-mac-amd.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
-
-          # Package mac-arm
-          mv xmlui-mcp-mac-arm xmlui-mcp
-          mv xmlui-mcp-client-mac-arm xmlui-mcp-client
-          zip xmlui-mcp-mac-arm.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
-
-          # Package linux
-          zip xmlui-mcp-linux-amd64.zip xmlui-mcp xmlui-mcp-client run-mcp-client.sh
-
-          # Package windows
-          zip xmlui-mcp-windows-amd64.zip xmlui-mcp.exe xmlui-mcp-client.exe run-mcp-client.bat
-
-      - name: Upload to GitHub Release
+      - name: Upload to GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          files: xmlui-mcp-${{ matrix.label }}.${{ matrix.archive }}
           tag_name: ${{ github.event.inputs.tag }}
-          files: out/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
