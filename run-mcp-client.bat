@@ -1,3 +1,3 @@
 @echo off
 :: for example...
-xmlui-mcp-client.exe "C:\Users\jon\xmlui-getting-started\mcp\xmlui-mcp.exe C:\Users\jon\xmlui-getting-started C:\Users\jon xmlui-hn,xmlui-mastodon"
+xmlui-mcp-client.exe "C:\Users\jon\xmlui-getting-started\mcp\xmlui-mcp.exe C:\Users\jon\xmlui-getting-started\mcp C:\Users\jon xmlui-hn,xmlui-mastodon"
