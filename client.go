@@ -126,8 +126,6 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 	case "examples":
 		toolName = "xmlui_examples"
 		args["query"] = arg
-	case "meta":
-		toolName = "xmlui_metadata"
 	default:
 		return "Unrecognized command. Type 'help'."
 	}

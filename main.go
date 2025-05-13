@@ -88,10 +88,6 @@ func main() {
 	s.AddTool(searchDocsTool, searchDocsHandler)
 	printToolRegistration(searchDocsTool)
 
-	metadataTool, metadataHandler := NewMetadataTool()
-	s.AddTool(metadataTool, metadataHandler)
-	printToolRegistration(metadataTool)
-
 	readFileTool, readFileHandler := NewReadFileTool(xmluiDir)
 	s.AddTool(readFileTool, readFileHandler)
 	printToolRegistration(readFileTool)
