@@ -80,7 +80,9 @@ jobs:
             cp run-mcp-client.bat package/
           else
             cp run-mcp-client.sh package/
+            cp prepare-binaries.sh package/
             chmod +x package/run-mcp-client.sh
+            chmod +x package/prepare-binaries.sh
             chmod +x package/xmlui-mcp${{ matrix.server_ext }}
             chmod +x package/xmlui-mcp-client${{ matrix.client_ext }}
           fi
