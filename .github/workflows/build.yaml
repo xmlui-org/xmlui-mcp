@@ -1,10 +1,12 @@
 name: Build & Release
+
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag (e.g. v1.0.0)'
         required: true
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -26,32 +28,29 @@ jobs:
             goarch: amd64
             server_ext: ""
             client_ext: ""
-            archive: zip
             label: linux-amd64
           - os: macos-latest
             goos: darwin
             goarch: arm64
             server_ext: ""
             client_ext: ""
-            archive: zip
             label: mac-arm
           - os: macos-latest
             goos: darwin
             goarch: amd64
             server_ext: ""
             client_ext: ""
-            archive: zip
             label: mac-amd
           - os: ubuntu-latest
             goos: windows
             goarch: amd64
             server_ext: .exe
             client_ext: .exe
-            archive: zip
             label: windows-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v4
         with:
           go-version: '1.21'
@@ -72,30 +71,37 @@ jobs:
 
       - name: Prepare package contents
         run: |
-          mkdir -p package
-          cp xmlui-mcp${{ matrix.server_ext }} package/
-          cp xmlui-mcp-client${{ matrix.client_ext }} package/
+          mkdir -p package/xmlui-mcp/docs/pages/components
+          mkdir -p package/xmlui-mcp/src/components
 
-          if [[ "${{ matrix.goos }}" == "windows" ]]; then
-            cp run-mcp-client.bat package/
-          else
-            cp run-mcp-client.sh package/
-            cp prepare-binaries.sh package/
-            chmod +x package/run-mcp-client.sh
-            chmod +x package/prepare-binaries.sh
-            chmod +x package/xmlui-mcp${{ matrix.server_ext }}
-            chmod +x package/xmlui-mcp-client${{ matrix.client_ext }}
-          fi
+          # Copy binaries
+          cp xmlui-mcp${{ matrix.server_ext }} package/xmlui-mcp/
+          cp xmlui-mcp-client${{ matrix.client_ext }} package/xmlui-mcp/
 
+          # Copy scripts
+          cp run-mcp-client.bat package/xmlui-mcp/
+          cp run-mcp-client.sh package/xmlui-mcp/
+          cp prepare-binaries.sh package/xmlui-mcp/
+          chmod +x package/xmlui-mcp/run-mcp-client.sh
+          chmod +x package/xmlui-mcp/prepare-binaries.sh
+          chmod +x package/xmlui-mcp/xmlui-mcp${{ matrix.server_ext }}
+          chmod +x package/xmlui-mcp/xmlui-mcp-client${{ matrix.client_ext }}
+
+          # Copy Markdown docs (adjust source paths as needed)
+          cp -r docs/pages/components package/xmlui-mcp/docs/pages/
+
+          # Copy source code (adjust source paths as needed)
+          cp -r src/components package/xmlui-mcp/src/
+          
       - name: Create archive
         run: |
           cd package
-          zip -r ../xmlui-mcp-${{ matrix.label }}.zip *
+          zip -r ../xmlui-mcp-${{ matrix.label }}.zip xmlui-mcp
 
       - name: Upload to GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: xmlui-mcp-${{ matrix.label }}.${{ matrix.archive }}
+          files: xmlui-mcp-${{ matrix.label }}.zip
           tag_name: ${{ github.event.inputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
