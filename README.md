@@ -28,7 +28,7 @@ Usage: ./xmlui-mcp <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]
 
 - **comma-separated-exampleDirs** Subdirectories under exampleRoot
 
-Here's an example configuration for Claude Desktop or Cursor.
+Here's how that maps into a configuration for Claude Desktop or Cursor.
 
 ```
 {
