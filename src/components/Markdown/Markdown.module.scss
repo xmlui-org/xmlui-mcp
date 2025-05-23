@@ -1,0 +1,206 @@
+@use "../../components-core/theming/themes" as t;
+
+// --- This code snippet is required to collect the theme variables used in this module
+$themeVars: ();
+@function createThemeVar($componentVariable) {
+  $themeVars: t.appendThemeVar($themeVars, $componentVariable) !global;
+  @return t.getThemeVar($themeVars, $componentVariable);
+}
+
+$paddingTop-MarkDown: createThemeVar("paddingTop-Markdown");
+$paddingBottom-MarkDown: createThemeVar("paddingBottom-Markdown");
+$backgroundColor-MarkDown: createThemeVar("backgroundColor-Markdown");
+
+$themeVars: t.composePaddingVars($themeVars, "Blockquote");
+$themeVars: t.composeBorderVars($themeVars, "Blockquote");
+$accentColor-Blockquote: createThemeVar("accentColor-Blockquote");
+$accentWidth-Blockquote: createThemeVar("accentWidth-Blockquote");
+$backgroundColor-Blockquote: createThemeVar("backgroundColor-Blockquote");
+$paddingLeft-Blockquote: createThemeVar("paddingLeft-Blockquote");
+$borderRadius-Blockquote: createThemeVar("borderRadius-Blockquote");
+$marginTop-Blockquote: createThemeVar("marginTop-Blockquote");
+$marginBottom-Blockquote: createThemeVar("marginBottom-Blockquote");
+
+$themeVars: t.composePaddingVars($themeVars, "Admonition");
+$themeVars: t.composeBorderVars($themeVars, "Admonition");
+$backgroundColor-Admonition: createThemeVar("backgroundColor-Admonition");
+$borderRadius-Admonition: createThemeVar("borderRadius-Admonition");
+$iconSize-Admonition: createThemeVar("iconSize-Admonition");
+$marginTop-Admonition: createThemeVar("marginTop-Admonition");
+$marginBottom-Admonition: createThemeVar("marginBottom-Admonition");
+$marginLeft-Admonition-content: createThemeVar("marginLeft-Admonition-content");
+
+$marginTop-HtmlVideo: createThemeVar("marginTop-HtmlVideo");
+$marginBottom-HtmlVideo: createThemeVar("marginBottom-HtmlVideo");
+
+.markdownContent {
+  padding-top: $paddingTop-MarkDown;
+  padding-bottom: $paddingBottom-MarkDown;
+  background-color: $backgroundColor-MarkDown;
+  min-width: 0;
+  width: 100%;
+
+  // --- Additional Heading styles
+  h1 {
+    margin-top: createThemeVar("marginTop-H1-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H1-markdown") !important;
+    font-size: createThemeVar("fontSize-H1-markdown") !important;
+  }
+
+  h2 {
+    margin-top: createThemeVar("marginTop-H2-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H2-markdown") !important;
+  }
+
+  h3 {
+    margin-top: createThemeVar("marginTop-H3-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H3-markdown") !important;
+  }
+
+  h4 {
+    margin-top: createThemeVar("marginTop-H4-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H4-markdown") !important;
+  }
+
+  h5 {
+    margin-top: createThemeVar("marginTop-H5-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H5-markdown") !important;
+  }
+
+  h6 {
+    margin-top: createThemeVar("marginTop-H6-markdown") !important;
+    margin-bottom: createThemeVar("marginBottom-H6-markdown") !important;
+  }
+
+  // --- Blockquote
+
+  .blockquote {
+    position: relative;
+    margin-top: $marginTop-Blockquote;
+    margin-bottom: $marginBottom-Blockquote;
+    background-color: $backgroundColor-Blockquote;
+
+    &::before {
+      background-color: $accentColor-Blockquote;
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+      content: "";
+      height: 100%;
+      width: $accentWidth-Blockquote;
+    }
+  }
+
+  .blockquoteContainer {
+    @include t.borderVars($themeVars, "Blockquote");
+    @include t.paddingVars($themeVars, "Blockquote");
+  }
+
+  .admonitionBlockquote {
+    margin-top: $marginTop-Admonition;
+    margin-bottom: $marginBottom-Admonition;
+    background-color: $backgroundColor-Admonition;
+    border-radius: $borderRadius-Admonition;
+    @include t.borderVars($themeVars, "Admonition");
+    @include t.paddingVars($themeVars, "Admonition");
+  }
+
+  .admonitionContainer {
+    padding: 0.5rem;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .admonitionContent {
+    margin-left: $marginLeft-Admonition-content;
+  }
+
+  .admonitionIcon {
+    font-size: $iconSize-Admonition;
+    line-height: 1;
+  }
+
+  .admonitionContent {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .admonitionBlockquote {
+    .admonitionContent {
+      [class*="text_"][class*="markdown_"] {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
+    }
+  }
+
+  .horizontalRule {
+    border-top-color: createThemeVar("borderColor-HorizontalRule");
+    border-top-style: createThemeVar("borderStyle-HorizontalRule");
+    border-top-width: createThemeVar("borderWidth-HorizontalRule");
+  }
+
+  li:has(> input[type="checkbox"]),
+  li:has(> input[type="checkbox"]) {
+    display: flex;
+    align-items: flex-start;
+
+    >input[type="checkbox"] {
+      margin-right: 8px;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+  }
+
+  // First element should have no top margin
+    > *:first-child {
+    margin-top: 0;
+  }
+
+  // Last element should have no bottom margin
+  > *:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// --- UnorderedList
+/*
+
+$paddingLeft-UnorderedList: createThemeVar("paddingLeft-UnorderedList");
+
+// the basic <ul> and <ol> styles are the same in tabler.io too
+.unorderedList {
+  list-style-type: revert;
+  list-style-position: outside;
+  padding-left: $paddingLeft-UnorderedList;
+}
+
+// --- OrderedList
+$paddingLeft-OrderedList: createThemeVar("paddingLeft-OrderedList");
+
+// the basic <ul> and <ol> styles are the same in tabler.io too
+.orderedList {
+  list-style-type: revert;
+  list-style-position: outside;
+  padding-left: $paddingLeft-OrderedList;
+}
+
+// --- ListItem
+
+$paddingLeft-ListItem: createThemeVar("paddingLeft-ListItem");
+$color-marker-ListItem: createThemeVar("color-marker-ListItem");
+
+.listItem {
+  padding-left: $paddingLeft-ListItem;
+}
+
+.listItem::marker {
+  color: $color-marker-ListItem;
+}
+*/
+
+// --- We export the theme variables to add them to the component renderer
+:export {
+  themeVars: t.json-stringify($themeVars);
+}

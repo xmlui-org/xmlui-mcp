@@ -99,7 +99,6 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
   search <term>     - Search XMLUI code/docs
   read <path>       - Read a file
   examples <query>  - Search usage examples
-  meta              - Tool help
   help              - Show this help
   quit              - Quit`
 	}

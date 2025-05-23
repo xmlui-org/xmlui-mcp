@@ -1,0 +1,275 @@
+@use "../../components-core/theming/themes" as t;
+
+$themeVars: ();
+@function createThemeVar($componentVariable) {
+  $themeVars: t.appendThemeVar($themeVars, $componentVariable) !global;
+  @return t.getThemeVar($themeVars, $componentVariable);
+}
+
+$component: "Text";
+
+@mixin textVariant($variant) {
+  $themeVars: t.composePaddingVars($themeVars, "#{$component}-#{$variant}");
+  $themeVars: t.composeBorderVars($themeVars, "#{$component}-#{$variant}");
+  $themeVars: t.composeTextVars($themeVars, "#{$component}-#{$variant}");
+  @include t.paddingVars($themeVars, "#{$component}-#{$variant}");
+  @include t.borderVars($themeVars, "#{$component}-#{$variant}");
+  @include t.textVars($themeVars, "#{$component}-#{$variant}");
+  margin-top: createThemeVar("marginTop-#{$component}-#{$variant}");
+  margin-bottom: createThemeVar("marginBottom-#{$component}-#{$variant}");
+  margin-left: createThemeVar("marginLeft-#{$component}-#{$variant}");
+  margin-right: createThemeVar("marginRight-#{$component}-#{$variant}");
+  vertical-align: createThemeVar("verticalAlign-#{$component}-#{$variant}");
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  padding: 0;
+  min-height: fit-content;
+  @include textVariant("default");
+
+  &.markdown {
+    @include textVariant("markdown");
+  }
+  
+  //text inside text should be inline
+  // .text {
+  //   display: inline;
+  // }
+
+  &.abbr {
+    @include textVariant("abbr");
+  }
+
+  &.cite {
+    @include textVariant("cite");
+  }
+
+  // --- Styling <pre><code> elements
+
+  // codefence/<pre> elements are block level by default, even in another text element
+  // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/pre
+  .text.codefence {
+    display: block;
+    margin-top: createThemeVar("marginTop-#{$component}-codefence");
+    margin-bottom: createThemeVar("marginBottom-#{$component}-codefence");
+  }
+
+  // For inline code
+  :not(.text.codefence) > &.code,
+  :not(.text.codefence) > &code {
+    @include textVariant("code");
+    // --- We may add some opacity to the code element
+    // opacity: 0.75;
+  }
+
+  // For code blocks using <![CDATA[ + <code> tags
+  &.codefence:has(> .text.code),
+  &.codefence:has(> code) {
+    @include textVariant("codefence");
+    // TEMP: solution for a demo - need to re-evaluate how to truncate/wrap code blocks
+    overflow-x: auto;
+    text-overflow: initial;
+    font-size: t.$fontSize-small;
+    line-height: 1.4;
+  }
+
+  // TEMP: experimental - may be removed
+  &.codefence:has(> code > span) {
+    padding-inline: 0;
+  }
+  &.codefence > code > span:not([class*="numbered"]) {
+    padding-inline: t.$space-3;
+  }
+
+  &.codefence > code {
+    white-space: pre-wrap;
+    display: inline-block;
+    width: 100%;
+  }
+
+  &.codefence > code::before {
+    counter-reset: listing;
+  }
+
+  &.codefence > code > span {
+    display: inline-block;
+    width: 100%;
+  }
+  &.codefence > code > span[class*="numbered"] {
+    counter-increment: listing;
+  }
+
+  &.codefence > code > span[class*="numbered"]::before {
+    content: counter(listing);
+    display: inline-block;
+    width: t.$space-12;
+    padding-left: auto;
+    padding-right: t.$space-5;
+    margin-left: auto;
+    text-align: right;
+    color: t.$textColor-secondary;
+  }
+  // END TEMP
+
+  // ---
+
+  &.deleted {
+    @include textVariant("deleted");
+
+    // Based on accessibility concerns
+    // Source: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/del
+    &::before,
+    &::after {
+      clip-path: inset(100%);
+      clip: rect(1px, 1px, 1px, 1px);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    &::before {
+      content: " [deletion start] ";
+    }
+    &::after {
+      content: " [deletion end] ";
+    }
+  }
+
+  &.inserted {
+    @include textVariant("inserted");
+
+    // Based on accessibility concerns
+    // Source: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/ins
+    &::before,
+    &::after {
+      clip-path: inset(100%);
+      clip: rect(1px, 1px, 1px, 1px);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    &::before {
+      content: " [insertion start] ";
+    }
+    &::after {
+      content: " [insertion end] ";
+    }
+  }
+
+  // This is just a style placeholder
+  &.keyboard {
+    @include textVariant("keyboard");
+  }
+
+  &.marked {
+    @include textVariant("marked");
+
+    // Based on accessibility concerns
+    // Source: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/mark
+    &::before,
+    &::after {
+      clip-path: inset(100%);
+      clip: rect(1px, 1px, 1px, 1px);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+    &::before {
+      content: " [highlight start] ";
+    }
+    &::after {
+      content: " [highlight end] ";
+    }
+  }
+
+  &.mono {
+    @include textVariant("mono");
+  }
+
+  &.sample {
+    @include textVariant("sample");
+  }
+
+  &.sup {
+    @include textVariant("sup");
+  }
+
+  &.sub {
+    @include textVariant("sub");
+  }
+
+  &.var {
+    @include textVariant("var");
+  }
+
+  &.title {
+    @include textVariant("title");
+  }
+
+  &.subtitle {
+    @include textVariant("subtitle");
+  }
+
+  &.small {
+    @include textVariant("small");
+  }
+
+  &.caption {
+    @include textVariant("caption");
+  }
+
+  &.placeholder {
+    @include textVariant("placeholder");
+  }
+
+  &.paragraph {
+    @include textVariant("paragraph");
+  }
+
+  &.subheading {
+    @include textVariant("subheading");
+  }
+
+  &.tableheading {
+    @include textVariant("tableheading");
+  }
+
+  &.secondary {
+    @include textVariant("secondary");
+  }
+
+  &.strong{
+    font-weight: t.$fontWeight-bold;
+  }
+}
+
+/*
+This is a Chromium based solution that is supported by most modern browsers.
+See this source for details: https://css-tricks.com/line-clampin/
+*/
+.truncateOverflow {
+  overflow: hidden;
+  overflow-wrap: break-word;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.preserveLinebreaks {
+  white-space: pre-wrap;
+}
+
+.noEllipsis {
+  text-overflow: clip;
+}
+
+:export {
+  themeVars: t.json-stringify($themeVars);
+}

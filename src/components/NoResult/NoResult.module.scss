@@ -1,0 +1,34 @@
+@use "../../components-core/theming/themes" as t;
+
+// --- This code snippet is required to collect the theme variables used in this module
+$themeVars: ();
+@function createThemeVar($componentVariable) {
+  $themeVars: t.appendThemeVar($themeVars, $componentVariable) !global;
+  @return t.getThemeVar($themeVars, $componentVariable);
+}
+
+$component: "NoResult";
+$themeVars: t.composePaddingVars($themeVars, $component);
+$themeVars: t.composeBorderVars($themeVars, $component);
+$gap-icon-NoResult: createThemeVar("gap-icon-#{$component}");
+$size-icon-NoResult: createThemeVar("size-icon-#{$component}");
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  @include t.borderVars($themeVars, $component);
+  @include t.paddingVars($themeVars, $component);
+}
+
+.icon{
+  width: $size-icon-NoResult;
+  height: $size-icon-NoResult;
+  margin-bottom: $gap-icon-NoResult;
+}
+
+// --- We export the theme variables to add them to the component renderer
+:export{
+  themeVars: t.json-stringify($themeVars)
+}

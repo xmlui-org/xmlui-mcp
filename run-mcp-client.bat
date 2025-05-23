@@ -1,3 +1,9 @@
 @echo off
-:: for example...
-xmlui-mcp-client.exe "C:\Users\jon\xmlui-getting-started\mcp\xmlui-mcp.exe C:\Users\jon\xmlui-getting-started\mcp C:\Users\jon xmlui-hn,xmlui-mastodon"
+setlocal
+
+REM Get the absolute path to the current directory
+set "CWD=%~dp0"
+REM Remove trailing backslash if present
+if "%CWD:~-1%"=="\" set "CWD=%CWD:~0,-1%"
+
+"%CWD%\xmlui-mcp-client.exe" "%CWD%\xmlui-mcp.exe %CWD% %CWD% xmlui-hn,xmlui-mastodon"

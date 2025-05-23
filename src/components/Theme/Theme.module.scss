@@ -1,0 +1,21 @@
+@use "../../components-core/theming/themes" as t;
+
+.from, .to{
+  display: none;
+}
+
+.baseRootComponent {
+  width: 100%;
+  position: relative;
+  height: inherit;
+  font-family: t.$fontFamily;
+  background-color: t.$backgroundColor;
+  font-size: t.$fontSize;
+  font-weight: t.$fontWeight;
+  color: t.$textColor-primary;
+  overflow: auto;
+  direction: t.$direction;
+  font-feature-settings: t.$font-feature-settings;
+
+  --stack-gap-default: #{t.$space-4};
+}

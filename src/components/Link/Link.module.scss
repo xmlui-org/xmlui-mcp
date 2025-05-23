@@ -1,0 +1,103 @@
+@use "../../components-core/theming/themes" as t;
+
+// --- This code snippet is required to collect the theme variables used in this module
+$themeVars: ();
+@function createThemeVar($componentVariable) {
+  $themeVars: t.appendThemeVar($themeVars, $componentVariable) !global;
+  @return t.getThemeVar($themeVars, $componentVariable);
+}
+
+$component: "Link";
+$themeVars: t.composePaddingVars($themeVars, $component);
+$themeVars: t.composePaddingVars($themeVars, "icon-#{$component}");
+$themeVars: t.composeBorderVars($themeVars, $component);
+$themeVars: t.composeTextVars($themeVars, $component);
+$textColor-Link--active: createThemeVar("textColor-#{$component}--active");
+$textColor-Link--hover: createThemeVar("textColor-#{$component}--hover");
+$textColor-Link--hover--active: createThemeVar("textColor-#{$component}--hover--active");
+$fontWeight-Link--active: createThemeVar("fontWeight-#{$component}--active");
+$gap-icon-Link: createThemeVar("gap-icon-#{$component}");
+$textUnderlineOffset-Link: createThemeVar("textUnderlineOffset-#{$component}");
+$textDecorationLine-Link: createThemeVar("textDecorationLine-#{$component}");
+$textDecorationColor-Link: createThemeVar("textDecorationColor-#{$component}");
+$textDecorationStyle-Link: createThemeVar("textDecorationStyle-#{$component}");
+$textDecorationThickness-Link: createThemeVar("textDecorationThickness-#{$component}");
+
+.container {
+  @include t.borderVars($themeVars, $component);
+  @include t.paddingVars($themeVars, $component);
+  @include t.textVars($themeVars, $component);
+  flex-shrink: 0;
+  cursor: pointer;
+  text-decoration: none;
+  width: fit-content;
+  max-width: 100%;
+  max-height: 100%;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+
+  &.active {
+    color: $textColor-Link--active;
+    font-weight: $fontWeight-Link--active;
+  }
+
+  &.disabled{
+    pointer-events: none;
+  }
+
+  &:not(.disabled){
+    &:hover {
+      color: $textColor-Link--hover;
+    }
+
+    &:focus-visible{
+      outline-width: createThemeVar('outlineWidth-#{$component}--focus');
+      outline-color: createThemeVar('outlineColor-#{$component}--focus');
+      outline-style: createThemeVar('outlineStyle-#{$component}--focus');
+      outline-offset: createThemeVar('outlineOffset-#{$component}--focus');
+    }
+
+    &.active {
+      &:hover {
+        color: $textColor-Link--hover--active;
+      }
+    }
+  }
+}
+
+.iconWrapper {
+  @include t.paddingVars($themeVars, "icon-#{$component}");
+  padding-right: $gap-icon-Link;
+  line-height: 0;
+}
+
+.container:not(.active) {
+  text-underline-offset: $textUnderlineOffset-Link;
+  text-decoration-line: $textDecorationLine-Link;
+  &:not([disabled]) {
+    &:hover {
+      text-decoration-color: $textDecorationColor-Link;
+      text-decoration-style: $textDecorationStyle-Link;
+      text-decoration-thickness: $textDecorationThickness-Link;
+
+      &:has(> button) {
+        text-decoration-line: none;
+      }
+    }
+    &:active {
+      text-decoration-color: $textDecorationColor-Link;
+      text-decoration-style: $textDecorationStyle-Link;
+      text-decoration-thickness: $textDecorationThickness-Link;
+
+      &:has(> button) {
+        text-decoration-line: none;
+      }
+    }
+  }
+}
+
+// --- We export the theme variables to add them to the component renderer
+:export {
+  themeVars: t.json-stringify($themeVars);
+}

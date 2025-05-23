@@ -90,11 +90,7 @@ jobs:
       - name: Create archive
         run: |
           cd package
-          if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            zip ../xmlui-mcp-${{ matrix.label }}.zip *
-          else
-            tar -czf ../xmlui-mcp-${{ matrix.label }}.${{ matrix.archive }} *
-          fi
+          zip -r ../xmlui-mcp-${{ matrix.label }}.zip *
 
       - name: Upload to GitHub release
         uses: softprops/action-gh-release@v2

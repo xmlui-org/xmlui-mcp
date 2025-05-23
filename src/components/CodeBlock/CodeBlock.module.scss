@@ -1,0 +1,65 @@
+@use "../../components-core/theming/themes" as t;
+
+$themeVars: ();
+@function createThemeVar($componentVariable) {
+  $themeVars: t.appendThemeVar($themeVars, $componentVariable) !global;
+  @return t.getThemeVar($themeVars, $componentVariable);
+}
+
+$themeVars: t.composePaddingVars($themeVars, "CodeBlock");
+$themeVars: t.composeBorderVars($themeVars, "CodeBlock");
+$backgroundColor-CodeBlock: createThemeVar("backgroundColor-CodeBlock");
+$backgroundColor-CodeBlock-header: createThemeVar("backgroundColor-CodeBlock-header");
+$color-CodeBlock-headerSeparator: createThemeVar("color-CodeBlock-headerSeparator");
+$marginTop-CodeBlock: createThemeVar("marginTop-CodeBlock");
+$marginBottom-CodeBlock: createThemeVar("marginBottom-CodeBlock");
+$backgroundColor-CodeBlock-highlightRow: createThemeVar("backgroundColor-CodeBlock-highlightRow");
+$backgroundColor-CodeBlock-highlightString: createThemeVar("backgroundColor-CodeBlock-highlightString");
+
+.codeBlock {
+  @include t.borderVars($themeVars, "CodeBlock");
+  @include t.paddingVars($themeVars, "CodeBlock");
+  margin-top: $marginTop-CodeBlock;
+  margin-bottom: $marginBottom-CodeBlock;
+  background-color: $backgroundColor-CodeBlock;
+}
+
+.codeBlockHeader {
+  padding: t.$space-1;
+  padding-left: t.$space-3;
+  background-color: $backgroundColor-CodeBlock-header;
+  border-bottom: $color-CodeBlock-headerSeparator solid 2px;
+  font-size: t.$fontSize-small;
+}
+
+.codeBlockCopyWrapper {
+  position: relative;
+
+  .codeBlockCopyButton {
+    position: absolute;
+    top: t.$space-1_5;
+    right: t.$space-1_5;
+    z-index: 1;
+    display: none;
+    background-color: $backgroundColor-CodeBlock;
+  }
+
+  &:hover {
+    .codeBlockCopyButton {
+      display: block;
+    }
+  }
+}
+
+:global {
+  .codeBlockHighlightRow {
+    background-color: $backgroundColor-CodeBlock-highlightRow;
+  }
+  .codeBlockHighlightString {
+    background-color: $backgroundColor-CodeBlock-highlightString;
+  }
+}
+
+:export {
+  themeVars: t.json-stringify($themeVars);
+}
