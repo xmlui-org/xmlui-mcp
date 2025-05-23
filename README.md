@@ -58,6 +58,10 @@ With this setup I am giving the agents access to the XMLUI projects I'm working 
 
 I am also encouraging them to use the xmlui-mcp tools as we work on those projects. Here's what that looks like.
 
+<img width="737" alt="image" src="https://github.com/user-attachments/assets/1f87519c-1338-4eca-a730-9f2e0c1a64a9" />
+
+<img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
+
 
 ## Test the server
 
