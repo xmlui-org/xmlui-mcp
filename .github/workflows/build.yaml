@@ -33,14 +33,14 @@ jobs:
             goarch: arm64
             server_ext: ""
             client_ext: ""
-            archive: tar.gz
+            archive: zip
             label: mac-arm
           - os: macos-latest
             goos: darwin
             goarch: amd64
             server_ext: ""
             client_ext: ""
-            archive: tar.gz
+            archive: zip
             label: mac-amd
           - os: ubuntu-latest
             goos: windows
