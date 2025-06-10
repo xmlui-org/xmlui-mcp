@@ -39,8 +39,8 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 				return filepath.SkipDir
 			}
 
-			// Only include .mdx files
-			if d.IsDir() || !strings.HasSuffix(path, ".mdx") {
+			// Only include .md files
+			if d.IsDir() || !strings.HasSuffix(path, ".md") {
 				return nil
 			}
 

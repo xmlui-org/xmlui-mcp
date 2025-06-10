@@ -20,4 +20,4 @@ REM First prepare the binaries
 call "%CWD%\prepare-binaries.bat"
 
 REM Then run the client
-"%CWD%\xmlui-mcp-client.exe" "%CWD%\xmlui-mcp %CWD% %EXAMPLES_DIR% xmlui-invoice,xmlui-mastodon"
+"%CWD%\xmlui-mcp-client.exe" "%CWD%\xmlui-mcp %USERPROFILE%\xmlui %EXAMPLES_DIR% xmlui-invoice,xmlui-mastodon"
