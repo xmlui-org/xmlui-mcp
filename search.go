@@ -14,8 +14,8 @@ import (
 func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_search",
-		mcp.WithDescription("Searches XMLUI source and documentation files (.mdx, .tsx, .md, and .scss) in docs/content, docs/public/pages, docs/dist/pages, and xmlui/src/components. Includes component docs, tutorials, learning materials, and styles."),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner' or 'useEffect'")),
+		mcp.WithDescription("Searches XMLUI source and documentation files."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Slider' or 'boxShadow'")),
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
@@ -36,9 +36,8 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 
 		searchRoots := []string{
 			filepath.Join(homeDir, "docs", "content", "components"),
-			filepath.Join(homeDir, "docs", "content"),
 			filepath.Join(homeDir, "docs", "public", "pages"),
-			filepath.Join(homeDir, "docs", "dist", "pages"),
+			filepath.Join(homeDir, "docs", "src", "components"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 		}
 
