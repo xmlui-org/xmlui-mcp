@@ -12,10 +12,10 @@ import (
 
 func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool("xmlui_read_file",
-		mcp.WithDescription("Reads a .mdx or .tsx or .scss file from the XMLUI source or docs tree."),
+		mcp.WithDescription("Reads a .mdx, .tsx, .scss, or .md file from the XMLUI source or docs tree."),
 		mcp.WithString("path",
 			mcp.Required(),
-			mcp.Description("Relative path under docs/pages/components or xmlui/src/components, e.g. 'xmlui/src/components/Spinner/Spinner.tsx'"),
+			mcp.Description("Relative path under xmlui/docs/content/components, xmlui/xmlui/src/components, or xmlui/docs/public/pages, e.g. 'xmlui/xmlui/src/components/Spinner/Spinner.tsx'"),
 		),
 	)
 
@@ -26,15 +26,16 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 		}
 
 		// Validate extension
-		if !strings.HasSuffix(relPath, ".mdx") && !strings.HasSuffix(relPath, ".tsx") && !strings.HasSuffix(relPath, ".scss") {
-			return mcp.NewToolResultError("Only .mdx and .tsx and .scss files are supported"), nil
+		if !strings.HasSuffix(relPath, ".mdx") && !strings.HasSuffix(relPath, ".tsx") && !strings.HasSuffix(relPath, ".scss") && !strings.HasSuffix(relPath, ".md") {
+			return mcp.NewToolResultError("Only .mdx, .tsx, .scss, and .md files are supported"), nil
 		}
 
 		// Construct and validate full path
 		fullPath := filepath.Join(homeDir, relPath)
-		if !strings.HasPrefix(fullPath, filepath.Join(homeDir, "docs", "pages", "components")) &&
-			!strings.HasPrefix(fullPath, filepath.Join(homeDir, "xmlui", "src", "components")) {
-			return mcp.NewToolResultError("Path not allowed. Must be under docs/pages/components or xmlui/src/components."), nil
+		if !strings.HasPrefix(fullPath, filepath.Join(homeDir, "xmlui", "docs", "content", "components")) &&
+			!strings.HasPrefix(fullPath, filepath.Join(homeDir, "xmlui", "xmlui", "src", "components")) &&
+			!strings.HasPrefix(fullPath, filepath.Join(homeDir, "xmlui", "docs", "public", "pages")) {
+			return mcp.NewToolResultError("Path not allowed. Must be under xmlui/docs/content/components, xmlui/xmlui/src/components, or xmlui/docs/public/pages."), nil
 		}
 
 		content, err := os.ReadFile(fullPath)

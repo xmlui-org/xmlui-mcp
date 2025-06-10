@@ -12,7 +12,7 @@ import (
 func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_component_docs",
-		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component from docs/pages/components."),
+		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component from xmlui/docs/content/components."),
 		mcp.WithString("component",
 			mcp.Required(),
 			mcp.Description("Component name, e.g. 'Button', 'Avatar', or 'Stack/VStack'"),
@@ -32,7 +32,7 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			return mcp.NewToolResultError("Missing or invalid 'component' parameter"), nil
 		}
 
-		mdxPath := filepath.Join(homeDir, "docs", "pages", "components", componentName+".mdx")
+		mdxPath := filepath.Join(homeDir, "xmlui", "docs", "content", "components", componentName+".md")
 
 		content, err := os.ReadFile(mdxPath)
 		if err != nil {
