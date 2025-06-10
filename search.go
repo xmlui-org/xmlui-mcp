@@ -14,7 +14,7 @@ import (
 func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_search",
-		mcp.WithDescription("Searches XMLUI source and documentation files (.mdx, .tsx, and .md) in docs/content/components, docs/public/pages, and xmlui/src/components. Use this to find references and implementations."),
+		mcp.WithDescription("Searches XMLUI source and documentation files (.mdx, .tsx, .md, and .scss) in docs/content, docs/public/pages, docs/dist/pages, and xmlui/src/components. Includes component docs, tutorials, learning materials, and styles."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Spinner' or 'useEffect'")),
 	)
 
@@ -36,7 +36,9 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 
 		searchRoots := []string{
 			filepath.Join(homeDir, "docs", "content", "components"),
+			filepath.Join(homeDir, "docs", "content"),
 			filepath.Join(homeDir, "docs", "public", "pages"),
+			filepath.Join(homeDir, "docs", "dist", "pages"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 		}
 
@@ -53,7 +55,7 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 					return nil
 				}
 
-				if !(strings.HasSuffix(d.Name(), ".mdx") || strings.HasSuffix(d.Name(), ".tsx") || strings.HasSuffix(d.Name(), ".md")) {
+				if !(strings.HasSuffix(d.Name(), ".mdx") || strings.HasSuffix(d.Name(), ".tsx") || strings.HasSuffix(d.Name(), ".md") || strings.HasSuffix(d.Name(), ".scss")) {
 					return nil
 				}
 
