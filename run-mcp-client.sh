@@ -18,4 +18,4 @@ echo
 ./prepare-binaries.sh
 
 # Then run the client
-./xmlui-mcp-client "$CWD/xmlui-mcp $CWD $EXAMPLES_DIR xmlui-invoice,xmlui-mastodon"
+./xmlui-mcp-client "$CWD/xmlui-mcp $HOME/xmlui $EXAMPLES_DIR xmlui-invoice,xmlui-mastodon"
