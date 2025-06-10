@@ -26,6 +26,12 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		log := func(msg string, args ...any) {
+			f, _ := os.OpenFile("xmlui-mcp.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			defer f.Close()
+			fmt.Fprintf(f, msg+"\n", args...)
+		}
+
 		query, ok := req.Params.Arguments["query"].(string)
 		if !ok || strings.TrimSpace(query) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
@@ -40,6 +46,8 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 			filepath.Join(homeDir, "docs", "src", "components"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 		}
+
+		log("🔍 Search paths: %v", searchRoots)
 
 		for _, root := range searchRoots {
 			filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -56,6 +64,15 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 
 				if !(strings.HasSuffix(d.Name(), ".mdx") || strings.HasSuffix(d.Name(), ".tsx") || strings.HasSuffix(d.Name(), ".md") || strings.HasSuffix(d.Name(), ".scss")) {
 					return nil
+				}
+
+				// Add filename match
+				if strings.Contains(strings.ToLower(d.Name()), query) {
+					rel, _ := filepath.Rel(homeDir, path)
+					results = append(results, fmt.Sprintf("%s: [filename match]", rel))
+					if len(results) >= 50 {
+						return nil
+					}
 				}
 
 				file, err := os.Open(path)
