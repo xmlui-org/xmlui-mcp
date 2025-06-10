@@ -2,10 +2,20 @@
 
 This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build XMLUI apps.
 
+- [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Configure](#configure)
 - [Test](#test-the-server)
 
+## Prerequisites
+
+The MCP server needs [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
+
+   - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
+   - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
+   - `$HOME/xmlui/xmlui/src/components/` - Source code (.tsx, .scss files)
+
+The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
 ## Install
 

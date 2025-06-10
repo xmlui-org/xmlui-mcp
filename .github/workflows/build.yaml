@@ -71,8 +71,7 @@ jobs:
 
       - name: Prepare package contents
         run: |
-          mkdir -p package/xmlui-mcp/docs/pages/components
-          mkdir -p package/xmlui-mcp/src/components
+          mkdir -p package/xmlui-mcp
 
           # Copy binaries
           cp xmlui-mcp${{ matrix.server_ext }} package/xmlui-mcp/
@@ -87,11 +86,8 @@ jobs:
           chmod +x package/xmlui-mcp/xmlui-mcp${{ matrix.server_ext }}
           chmod +x package/xmlui-mcp/xmlui-mcp-client${{ matrix.client_ext }}
 
-          # Copy Markdown docs (adjust source paths as needed)
-          cp -r docs/pages/components package/xmlui-mcp/docs/pages/
-
-          # Copy source code (adjust source paths as needed)
-          cp -r src/components package/xmlui-mcp/src/
+          # Copy README
+          cp README.md package/xmlui-mcp/
           
       - name: Create archive
         run: |
