@@ -98,14 +98,36 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
 		}
 		query = strings.ToLower(query)
+		queryWords := strings.Fields(query)
 		var matches []string
 		for i, section := range sections {
-			if strings.Contains(strings.ToLower(section), query) {
-				baseURL := "https://docs.xmlui.com/howto"
-				anchor := titleToAnchor(titles[i])
-				url := baseURL + "#" + anchor
-				matchWithURL := section + "\n\n**Source:** " + url
-				matches = append(matches, matchWithURL)
+			sectionLower := strings.ToLower(section)
+			
+			// If single word query, use simple contains check
+			if len(queryWords) == 1 {
+				if strings.Contains(sectionLower, query) {
+					baseURL := "https://docs.xmlui.com/howto"
+					anchor := titleToAnchor(titles[i])
+					url := baseURL + "#" + anchor
+					matchWithURL := section + "\n\n**Source:** " + url
+					matches = append(matches, matchWithURL)
+				}
+			} else {
+				// For multiple words, use fuzzy matching
+				matchCount := 0
+				for _, word := range queryWords {
+					if strings.Contains(sectionLower, word) {
+						matchCount++
+					}
+				}
+				// Match if at least half the words are found
+				if float64(matchCount)/float64(len(queryWords)) >= 0.5 {
+					baseURL := "https://docs.xmlui.com/howto"
+					anchor := titleToAnchor(titles[i])
+					url := baseURL + "#" + anchor
+					matchWithURL := section + "\n\n**Source:** " + url
+					matches = append(matches, matchWithURL)
+				}
 			}
 		}
 		if len(matches) == 0 {
