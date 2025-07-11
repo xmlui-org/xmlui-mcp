@@ -39,7 +39,12 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to read %s: %v", componentName, err)), nil
 		}
 
-		return mcp.NewToolResultText(string(content)), nil
+		// Add source URL
+		baseURL := "https://docs.xmlui.com/components"
+		componentURL := baseURL + "/" + componentName
+		contentWithURL := string(content) + "\n\n**Source:** " + componentURL
+
+		return mcp.NewToolResultText(contentWithURL), nil
 	}
 
 	return tool, handler

@@ -6,9 +6,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
+
+// Helper: Convert title to URL anchor
+func titleToAnchor(title string) string {
+	// Convert title to URL anchor
+	anchor := strings.ToLower(title)
+	anchor = strings.ReplaceAll(anchor, " ", "-")
+	// Remove special characters, keep only letters, numbers, hyphens
+	var result strings.Builder
+	for _, r := range anchor {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
 
 // Helper: Parse howto.md into sections (split on "## " heading)
 func parseHowtoSections(howtoPath string) ([]string, []string, error) {
@@ -73,7 +89,7 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keyword or phrase to search for.")),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sections, _, err := parseHowtoSections(howtoPath)
+		sections, titles, err := parseHowtoSections(howtoPath)
 		if err != nil {
 			return mcp.NewToolResultError("Failed to parse howto.md: " + err.Error()), nil
 		}
@@ -83,9 +99,13 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 		}
 		query = strings.ToLower(query)
 		var matches []string
-		for _, section := range sections {
+		for i, section := range sections {
 			if strings.Contains(strings.ToLower(section), query) {
-				matches = append(matches, section)
+				baseURL := "https://docs.xmlui.com/howto"
+				anchor := titleToAnchor(titles[i])
+				url := baseURL + "#" + anchor
+				matchWithURL := section + "\n\n**Source:** " + url
+				matches = append(matches, matchWithURL)
 			}
 		}
 		if len(matches) == 0 {
