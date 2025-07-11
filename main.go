@@ -1,5 +1,6 @@
 //go:build server
 // +build server
+
 package main
 
 import (
@@ -96,6 +97,13 @@ func main() {
 	s.AddTool(examplesTool, examplesHandler)
 	printToolRegistration(examplesTool)
 
+	listHowtoTool, listHowtoHandler := NewListHowtoTool(xmluiDir)
+	s.AddTool(listHowtoTool, listHowtoHandler)
+	printToolRegistration(listHowtoTool)
+
+	searchHowtoTool, searchHowtoHandler := NewSearchHowtoTool(xmluiDir)
+	s.AddTool(searchHowtoTool, searchHowtoHandler)
+	printToolRegistration(searchHowtoTool)
 
 	// Launch
 	if err := server.ServeStdio(s); err != nil {

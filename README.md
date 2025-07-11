@@ -93,6 +93,8 @@ Available commands:
   search <term>     - Search XMLUI code/docs
   read <path>       - Read a file
   examples <query>  - Search usage examples
+  howtolist         - List all 'How To' entry titles
+  howtosearch <q>   - Search 'How To' entries by keyword
   help              - Show this help
   quit              - Quit
 ```

@@ -1,5 +1,6 @@
 //go:build client
 // +build client
+
 package main
 
 import (
@@ -99,6 +100,8 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
   search <term>     - Search XMLUI code/docs
   read <path>       - Read a file
   examples <query>  - Search usage examples
+  howtolist         - List all 'How To' entry titles
+  howtosearch <q>   - Search 'How To' entries by keyword
   help              - Show this help
   quit              - Quit`
 	}
@@ -124,6 +127,11 @@ func handleQuery(ctx context.Context, c *client.Client, toolMap map[string]mcp.T
 		args["path"] = arg
 	case "examples":
 		toolName = "xmlui_examples"
+		args["query"] = arg
+	case "howtolist":
+		toolName = "xmlui-list-howto"
+	case "howtosearch":
+		toolName = "xmlui-search-howto"
 		args["query"] = arg
 	default:
 		return "Unrecognized command. Type 'help'."
