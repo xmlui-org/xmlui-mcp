@@ -11,6 +11,26 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Helper: Fuzzy word matching - returns true if text matches query with word-based fuzzy logic
+func fuzzyMatchSearch(text, query string) bool {
+	textLower := strings.ToLower(text)
+	queryLower := strings.ToLower(query)
+	queryWords := strings.Fields(queryLower)
+	
+	// If single word query, use simple contains check
+	if len(queryWords) == 1 {
+		return strings.Contains(textLower, queryLower)
+	}
+	
+	// For multiple words, require ALL words to be present (AND logic)
+	for _, word := range queryWords {
+		if !strings.Contains(textLower, word) {
+			return false
+		}
+	}
+	return true
+}
+
 func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_search",
@@ -67,7 +87,7 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 				}
 
 				// Add filename match
-				if strings.Contains(strings.ToLower(d.Name()), query) {
+				if fuzzyMatchSearch(d.Name(), query) {
 					rel, _ := filepath.Rel(homeDir, path)
 					results = append(results, fmt.Sprintf("%s: [filename match]", rel))
 					if len(results) >= 50 {
@@ -85,7 +105,7 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 				lineNum := 1
 				for scanner.Scan() {
 					line := scanner.Text()
-					if strings.Contains(strings.ToLower(line), query) {
+					if fuzzyMatchSearch(line, query) {
 						rel, _ := filepath.Rel(homeDir, path)
 						results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, line))
 						if len(results) >= 50 {

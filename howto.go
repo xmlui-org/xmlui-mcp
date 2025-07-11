@@ -11,6 +11,26 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Helper: Fuzzy word matching - returns true if text matches query with word-based fuzzy logic
+func fuzzyMatch(text, query string) bool {
+	textLower := strings.ToLower(text)
+	queryLower := strings.ToLower(query)
+	queryWords := strings.Fields(queryLower)
+	
+	// If single word query, use simple contains check
+	if len(queryWords) == 1 {
+		return strings.Contains(textLower, queryLower)
+	}
+	
+	// For multiple words, require ALL words to be present (AND logic)
+	for _, word := range queryWords {
+		if !strings.Contains(textLower, word) {
+			return false
+		}
+	}
+	return true
+}
+
 // Helper: Convert title to URL anchor
 func titleToAnchor(title string) string {
 	// Convert title to URL anchor
@@ -97,37 +117,14 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 		if !ok || strings.TrimSpace(query) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
 		}
-		query = strings.ToLower(query)
-		queryWords := strings.Fields(query)
 		var matches []string
 		for i, section := range sections {
-			sectionLower := strings.ToLower(section)
-			
-			// If single word query, use simple contains check
-			if len(queryWords) == 1 {
-				if strings.Contains(sectionLower, query) {
-					baseURL := "https://docs.xmlui.com/howto"
-					anchor := titleToAnchor(titles[i])
-					url := baseURL + "#" + anchor
-					matchWithURL := section + "\n\n**Source:** " + url
-					matches = append(matches, matchWithURL)
-				}
-			} else {
-				// For multiple words, use fuzzy matching
-				matchCount := 0
-				for _, word := range queryWords {
-					if strings.Contains(sectionLower, word) {
-						matchCount++
-					}
-				}
-				// Match if at least half the words are found
-				if float64(matchCount)/float64(len(queryWords)) >= 0.5 {
-					baseURL := "https://docs.xmlui.com/howto"
-					anchor := titleToAnchor(titles[i])
-					url := baseURL + "#" + anchor
-					matchWithURL := section + "\n\n**Source:** " + url
-					matches = append(matches, matchWithURL)
-				}
+			if fuzzyMatch(section, query) {
+				baseURL := "https://docs.xmlui.com/howto"
+				anchor := titleToAnchor(titles[i])
+				url := baseURL + "#" + anchor
+				matchWithURL := section + "\n\n**Source:** " + url
+				matches = append(matches, matchWithURL)
 			}
 		}
 		if len(matches) == 0 {

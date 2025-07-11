@@ -12,6 +12,26 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Helper: Fuzzy word matching - returns true if text matches query with word-based fuzzy logic
+func fuzzyMatchExamples(text, query string) bool {
+	textLower := strings.ToLower(text)
+	queryLower := strings.ToLower(query)
+	queryWords := strings.Fields(queryLower)
+	
+	// If single word query, use simple contains check
+	if len(queryWords) == 1 {
+		return strings.Contains(textLower, queryLower)
+	}
+	
+	// For multiple words, require ALL words to be present (AND logic)
+	for _, word := range queryWords {
+		if !strings.Contains(textLower, word) {
+			return false
+		}
+	}
+	return true
+}
+
 func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	fmt.Fprintf(os.Stderr, "Example roots configured: %v\n", exampleRoots)
 
@@ -90,9 +110,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 				for scanner.Scan() {
 					line := scanner.Text()
-					lower := strings.ToLower(line)
 
-					if strings.Contains(lower, query) {
+					if fuzzyMatchExamples(line, query) {
 						matchScore++
 						matchingLines = append(matchingLines, MatchingLine{
 							LineNum: lineNum,
