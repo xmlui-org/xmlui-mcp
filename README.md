@@ -141,7 +141,7 @@ If this property is set to `true`, the component gets the focus automatically wh
 This boolean property value indicates whether the component responds to user events (`true`) or not (`false`).
 ```
 
-And/or it might decide to use the xmlui_search tool to search docs and code.
+It might decide to use the xmlui_search tool to search docs and code.
 
 ```
 > search slider
@@ -155,7 +155,7 @@ src/components/Slider/Slider.tsx:1: import styles from "./Slider.module.scss";
 src/components/Slider/SliderNative.tsx:4: import { Root, Range, Track, Thumb } from "@radix-ui/react-slider";}
 ```
 
-And/or it might use the xmlui_examples tool to find uses in one or more app directories.
+It might use the xmlui_examples tool to find uses in one or more app directories.
 
 ```
 > examples slider
@@ -176,68 +176,14 @@ And/or it might use the xmlui_examples tool to find uses in one or more app dire
 ```xml
 <Component
   name="DailyRevenue"
-  xmlns:XMLUIExtensions="component-ns"
-  var.nonce="{1}"
-  var.startDate="{window.startDate}"
-  var.endDate="{window.endDate}"
-  var.totalDays="{ Math.floor((maxDate - minDate) / (86400 * 1000)) }"
->
-
-  <DataSource
-    id="revenueDays"
-    url="/api/dashboard/revenue-days"
-    method="GET"
-   />
-
-   <DataSource
-    id="revenue"
-    url="{ window.dailyRevenueUrl(startDate, endDate, nonce) }"
-    method="GET"
-   />
-
-  <VStack width="{$props.width}">
-    <H1>{$props.title}</H1>
-
-
-   <Fragment when="{ revenueDays.value }">
-    <variable name="days" value="{revenueDays.value[0].days}"/>
-    <Slider
-      id="slider"
-      label="dateRange"
-      minValue="{0}"
-      maxValue="{ days }"
-      initialValue="{ [0, days] }"
-      step="10"
-      onDidChange="{
-        console.log('slider values:', slider.value[0], slider.value[1]);
-        // Update the start and end dates based on slider values
-        startDate = window.sliderValueToDate(slider.value[0]);
-        endDate = window.sliderValueToDate(slider.value[1]);
-        console.log('Date range:', startDate, 'to', endDate);
-        nonce++;
-      }"
-      valueFormat="{ (value) => {
-          const date = window.sliderValueToDate(value);
-          return date;
-          }
-      }"
-    />
-  </Fragment>
-
-    <Card height="400px">
-      <XMLUIExtensions:BarChart
-        layout="horizontal"
-        data="{ revenue }"
-        dataKeys="{['total']}" nameKey="date"
-        tickFormatter="{(value, index) => {
-          if (index % 4 !== 0) return '';
-          return value
-        }}"
-      />
-    </Card>
-
-  </VStack>
-
+...
 </Component>
 ```
 
+It might list and search How To articles.
+
+```
+>  howtosearch delay datasource
+```
+
+That will find and cite **Source:** https://docs.xmlui.com/#howto#hide-an-element-until-its-datasource-is-ready}
