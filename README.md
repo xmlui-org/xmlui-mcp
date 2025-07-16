@@ -186,4 +186,4 @@ It might list and search How To articles.
 >  howtosearch delay datasource
 ```
 
-That will find and cite **Source:** https://docs.xmlui.com/#howto#hide-an-element-until-its-datasource-is-ready}
+That will find and cite **Source:** https://docs.xmlui.com/howto#hide-an-element-until-its-datasource-is-ready}
