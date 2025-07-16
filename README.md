@@ -19,7 +19,7 @@ The MCP server will search these directories for component documentation, source
 
 ## Install
 
-To install, download the zip for your platform from https://github.com/xmlui-org/xmlui-mcp/releases, unzip, and cd into xmlui-mcp.
+To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
 
 ## Configure
 
