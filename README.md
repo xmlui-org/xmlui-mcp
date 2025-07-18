@@ -1,6 +1,6 @@
 # xmlui-mcp: Model Context Protocol server for XMLUI
 
-This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build XMLUI apps.
+This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build [XMLUI](https://xmlui.com) apps.
 
 - [Prerequisites](#prerequisites)
 - [Install](#install)
