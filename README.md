@@ -9,7 +9,7 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 
 ## Prerequisites
 
-The MCP server needs [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
+The MCP server needs the [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
 
    - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
    - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
