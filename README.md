@@ -1,6 +1,6 @@
 # xmlui-mcp: Model Context Protocol server for XMLUI
 
-This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build [XMLUI](https://xmlui.com) apps.
+This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build [XMLUI](https://xmlui.org) apps.
 
 - [Prerequisites](#prerequisites)
 - [Install](#install)
@@ -9,7 +9,7 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 
 ## Prerequisites
 
-The MCP server needs the [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
+The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
 
    - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
    - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
@@ -186,4 +186,4 @@ It might list and search How To articles.
 >  howtosearch delay datasource
 ```
 
-That will find and cite **Source:** https://docs.xmlui.com/howto#hide-an-element-until-its-datasource-is-ready
+That will find and cite **Source:** https://docs.xmlui.org/howto#hide-an-element-until-its-datasource-is-ready
