@@ -73,6 +73,14 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 <img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
 
+### With VSCode
+
+As of July 2025, VSCode work differently. Various sources claim you can use `~/.vscode.mcp` similar to above, we have not gotten that to work but this does by way of VSCode's `MCP: Add Server` command. If you need to adjust the settings it seems you need to uninstall and reinstall with a different command.
+
+<img width="1311" height="751" alt="image" src="https://github.com/user-attachments/assets/7c7c368a-f930-41ed-a5eb-a2eaad419a25" />
+
+
+
 ## Test the server
 
 You can run the bundled client to see what it's like for an agent to use the server.
