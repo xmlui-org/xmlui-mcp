@@ -17,6 +17,28 @@ The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exi
 
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
+>[!TIP]
+> When using agents with this MCP server, remind them frequently that you are working with XMLUI and want them to prioritize use of the tools provided by this server.
+
+>[!TIP]
+> Configure your agents with rules like these, and reinforce with frequent reminders
+>
+> 1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval
+>
+> 2 don't add any xmlui styling, let the theme and layout engine do its job
+>
+> 3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
+>
+> 4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
+>
+> 5 never touch the dom. we only work within xmlui abstractions inside the App realm, with help from vars and functions defined on the window variable in index.html
+>
+> 6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
+>
+> 7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
+>
+> 8 always do the simplest thing possible
+
 ## Install
 
 To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
