@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -30,6 +32,30 @@ type PromptContent struct {
 }
 
 type PromptHandler func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error)
+
+// Session management structures
+type SessionContext struct {
+	ID              string                `json:"id"`
+	InjectedPrompts []string              `json:"injected_prompts"`
+	LastActivity    time.Time             `json:"last_activity"`
+	Context         []mcp.PromptMessage   `json:"context"`
+}
+
+type SessionManager struct {
+	sessions map[string]*SessionContext
+	mutex    sync.RWMutex
+}
+
+type InjectPromptRequest struct {
+	SessionID  string `json:"session_id"`
+	PromptName string `json:"prompt_name"`
+}
+
+type InjectPromptResponse struct {
+	Success   bool                `json:"success"`
+	Message   string              `json:"message"`
+	Content   []mcp.PromptMessage `json:"content,omitempty"`
+}
 
 func printToolRegistration(tool mcp.Tool) {
 	fmt.Fprintf(os.Stderr, "%s\n", tool.Name)
@@ -65,6 +91,79 @@ func printPromptRegistration(prompt mcp.Prompt) {
 	fmt.Fprintf(os.Stderr, "PROMPT: %s\n", prompt.Name)
 	fmt.Fprintf(os.Stderr, " %s\n", prompt.Description)
 	fmt.Fprintln(os.Stderr)
+}
+
+// Session management methods
+func (sm *SessionManager) GetOrCreateSession(id string) *SessionContext {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	
+	if session, exists := sm.sessions[id]; exists {
+		session.LastActivity = time.Now()
+		return session
+	}
+	
+	session := &SessionContext{
+		ID:              id,
+		InjectedPrompts: []string{},
+		LastActivity:    time.Now(),
+		Context:         []mcp.PromptMessage{},
+	}
+	sm.sessions[id] = session
+	return session
+}
+
+func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandlers map[string]PromptHandler) (*InjectPromptResponse, error) {
+	// Get the prompt handler first (outside of lock)
+	handler, exists := promptHandlers[promptName]
+	if !exists {
+		return &InjectPromptResponse{
+			Success: false,
+			Message: "Prompt not found",
+		}, nil
+	}
+	
+	// Call the handler to get content (outside of lock)
+	ctx := context.Background()
+	request := mcp.GetPromptRequest{}
+	
+	result, err := handler(ctx, request)
+	if err != nil {
+		return &InjectPromptResponse{
+			Success: false,
+			Message: "Error retrieving prompt content",
+		}, err
+	}
+	
+	// Now acquire lock and update session
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+	
+	// Get or create session (now safe since we already have the lock)
+	var session *SessionContext
+	if existingSession, exists := sm.sessions[sessionID]; exists {
+		session = existingSession
+		session.LastActivity = time.Now()
+	} else {
+		session = &SessionContext{
+			ID:              sessionID,
+			InjectedPrompts: []string{},
+			LastActivity:    time.Now(),
+			Context:         []mcp.PromptMessage{},
+		}
+		sm.sessions[sessionID] = session
+	}
+	
+	// Add to session context
+	session.Context = append(session.Context, result.Messages...)
+	session.InjectedPrompts = append(session.InjectedPrompts, promptName)
+	session.LastActivity = time.Now()
+	
+	return &InjectPromptResponse{
+		Success: true,
+		Message: fmt.Sprintf("Prompt '%s' injected into session '%s'", promptName, sessionID),
+		Content: result.Messages,
+	}, nil
 }
 
 func main() {
@@ -205,6 +304,11 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		), nil
 	}
 
+	// Initialize session manager
+	var sessionManager = &SessionManager{
+		sessions: make(map[string]*SessionContext),
+	}
+
 	// Store tools for the /tools endpoint
 	var toolsList []mcp.Tool
 
@@ -242,6 +346,59 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	s.AddTool(searchHowtoTool, searchHowtoHandler)
 	toolsList = append(toolsList, searchHowtoTool)
 	printToolRegistration(searchHowtoTool)
+
+	// Add prompt injection tool
+	injectPromptTool := mcp.NewTool("xmlui_inject_prompt",
+		mcp.WithDescription("Inject a prompt into the current session context for guidance"),
+	)
+
+	injectPromptTool.InputSchema = mcp.ToolInputSchema{
+		Type: "object",
+		Properties: map[string]interface{}{
+			"prompt_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Name of the prompt to inject (e.g., 'xmlui_rules')",
+				"default":     "xmlui_rules",
+			},
+			"session_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Session ID (optional, defaults to 'default')",
+				"default":     "default",
+			},
+		},
+		Required: []string{"prompt_name"},
+	}
+
+	injectPromptHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Extract arguments
+		promptName := "xmlui_rules" // default
+		sessionID := "default"      // default
+
+		if request.Params.Arguments != nil {
+			if name, ok := request.Params.Arguments["prompt_name"].(string); ok && name != "" {
+				promptName = name
+			}
+			if id, ok := request.Params.Arguments["session_id"].(string); ok && id != "" {
+				sessionID = id
+			}
+		}
+
+		// Use the session manager to inject
+		response, err := sessionManager.InjectPrompt(sessionID, promptName, promptHandlers)
+		if err != nil {
+			return mcp.NewToolResultError("Error injecting prompt: " + err.Error()), nil
+		}
+
+		if response.Success {
+			return mcp.NewToolResultText(fmt.Sprintf("✅ Successfully injected '%s' prompt into session '%s'. The guidelines are now active in your context.", promptName, sessionID)), nil
+		} else {
+			return mcp.NewToolResultError("❌ Failed to inject prompt: " + response.Message), nil
+		}
+	}
+
+	s.AddTool(injectPromptTool, injectPromptHandler)
+	toolsList = append(toolsList, injectPromptTool)
+	printToolRegistration(injectPromptTool)
 
 	// Launch based on mode
 	if *httpMode {
@@ -346,7 +503,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			// Call the handler to get content
 			ctx := context.Background()
 			request := mcp.GetPromptRequest{}
-			
+
 			result, err := handler(ctx, request)
 			if err != nil {
 				http.Error(w, "Error retrieving prompt content", http.StatusInternalServerError)
@@ -363,6 +520,70 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			json.NewEncoder(w).Encode(promptContent)
 		})
 
+		// GET /session/{id} - Get session context
+		mux.HandleFunc("/session/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			// Extract session ID from URL path
+			sessionID := strings.TrimPrefix(r.URL.Path, "/session/")
+			if sessionID == "" {
+				http.Error(w, "Session ID required", http.StatusBadRequest)
+				return
+			}
+
+			session := sessionManager.GetOrCreateSession(sessionID)
+			json.NewEncoder(w).Encode(session)
+		})
+
+		// POST /session/context - Inject prompt into session
+		mux.HandleFunc("/session/context", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			if r.Method != "POST" {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			var req InjectPromptRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid JSON", http.StatusBadRequest)
+				return
+			}
+
+			if req.SessionID == "" {
+				req.SessionID = "default" // Use default session if not specified
+			}
+
+			if req.PromptName == "" {
+				http.Error(w, "Prompt name required", http.StatusBadRequest)
+				return
+			}
+
+			response, err := sessionManager.InjectPrompt(req.SessionID, req.PromptName, promptHandlers)
+			if err != nil {
+				http.Error(w, "Server error", http.StatusInternalServerError)
+				return
+			}
+
+			json.NewEncoder(w).Encode(response)
+		})
+
 		addr := ":" + *port
 		fmt.Fprintf(os.Stderr, "Starting HTTP server on port %s\n", *port)
 		fmt.Fprintf(os.Stderr, "SSE endpoint: http://localhost%s/sse\n", addr)
@@ -370,6 +591,8 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		fmt.Fprintf(os.Stderr, "Tools endpoint: http://localhost%s/tools\n", addr)
 		fmt.Fprintf(os.Stderr, "Prompts list endpoint: http://localhost%s/prompts\n", addr)
 		fmt.Fprintf(os.Stderr, "Specific prompt endpoint: http://localhost%s/prompts/{name}\n", addr)
+		fmt.Fprintf(os.Stderr, "Session context endpoint: http://localhost%s/session/{id}\n", addr)
+		fmt.Fprintf(os.Stderr, "Inject prompt endpoint: http://localhost%s/session/context\n", addr)
 
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
