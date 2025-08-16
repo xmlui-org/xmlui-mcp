@@ -108,10 +108,10 @@ xmlui_examples
  Input schema:
    - query (required): Search term, e.g. 'Spinner', 'AppState', or 'delay="1000"'
 
-xmlui-list-howto
+xmlui_list_howto
  List all 'How To' entry titles from docs/public/pages/howto.md.
 
-xmlui-search-howto
+xmlui_search_howto
  Search for 'How To' entries in docs/public/pages/howto.md by keyword or phrase. Returns full markdown sections.
  Input schema:
    - query (required): Keyword or phrase to search for.
@@ -147,6 +147,11 @@ curl http://localhost:8080/prompts
 
 # Get specific prompt content
 curl http://localhost:8080/prompts/xmlui_rules
+
+# Inject prompt into session ("remember the rules" workflow)
+curl -X POST http://localhost:8080/session/context \
+  -H "Content-Type: application/json" \
+  -d '{"prompt_name": "xmlui_rules"}'
 ```
 
 # Rules
@@ -181,3 +186,4 @@ The server contains these rules:
 
 Agents should see these rules when starting the xmlui-mcp server but they are forgetful and when they do forget you can try saying "remember the rules" to reinject them into your session's context.
 
+  
