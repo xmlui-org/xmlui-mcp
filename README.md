@@ -17,39 +17,18 @@ The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exi
 
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
->[!TIP]
-> When using agents with this MCP server, remind them frequently that you are working with XMLUI and want them to prioritize use of the tools provided by this server.
-
->[!TIP]
-> The server launches with thConfigure your agents with rules like these, and reinforce with frequent reminders
->
-> 1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval
->
-> 2 don't add any xmlui styling, let the theme and layout engine do its job
->
-> 3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
->
-> 4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
->
-> 5 never touch the dom. we only work within xmlui abstractions inside the App realm, with help from vars and functions defined on the window variable in index.html
->
-> 6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
->
-> 7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
->
-> 8 always do the simplest thing possible
-
 ## Install
 
 To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
 
 ## Configure
 
-If you run the server interactively, it says:
+If you run the server interactively with no arguments it says:
 
 ```
-$ ./xmlui-mcp
-Usage: ./xmlui-mcp <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]
+Usage: ./xmlui-mcp [--http] [--port PORT] <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]
+  --http: Run in HTTP mode (default: stdio mode)
+  --port: Port to listen on in HTTP mode (default: 8080)
 ```
 
 - **./xmlui-mcp** The server binary
@@ -60,20 +39,11 @@ Usage: ./xmlui-mcp <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]
 
 - **comma-separated-exampleDirs** Subdirectories under exampleRoot
 
-Here's how that maps into a configuration for Claude Desktop or Cursor.
+Here's how that maps into a configuration for Claude Desktop, Cursor, or Copilot using the default stdio mode.
 
 ```
 {
   "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/Users/jonudell/xmlui-invoice",
-        "/Users/jonudell/xmlui-mastodon"
-      ]
-    },
     "xmlui": {
       "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp",
       "args": [
@@ -86,6 +56,14 @@ Here's how that maps into a configuration for Claude Desktop or Cursor.
 }
 ```
 
+The paths for these config files on a Mac are:
+
+**Claude:** ~/Library/Application Support/Claude/claude_desktop_config.json
+
+**Copilot:** ~/Library/Application Support/Code/User/mcp.json
+
+**Cursor:** ~/.cursor.mcp.json
+
 With this setup I am giving the agents access to the XMLUI projects I'm working on (xmlui-invoice, xmlui-mastodon), so they can both read and write those projects.
 
 I am also encouraging them to use the xmlui-mcp tools as we work on those projects. Here's what that looks like.
@@ -95,21 +73,71 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 <img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
 
-### With VSCode
-
-As of July 2025, VSCode work differently. Various sources claim you can use `~/.vscode.mcp` similar to above, we have not gotten that to work but this does by way of VSCode's `MCP: Add Server` command. If you need to adjust the settings it seems you need to uninstall and reinstall with a different command.
-
-<img width="1311" height="751" alt="image" src="https://github.com/user-attachments/assets/7c7c368a-f930-41ed-a5eb-a2eaad419a25" />
-
-
-
 ## Test the server
 
-You can test the server in HTTP mode to see what tools and prompts are available:
+Agents like Claude, Cursor, and Copilot typically use the server in stdio mode.
 
-```bash
-# Start server in HTTP mode
-./xmlui-mcp --http /Users/jonudell/xmlui
+You run the server in HTTP mode to see what tools and prompts are available.
+
+```
+~/xmlui-mcp$ ./xmlui-mcp --http  ~/xmlui ~  xmlui-invoice,xmlui-mastodon
+PROMPT: xmlui_rules
+ Essential rules and guidelines for XMLUI development
+
+xmlui_list_components
+ Lists all available XMLUI components based on .md files in docs/content/components.
+
+xmlui_component_docs
+ Returns the Markdown documentation for a given XMLUI component from docs/content/components.
+ Input schema:
+   - component (required): Component name, e.g. 'Button', 'Avatar', or 'Stack/VStack'
+
+xmlui_search
+ Searches XMLUI source and documentation files.
+ Input schema:
+   - query (required): Search term, e.g. 'Slider' or 'boxShadow'
+
+xmlui_read_file
+ Reads a .mdx, .tsx, .scss, or .md file from the XMLUI source or docs tree.
+ Input schema:
+   - path (required): Relative path under docs/content/components, xmlui/src/components, or docs/public/pages, e.g. 'xmlui/src/components/Spinner/Spinner.tsx'
+
+Example roots configured: [/Users/jonudell/xmlui-invoice /Users/jonudell/xmlui-mastodon]
+xmlui_examples
+ Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for.
+ Input schema:
+   - query (required): Search term, e.g. 'Spinner', 'AppState', or 'delay="1000"'
+
+xmlui-list-howto
+ List all 'How To' entry titles from docs/public/pages/howto.md.
+
+xmlui-search-howto
+ Search for 'How To' entries in docs/public/pages/howto.md by keyword or phrase. Returns full markdown sections.
+ Input schema:
+   - query (required): Keyword or phrase to search for.
+
+xmlui_inject_prompt
+ Inject a prompt into the current session context for guidance
+ Input schema:
+   - prompt_name (required): Name of the prompt to inject (e.g., 'xmlui_rules')
+   - session_id : Session ID (optional, defaults to 'default')
+
+xmlui_list_prompts
+ Lists all available prompts that can be injected into session context
+
+xmlui_get_prompt
+ Retrieves the content of a specific prompt for review
+ Input schema:
+   - prompt_name (required): Name of the prompt to retrieve (e.g., 'xmlui_rules')
+
+Starting HTTP server on port 8080
+SSE endpoint: http://localhost:8080/sse
+Message endpoint: http://localhost:8080/message
+Tools endpoint: http://localhost:8080/tools
+Prompts list endpoint: http://localhost:8080/prompts
+Specific prompt endpoint: http://localhost:8080/prompts/{name}
+Session context endpoint: http://localhost:8080/session/{id}
+Inject prompt endpoint: http://localhost:8080/session/context
 
 # Test available tools
 curl http://localhost:8080/tools
@@ -121,16 +149,35 @@ curl http://localhost:8080/prompts
 curl http://localhost:8080/prompts/xmlui_rules
 ```
 
-This will show you the same tools and prompts that MCP clients like Claude Desktop or Cursor can access.
+# Rules
 
-When you ask an agent which XMLUI component to use, it has access to several tools:
+The server contains these rules:
 
-- **xmlui_list_components** - Lists all available XMLUI components
-- **xmlui_component_docs** - Gets documentation for a specific component
-- **xmlui_search** - Searches XMLUI source code and documentation
-- **xmlui_examples** - Finds usage examples in your projects
-- **xmlui_read_file** - Reads specific files from the XMLUI codebase
-- **xmlui-list-howto** - Lists available how-to guides
-- **xmlui-search-howto** - Searches how-to documentation
+```
+1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval.
 
-The agent also has access to the **xmlui_rules** prompt, which contains essential guidelines for XMLUI development (similar to the TIP blocks above) to ensure it follows best practices and doesn't invent non-existent syntax.
+2 don't add any xmlui styling, let the theme and layout engine do its job
+
+3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
+
+4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
+
+5 never touch the dom. we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
+
+6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
+
+7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
+
+8 always do the simplest thing possible
+
+9 use a neutral tone. do not say "Perfect!" etc. in fact never use exclamation marks at all
+
+10 when creating examples for live playgrounds, observe the conventions for ---app and ---comp
+
+11 VStack is the default, don't use it unless necessary
+
+12 always search XMLUI-related resources first and prioritize them over other sources
+```
+
+Agents should see these rules when starting the xmlui-mcp server but they are forgetful and when they do forget you can try saying "remember the rules" to reinject them into your session's context.
+
