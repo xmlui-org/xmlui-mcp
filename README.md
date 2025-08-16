@@ -1,6 +1,6 @@
 # xmlui-mcp: Model Context Protocol server for XMLUI
 
-This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build XMLUI apps.
+This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build [XMLUI](https://xmlui.org) apps.
 
 - [Prerequisites](#prerequisites)
 - [Install](#install)
@@ -9,7 +9,7 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 
 ## Prerequisites
 
-The MCP server needs [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
+The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
 
    - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
    - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
@@ -17,9 +17,31 @@ The MCP server needs [XMLUI repo](https://github.com/xmlui-com/xmlui) to exist a
 
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
+>[!TIP]
+> When using agents with this MCP server, remind them frequently that you are working with XMLUI and want them to prioritize use of the tools provided by this server.
+
+>[!TIP]
+> The server launches with thConfigure your agents with rules like these, and reinforce with frequent reminders
+>
+> 1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval
+>
+> 2 don't add any xmlui styling, let the theme and layout engine do its job
+>
+> 3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
+>
+> 4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
+>
+> 5 never touch the dom. we only work within xmlui abstractions inside the App realm, with help from vars and functions defined on the window variable in index.html
+>
+> 6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
+>
+> 7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
+>
+> 8 always do the simplest thing possible
+
 ## Install
 
-To install, download the zip for your platform from https://github.com/JonUdell/xmlui-mcp/releases, unzip, and cd into xmlui-mcp.
+To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
 
 ## Configure
 
@@ -73,171 +95,42 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 <img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
 
+### With VSCode
+
+As of July 2025, VSCode work differently. Various sources claim you can use `~/.vscode.mcp` similar to above, we have not gotten that to work but this does by way of VSCode's `MCP: Add Server` command. If you need to adjust the settings it seems you need to uninstall and reinstall with a different command.
+
+<img width="1311" height="751" alt="image" src="https://github.com/user-attachments/assets/7c7c368a-f930-41ed-a5eb-a2eaad419a25" />
+
+
+
 ## Test the server
 
-You can run the bundled client to see what it's like for an agent to use the server.
+You can test the server in HTTP mode to see what tools and prompts are available:
 
-```
-./run-mcp-client.sh
-Using ~ as default example root, you can pass an alternate path to this script
+```bash
+# Start server in HTTP mode
+./xmlui-mcp --http /Users/jonudell/xmlui
 
-Connected to server with tools: [xmlui_component_docs xmlui_examples xmlui_list_components xmlui_read_file xmlui_search]
+# Test available tools
+curl http://localhost:8080/tools
 
-Type 'help' for commands, 'quit' to exit.
->
-> help
+# Test available prompts
+curl http://localhost:8080/prompts
 
-Available commands:
-  list              - List all XMLUI components
-  docs <name>       - Docs for a component
-  search <term>     - Search XMLUI code/docs
-  read <path>       - Read a file
-  examples <query>  - Search usage examples
-  howtolist         - List all 'How To' entry titles
-  howtosearch <q>   - Search 'How To' entries by keyword
-  help              - Show this help
-  quit              - Quit
+# Get specific prompt content
+curl http://localhost:8080/prompts/xmlui_rules
 ```
 
-If you ask an agent which XMLUI component to use, it might start with the xmlui_list_components tool.
+This will show you the same tools and prompts that MCP clients like Claude Desktop or Cursor can access.
 
-```
-> list
+When you ask an agent which XMLUI component to use, it has access to several tools:
 
-## APICall
+- **xmlui_list_components** - Lists all available XMLUI components
+- **xmlui_component_docs** - Gets documentation for a specific component
+- **xmlui_search** - Searches XMLUI source code and documentation
+- **xmlui_examples** - Finds usage examples in your projects
+- **xmlui_read_file** - Reads specific files from the XMLUI codebase
+- **xmlui-list-howto** - Lists available how-to guides
+- **xmlui-search-howto** - Searches how-to documentation
 
-- APICall → call xmlui_docs with component: "APICall"
-
-## App
-
-- App → call xmlui_docs with component: "App"
-
-> docs APICall
-
-> docs APICall
-
-# APICall [#component-apicall]
-
-`APICall` is used to mutate (create, update or delete) some data on the backend. It is similar in nature to the `DataSource` component which retrieves data from the backend.
-```
-
-It might follow up by using the xmlui_component_docs tool to get the doc for a given component.
-
-```
-> docs slider
-
-# Slider
-
-The `Slider` component allows you to select a numeric value between a range specified by minimum and maximum values.
-
-## Properties
-
-### `autoFocus (default: false)`
-
-If this property is set to `true`, the component gets the focus automatically when displayed.
-
-### `enabled (default: true)`
-
-This boolean property value indicates whether the component responds to user events (`true`) or not (`false`).
-```
-
-And/or it might decide to use the xmlui_search tool to search docs and code.
-
-```
-> search slider
-
-docs/pages/components/Slider.mdx:3: # Slider [#component-slider]
-docs/pages/components/Slider.mdx:7: The `Slider` component allows you to select a numeric value between a range specified by minimum and maximum values.
-src/components/ComponentProvider.tsx:123: import { sliderComponentRenderer } from "./Slider/Slider";
-src/components/FormItem/FormItemNative.tsx:51: import { Slider } from "../Slider/SliderNative";
-src/components/Slider/Slider.mdx:1: # Slider
-src/components/Slider/Slider.tsx:1: import styles from "./Slider.module.scss";
-src/components/Slider/SliderNative.tsx:4: import { Root, Range, Track, Thumb } from "@radix-ui/react-slider";}
-```
-
-And/or it might use the xmlui_examples tool to find uses in one or more app directories.
-
-```
-> examples slider
-
-## File: xmlui-invoice/components/DailyRevenue.xmlui
-
-### Matching Lines:
-
-   28: <Slider
-   29: id="slider"
-   36: console.log('slider values:', slider.value[0], slider.value[1]);
-   37: // Update the start and end dates based on slider values
-   38: startDate = window.sliderValueToDate(slider.value[0]);
-   39: endDate = window.sliderValueToDate(slider.value[1]);
-
-### Complete File:
-
-```xml
-<Component
-  name="DailyRevenue"
-  xmlns:XMLUIExtensions="component-ns"
-  var.nonce="{1}"
-  var.startDate="{window.startDate}"
-  var.endDate="{window.endDate}"
-  var.totalDays="{ Math.floor((maxDate - minDate) / (86400 * 1000)) }"
->
-
-  <DataSource
-    id="revenueDays"
-    url="/api/dashboard/revenue-days"
-    method="GET"
-   />
-
-   <DataSource
-    id="revenue"
-    url="{ window.dailyRevenueUrl(startDate, endDate, nonce) }"
-    method="GET"
-   />
-
-  <VStack width="{$props.width}">
-    <H1>{$props.title}</H1>
-
-
-   <Fragment when="{ revenueDays.value }">
-    <variable name="days" value="{revenueDays.value[0].days}"/>
-    <Slider
-      id="slider"
-      label="dateRange"
-      minValue="{0}"
-      maxValue="{ days }"
-      initialValue="{ [0, days] }"
-      step="10"
-      onDidChange="{
-        console.log('slider values:', slider.value[0], slider.value[1]);
-        // Update the start and end dates based on slider values
-        startDate = window.sliderValueToDate(slider.value[0]);
-        endDate = window.sliderValueToDate(slider.value[1]);
-        console.log('Date range:', startDate, 'to', endDate);
-        nonce++;
-      }"
-      valueFormat="{ (value) => {
-          const date = window.sliderValueToDate(value);
-          return date;
-          }
-      }"
-    />
-  </Fragment>
-
-    <Card height="400px">
-      <XMLUIExtensions:BarChart
-        layout="horizontal"
-        data="{ revenue }"
-        dataKeys="{['total']}" nameKey="date"
-        tickFormatter="{(value, index) => {
-          if (index % 4 !== 0) return '';
-          return value
-        }}"
-      />
-    </Card>
-
-  </VStack>
-
-</Component>
-```
-
+The agent also has access to the **xmlui_rules** prompt, which contains essential guidelines for XMLUI development (similar to the TIP blocks above) to ensure it follows best practices and doesn't invent non-existent syntax.
