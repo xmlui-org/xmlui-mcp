@@ -400,6 +400,106 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	toolsList = append(toolsList, injectPromptTool)
 	printToolRegistration(injectPromptTool)
 
+	// Add prompt listing tool
+	listPromptsTool := mcp.NewTool("xmlui_list_prompts",
+		mcp.WithDescription("Lists all available prompts that can be injected into session context"),
+	)
+
+	listPromptsHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var out strings.Builder
+		out.WriteString("Available prompts:\n\n")
+		
+		for _, prompt := range promptsList {
+			out.WriteString(fmt.Sprintf("- **%s**: %s\n", prompt.Name, prompt.Description))
+		}
+		
+		out.WriteString("\nUse xmlui_get_prompt to view content or xmlui_inject_prompt to inject into context.")
+		return mcp.NewToolResultText(out.String()), nil
+	}
+
+	s.AddTool(listPromptsTool, listPromptsHandler)
+	toolsList = append(toolsList, listPromptsTool)
+	printToolRegistration(listPromptsTool)
+
+	// Add prompt content retrieval tool
+	getPromptTool := mcp.NewTool("xmlui_get_prompt",
+		mcp.WithDescription("Retrieves the content of a specific prompt for review"),
+	)
+
+	getPromptTool.InputSchema = mcp.ToolInputSchema{
+		Type: "object",
+		Properties: map[string]interface{}{
+			"prompt_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Name of the prompt to retrieve (e.g., 'xmlui_rules')",
+			},
+		},
+		Required: []string{"prompt_name"},
+	}
+
+	getPromptHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Extract prompt name
+		promptName := ""
+		if request.Params.Arguments != nil {
+			if name, ok := request.Params.Arguments["prompt_name"].(string); ok {
+				promptName = name
+			}
+		}
+
+		if promptName == "" {
+			return mcp.NewToolResultError("prompt_name parameter is required"), nil
+		}
+
+		// Find the prompt
+		var foundPrompt *mcp.Prompt
+		for _, prompt := range promptsList {
+			if prompt.Name == promptName {
+				foundPrompt = &prompt
+				break
+			}
+		}
+
+		if foundPrompt == nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Prompt '%s' not found", promptName)), nil
+		}
+
+		// Get the prompt handler
+		handler, exists := promptHandlers[promptName]
+		if !exists {
+			return mcp.NewToolResultError("Prompt handler not found"), nil
+		}
+
+		// Call the handler to get content
+		result, err := handler(ctx, mcp.GetPromptRequest{})
+		if err != nil {
+			return mcp.NewToolResultError("Error retrieving prompt content: " + err.Error()), nil
+		}
+
+		// Format the output
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("# %s\n\n", foundPrompt.Name))
+		out.WriteString(fmt.Sprintf("**Description:** %s\n\n", foundPrompt.Description))
+		out.WriteString("**Content:**\n\n")
+		
+		for _, message := range result.Messages {
+			// Extract text content
+			switch content := message.Content.(type) {
+			case *mcp.TextContent:
+				out.WriteString(content.Text)
+				out.WriteString("\n")
+			case mcp.TextContent:
+				out.WriteString(content.Text)
+				out.WriteString("\n")
+			}
+		}
+
+		return mcp.NewToolResultText(out.String()), nil
+	}
+
+	s.AddTool(getPromptTool, getPromptHandler)
+	toolsList = append(toolsList, getPromptTool)
+	printToolRegistration(getPromptTool)
+
 	// Launch based on mode
 	if *httpMode {
 		// HTTP mode
