@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -26,19 +28,19 @@ type PromptInfo struct {
 }
 
 type PromptContent struct {
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	Messages    []mcp.PromptMessage   `json:"messages"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Messages    []mcp.PromptMessage `json:"messages"`
 }
 
 type PromptHandler func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error)
 
 // Session management structures
 type SessionContext struct {
-	ID              string                `json:"id"`
-	InjectedPrompts []string              `json:"injected_prompts"`
-	LastActivity    time.Time             `json:"last_activity"`
-	Context         []mcp.PromptMessage   `json:"context"`
+	ID              string              `json:"id"`
+	InjectedPrompts []string            `json:"injected_prompts"`
+	LastActivity    time.Time           `json:"last_activity"`
+	Context         []mcp.PromptMessage `json:"context"`
 }
 
 type SessionManager struct {
@@ -52,9 +54,9 @@ type InjectPromptRequest struct {
 }
 
 type InjectPromptResponse struct {
-	Success   bool                `json:"success"`
-	Message   string              `json:"message"`
-	Content   []mcp.PromptMessage `json:"content,omitempty"`
+	Success bool                `json:"success"`
+	Message string              `json:"message"`
+	Content []mcp.PromptMessage `json:"content,omitempty"`
 }
 
 func printToolRegistration(tool mcp.Tool) {
@@ -97,12 +99,12 @@ func printPromptRegistration(prompt mcp.Prompt) {
 func (sm *SessionManager) GetOrCreateSession(id string) *SessionContext {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	
+
 	if session, exists := sm.sessions[id]; exists {
 		session.LastActivity = time.Now()
 		return session
 	}
-	
+
 	session := &SessionContext{
 		ID:              id,
 		InjectedPrompts: []string{},
@@ -122,11 +124,11 @@ func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandl
 			Message: "Prompt not found",
 		}, nil
 	}
-	
+
 	// Call the handler to get content (outside of lock)
 	ctx := context.Background()
 	request := mcp.GetPromptRequest{}
-	
+
 	result, err := handler(ctx, request)
 	if err != nil {
 		return &InjectPromptResponse{
@@ -134,11 +136,11 @@ func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandl
 			Message: "Error retrieving prompt content",
 		}, err
 	}
-	
+
 	// Now acquire lock and update session
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
-	
+
 	// Get or create session (now safe since we already have the lock)
 	var session *SessionContext
 	if existingSession, exists := sm.sessions[sessionID]; exists {
@@ -153,12 +155,12 @@ func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandl
 		}
 		sm.sessions[sessionID] = session
 	}
-	
+
 	// Add to session context
 	session.Context = append(session.Context, result.Messages...)
 	session.InjectedPrompts = append(session.InjectedPrompts, promptName)
 	session.LastActivity = time.Now()
-	
+
 	return &InjectPromptResponse{
 		Success: true,
 		Message: fmt.Sprintf("Prompt '%s' injected into session '%s'", promptName, sessionID),
@@ -304,6 +306,10 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		), nil
 	}
 
+	// Initialize analytics
+	analyticsFile := filepath.Join(filepath.Dir(os.Args[0]), "xmlui-mcp-analytics.json")
+	InitializeAnalytics(analyticsFile)
+
 	// Initialize session manager
 	var sessionManager = &SessionManager{
 		sessions: make(map[string]*SessionContext),
@@ -313,37 +319,37 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	var toolsList []mcp.Tool
 
 	listComponentsTool, listComponentsHandler := NewListComponentsTool(xmluiDir)
-	s.AddTool(listComponentsTool, listComponentsHandler)
+	s.AddTool(listComponentsTool, withAnalytics("xmlui_list_components", listComponentsHandler))
 	toolsList = append(toolsList, listComponentsTool)
 	printToolRegistration(listComponentsTool)
 
 	componentDocsTool, componentDocsHandler := NewComponentDocsTool(xmluiDir)
-	s.AddTool(componentDocsTool, componentDocsHandler)
+	s.AddTool(componentDocsTool, withAnalytics("xmlui_component_docs", componentDocsHandler))
 	toolsList = append(toolsList, componentDocsTool)
 	printToolRegistration(componentDocsTool)
 
 	searchDocsTool, searchDocsHandler := NewSearchTool(xmluiDir)
-	s.AddTool(searchDocsTool, searchDocsHandler)
+	s.AddTool(searchDocsTool, withSearchAnalytics("xmlui_search", searchDocsHandler))
 	toolsList = append(toolsList, searchDocsTool)
 	printToolRegistration(searchDocsTool)
 
 	readFileTool, readFileHandler := NewReadFileTool(xmluiDir)
-	s.AddTool(readFileTool, readFileHandler)
+	s.AddTool(readFileTool, withAnalytics("xmlui_read_file", readFileHandler))
 	toolsList = append(toolsList, readFileTool)
 	printToolRegistration(readFileTool)
 
 	examplesTool, examplesHandler := NewExamplesTool(exampleRoots)
-	s.AddTool(examplesTool, examplesHandler)
+	s.AddTool(examplesTool, withSearchAnalytics("xmlui_examples", examplesHandler))
 	toolsList = append(toolsList, examplesTool)
 	printToolRegistration(examplesTool)
 
 	listHowtoTool, listHowtoHandler := NewListHowtoTool(xmluiDir)
-	s.AddTool(listHowtoTool, listHowtoHandler)
+	s.AddTool(listHowtoTool, withAnalytics("xmlui_list_howto", listHowtoHandler))
 	toolsList = append(toolsList, listHowtoTool)
 	printToolRegistration(listHowtoTool)
 
 	searchHowtoTool, searchHowtoHandler := NewSearchHowtoTool(xmluiDir)
-	s.AddTool(searchHowtoTool, searchHowtoHandler)
+	s.AddTool(searchHowtoTool, withSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	toolsList = append(toolsList, searchHowtoTool)
 	printToolRegistration(searchHowtoTool)
 
@@ -396,7 +402,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		}
 	}
 
-	s.AddTool(injectPromptTool, injectPromptHandler)
+	s.AddTool(injectPromptTool, withAnalytics("xmlui_inject_prompt", injectPromptHandler))
 	toolsList = append(toolsList, injectPromptTool)
 	printToolRegistration(injectPromptTool)
 
@@ -408,16 +414,16 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	listPromptsHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var out strings.Builder
 		out.WriteString("Available prompts:\n\n")
-		
+
 		for _, prompt := range promptsList {
 			out.WriteString(fmt.Sprintf("- **%s**: %s\n", prompt.Name, prompt.Description))
 		}
-		
+
 		out.WriteString("\nUse xmlui_get_prompt to view content or xmlui_inject_prompt to inject into context.")
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.AddTool(listPromptsTool, listPromptsHandler)
+	s.AddTool(listPromptsTool, withAnalytics("xmlui_list_prompts", listPromptsHandler))
 	toolsList = append(toolsList, listPromptsTool)
 	printToolRegistration(listPromptsTool)
 
@@ -480,7 +486,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		out.WriteString(fmt.Sprintf("# %s\n\n", foundPrompt.Name))
 		out.WriteString(fmt.Sprintf("**Description:** %s\n\n", foundPrompt.Description))
 		out.WriteString("**Content:**\n\n")
-		
+
 		for _, message := range result.Messages {
 			// Extract text content
 			switch content := message.Content.(type) {
@@ -496,9 +502,29 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.AddTool(getPromptTool, getPromptHandler)
+	s.AddTool(getPromptTool, withAnalytics("xmlui_get_prompt", getPromptHandler))
 	toolsList = append(toolsList, getPromptTool)
 	printToolRegistration(getPromptTool)
+
+	// Add analytics dashboard tool
+	analyticsDashboardTool, analyticsDashboardHandler := NewAnalyticsDashboardTool()
+	s.AddTool(analyticsDashboardTool, withAnalytics("xmlui_analytics_dashboard", analyticsDashboardHandler))
+	toolsList = append(toolsList, analyticsDashboardTool)
+	printToolRegistration(analyticsDashboardTool)
+
+	// Add analytics save tool for debugging
+	saveAnalyticsTool := mcp.NewTool("xmlui_save_analytics",
+		mcp.WithDescription("Manually save analytics data to disk (useful for debugging)"),
+	)
+
+	saveAnalyticsHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		ForceSaveAnalytics()
+		return mcp.NewToolResultText("✅ Analytics data saved to disk"), nil
+	}
+
+	s.AddTool(saveAnalyticsTool, saveAnalyticsHandler)
+	toolsList = append(toolsList, saveAnalyticsTool)
+	printToolRegistration(saveAnalyticsTool)
 
 	// Launch based on mode
 	if *httpMode {
@@ -684,6 +710,37 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			json.NewEncoder(w).Encode(response)
 		})
 
+		// Add analytics endpoints
+		mux.HandleFunc("/analytics/summary", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			summary := GetAnalyticsSummary()
+			json.NewEncoder(w).Encode(summary)
+		})
+
+		mux.HandleFunc("/analytics/export", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			data := ExportAnalyticsData()
+			w.Write([]byte(data))
+		})
+
 		addr := ":" + *port
 		fmt.Fprintf(os.Stderr, "Starting HTTP server on port %s\n", *port)
 		fmt.Fprintf(os.Stderr, "SSE endpoint: http://localhost%s/sse\n", addr)
@@ -693,15 +750,40 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		fmt.Fprintf(os.Stderr, "Specific prompt endpoint: http://localhost%s/prompts/{name}\n", addr)
 		fmt.Fprintf(os.Stderr, "Session context endpoint: http://localhost%s/session/{id}\n", addr)
 		fmt.Fprintf(os.Stderr, "Inject prompt endpoint: http://localhost%s/session/context\n", addr)
+		fmt.Fprintf(os.Stderr, "Analytics summary endpoint: http://localhost%s/analytics/summary\n", addr)
+		fmt.Fprintf(os.Stderr, "Analytics export endpoint: http://localhost%s/analytics/export\n", addr)
 
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		// Stdio mode (existing behavior)
-		if err := server.ServeStdio(s); err != nil {
-			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		// Stdio mode with graceful shutdown
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Set up signal handling for graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		// Start server in a goroutine
+		var serverErr error
+		go func() {
+			serverErr = server.ServeStdio(s)
+		}()
+
+		// Wait for either server error or signal
+		select {
+		case <-sigChan:
+			fmt.Fprintf(os.Stderr, "Received shutdown signal, saving analytics...\n")
+			SaveAnalytics()
+			cancel()
+		case <-ctx.Done():
+			// Context was cancelled
+		}
+
+		if serverErr != nil {
+			fmt.Fprintf(os.Stderr, "Server error: %v\n", serverErr)
 			os.Exit(1)
 		}
 	}

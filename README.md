@@ -138,6 +138,8 @@ Prompts list endpoint: http://localhost:8080/prompts
 Specific prompt endpoint: http://localhost:8080/prompts/{name}
 Session context endpoint: http://localhost:8080/session/{id}
 Inject prompt endpoint: http://localhost:8080/session/context
+Analytics summary endpoint: http://localhost:8080/analytics/summary
+Analytics export endpoint: http://localhost:8080/analytics/export
 
 # Test available tools
 curl http://localhost:8080/tools
@@ -152,7 +154,29 @@ curl http://localhost:8080/prompts/xmlui_rules
 curl -X POST http://localhost:8080/session/context \
   -H "Content-Type: application/json" \
   -d '{"prompt_name": "xmlui_rules"}'
+
+# View analytics summary
+curl http://localhost:8080/analytics/summary
+
+# Export all analytics data
+curl http://localhost:8080/analytics/export > analytics-backup.json
 ```
+
+## Analytics
+
+The server now includes comprehensive analytics to track agent usage patterns and optimize the tools. See [ANALYTICS.md](ANALYTICS.md) for full documentation.
+
+**Quick Start:**
+- Analytics are automatically collected when agents use the server
+- Data is saved to `xmlui-mcp-analytics.json`
+- View analytics with: `./analytics-helper.sh summary`
+- Access via HTTP endpoints when running with `--http`
+
+**Key Features:**
+- Tool usage frequency and success rates
+- Search query patterns and effectiveness
+- Session activity tracking
+- Performance metrics and optimization insights
 
 # Rules
 
