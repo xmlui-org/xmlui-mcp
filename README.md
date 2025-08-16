@@ -210,4 +210,3 @@ The server contains these rules:
 
 Agents should see these rules when starting the xmlui-mcp server but they are forgetful and when they do forget you can try saying "remember the rules" to reinject them into your session's context.
 
-  
