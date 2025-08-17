@@ -38,8 +38,6 @@ func writeDebugLog(format string, args ...interface{}) {
 	debugLogFile.Sync()
 }
 
-
-
 // Wrapper function to add analytics to any tool handler
 func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -122,7 +120,7 @@ func withSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		result, err := handler(ctx, req)
 
 		// Calculate metrics
-		success := err == nil && result != nil
+		toolSuccess := err == nil && result != nil
 		resultSize := 0
 		errorMsg := ""
 		resultCount := 0
@@ -152,12 +150,15 @@ func withSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 			errorMsg = err.Error()
 		}
 
-		// Log both general tool usage and specific search metrics
-		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
+		// For search tools, success should reflect whether results were found
+		searchSuccess := toolSuccess && resultCount > 0
 
-		// Log search-specific data
+		// Log both general tool usage and specific search metrics
+		LogTool(toolName, req.Params.Arguments, toolSuccess, resultSize, errorMsg)
+
+		// Log search-specific data with search-specific success metric
 		searchPaths := getSearchPaths(toolName)
-		LogSearch(toolName, query, resultCount, success, searchPaths)
+		LogSearch(toolName, query, resultCount, searchSuccess, searchPaths)
 
 		return result, err
 	}
