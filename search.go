@@ -16,12 +16,12 @@ func fuzzyMatchSearch(text, query string) bool {
 	textLower := strings.ToLower(text)
 	queryLower := strings.ToLower(query)
 	queryWords := strings.Fields(queryLower)
-	
+
 	// If single word query, use simple contains check
 	if len(queryWords) == 1 {
 		return strings.Contains(textLower, queryLower)
 	}
-	
+
 	// For multiple words, require ALL words to be present (AND logic)
 	for _, word := range queryWords {
 		if !strings.Contains(textLower, word) {
@@ -46,12 +46,6 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		log := func(msg string, args ...any) {
-			f, _ := os.OpenFile("xmlui-mcp.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			defer f.Close()
-			fmt.Fprintf(f, msg+"\n", args...)
-		}
-
 		query, ok := req.Params.Arguments["query"].(string)
 		if !ok || strings.TrimSpace(query) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
@@ -66,8 +60,6 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 			filepath.Join(homeDir, "docs", "src", "components"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 		}
-
-		log("🔍 Search paths: %v", searchRoots)
 
 		for _, root := range searchRoots {
 			filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
