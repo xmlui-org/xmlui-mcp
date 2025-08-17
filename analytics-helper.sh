@@ -25,7 +25,7 @@ Commands:
     summary     Show a summary of agent usage patterns
     tools       Show tool usage statistics
     searches    Show search query analysis
-    sessions    Show session activity data
+
     export      Export all raw analytics data
     server      Show server analytics endpoints (when running in HTTP mode)
     help        Show this help message
@@ -114,10 +114,7 @@ show_tools() {
                             (map(select(.success == true)) | length) * 100 / length
                         else 0 end
                     ),
-                    avg_duration: (
-                        map(select(.duration_ms != null) | .duration_ms) as $durs |
-                        if $durs | length > 0 then ($durs | add) / ($durs | length) else 0 end
-                    ),
+
                     avg_result_size: (
                         map(select(.result_size_chars != null) | .result_size_chars) as $sizes |
                         if $sizes | length > 0 then ($sizes | add) / ($sizes | length) else 0 end
@@ -129,7 +126,7 @@ show_tools() {
             "• \(.tool):",
             "  - Uses: \(.count)",
             "  - Success Rate: \(.success_rate | floor)%",
-            "  - Avg Duration: \(.avg_duration | floor)ms",
+
             "  - Avg Result Size: \(.avg_result_size | floor) chars",
             ""
         '
@@ -178,32 +175,7 @@ show_searches() {
     fi
 }
 
-# Function to show session data
-show_sessions() {
-    echo "=== Session Activity Analysis ==="
-    echo
 
-    if check_jq; then
-        jq -c 'select(.type == "session_activity")' "$ANALYTICS_FILE" | jq -s '
-            "Total sessions: \(length)",
-            "",
-            "Session details:"
-        '
-
-        jq -c 'select(.type == "session_activity")' "$ANALYTICS_FILE" | jq -s '
-            sort_by(.tool_count) | reverse |
-            .[] |
-            "• Session \(.session_id):",
-            "  - Total tools: \(.tool_count)",
-            "  - Unique tools: \(.unique_tools | length)",
-            "  - Duration: \(.total_duration_ms / 60000 | floor) minutes",
-            ""
-        '
-    else
-        echo "Raw session data:"
-        cat "$ANALYTICS_FILE"
-    fi
-}
 
 # Function to show server endpoints
 show_server() {
@@ -245,9 +217,7 @@ case "${1:-help}" in
     searches)
         show_searches
         ;;
-    sessions)
-        show_sessions
-        ;;
+
     export)
         cat "$ANALYTICS_FILE"
         ;;

@@ -16,56 +16,38 @@ type ToolInvocation struct {
 	ToolName   string                 `json:"tool_name"`
 	Arguments  map[string]interface{} `json:"arguments"`
 	Success    bool                   `json:"success"`
-	Duration   time.Duration          `json:"duration_ms"`
 	ResultSize int                    `json:"result_size_chars"`
 	ErrorMsg   string                 `json:"error_msg,omitempty"`
-	SessionID  string                 `json:"session_id,omitempty"`
 }
 
 type SearchQuery struct {
-	Type        string        `json:"type"`
-	Timestamp   time.Time     `json:"timestamp"`
-	ToolName    string        `json:"tool_name"`
-	Query       string        `json:"query"`
-	ResultCount int           `json:"result_count"`
-	Success     bool          `json:"success"`
-	Duration    time.Duration `json:"duration_ms"`
-	SessionID   string        `json:"session_id,omitempty"`
-	SearchPaths []string      `json:"search_paths,omitempty"`
-}
-
-type SessionActivity struct {
-	Type          string        `json:"type"`
-	SessionID     string        `json:"session_id"`
-	StartTime     time.Time     `json:"start_time"`
-	LastActivity  time.Time     `json:"last_activity"`
-	ToolCount     int           `json:"tool_count"`
-	UniqueTools   []string      `json:"unique_tools"`
-	TotalDuration time.Duration `json:"total_duration_ms"`
+	Type        string   `json:"type"`
+	Timestamp   time.Time `json:"timestamp"`
+	ToolName    string   `json:"tool_name"`
+	Query       string   `json:"query"`
+	ResultCount int      `json:"result_count"`
+	Success     bool     `json:"success"`
+	SearchPaths []string `json:"search_paths,omitempty"`
 }
 
 type AnalyticsData struct {
-	ToolInvocations   []ToolInvocation  `json:"tool_invocations"`
-	SearchQueries     []SearchQuery     `json:"search_queries"`
-	SessionActivities []SessionActivity `json:"session_activities"`
+	ToolInvocations []ToolInvocation `json:"tool_invocations"`
+	SearchQueries   []SearchQuery    `json:"search_queries"`
 }
 
 type Analytics struct {
-	mu       sync.RWMutex
-	data     AnalyticsData
-	logFile  string
-	sessions map[string]*SessionActivity
+	mu      sync.RWMutex
+	data    AnalyticsData
+	logFile string
 }
 
 func NewAnalytics(logFile string) *Analytics {
 	a := &Analytics{
 		data: AnalyticsData{
-			ToolInvocations:   make([]ToolInvocation, 0),
-			SearchQueries:     make([]SearchQuery, 0),
-			SessionActivities: make([]SessionActivity, 0),
+			ToolInvocations: make([]ToolInvocation, 0),
+			SearchQueries:   make([]SearchQuery, 0),
 		},
-		logFile:  logFile,
-		sessions: make(map[string]*SessionActivity),
+		logFile: logFile,
 	}
 
 	// Load existing data if available
@@ -118,22 +100,10 @@ func (a *Analytics) loadData() {
 			} else {
 				fmt.Fprintf(os.Stderr, "Failed to parse search_query: %s\n", line)
 			}
-		case "session_activity":
-			var sessionActivity SessionActivity
-			if err := json.Unmarshal([]byte(line), &sessionActivity); err == nil {
-				a.data.SessionActivities = append(a.data.SessionActivities, sessionActivity)
-			} else {
-				fmt.Fprintf(os.Stderr, "Failed to parse session_activity: %s\n", line)
-			}
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown analytics type: %s\n", typeCheck.Type)
+			// Skip session_activity records
+			continue
 		}
-	}
-
-	// Rebuild sessions map from loaded data
-	for _, session := range a.data.SessionActivities {
-		sessionCopy := session
-		a.sessions[session.SessionID] = &sessionCopy
 	}
 }
 
@@ -186,8 +156,8 @@ func (a *Analytics) writeLine(data interface{}) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
 }
 
-func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface{}, success bool, duration time.Duration, resultSize int, errorMsg string, sessionID string) {
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation ENTRY: tool=%s, session=%s\n", toolName, sessionID)
+func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation ENTRY: tool=%s\n", toolName)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -198,24 +168,19 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 		ToolName:   toolName,
 		Arguments:  args,
 		Success:    success,
-		Duration:   duration,
 		ResultSize: resultSize,
 		ErrorMsg:   errorMsg,
-		SessionID:  sessionID,
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, session=%s, current_count=%d\n", toolName, sessionID, len(a.data.ToolInvocations))
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
 
 	a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_APPEND: tool=%s, session=%s, new_count=%d\n", toolName, sessionID, len(a.data.ToolInvocations))
-
-	// Update session activity
-	a.updateSessionActivity(sessionID, toolName)
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_APPEND: tool=%s, new_count=%d\n", toolName, len(a.data.ToolInvocations))
 
 	// Write debug info to server.log file
-	writeDebugLog("[DEBUG] LogToolInvocation: tool=%s, session=%s, success=%v, duration=%v, resultSize=%d\n",
-		toolName, sessionID, success, duration, resultSize)
+	writeDebugLog("[DEBUG] LogToolInvocation: tool=%s, success=%v, resultSize=%d\n",
+		toolName, success, resultSize)
 
 	// Save immediately for stdio mode (each call is a separate process)
 	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_WRITELINE: calling writeLine\n")
@@ -223,7 +188,7 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
 }
 
-func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, duration time.Duration, sessionID string, searchPaths []string) {
+func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -234,8 +199,6 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 		Query:       query,
 		ResultCount: resultCount,
 		Success:     success,
-		Duration:    duration,
-		SessionID:   sessionID,
 		SearchPaths: searchPaths,
 	}
 
@@ -247,45 +210,6 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 	fmt.Fprintf(os.Stderr, "[DEBUG] LogSearchQuery AFTER_WRITELINE: writeLine completed\n")
 }
 
-func (a *Analytics) updateSessionActivity(sessionID string, toolName string) {
-	if sessionID == "" {
-		sessionID = "anonymous"
-	}
-
-	session, exists := a.sessions[sessionID]
-	if !exists {
-		session = &SessionActivity{
-			Type:         "session_activity",
-			SessionID:    sessionID,
-			StartTime:    time.Now(),
-			LastActivity: time.Now(),
-			ToolCount:    0,
-			UniqueTools:  make([]string, 0),
-		}
-		a.sessions[sessionID] = session
-		// Write new session to JSONL file
-		a.writeLine(*session)
-	}
-
-	session.LastActivity = time.Now()
-	session.ToolCount++
-	session.TotalDuration = session.LastActivity.Sub(session.StartTime)
-
-	// Add to unique tools if not already present
-	found := false
-	for _, tool := range session.UniqueTools {
-		if tool == toolName {
-			found = true
-			break
-		}
-	}
-	if !found {
-		session.UniqueTools = append(session.UniqueTools, toolName)
-		// Write updated session to JSONL file
-		a.writeLine(*session)
-	}
-}
-
 func (a *Analytics) GetSummary() map[string]interface{} {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -294,28 +218,28 @@ func (a *Analytics) GetSummary() map[string]interface{} {
 	toolCounts := make(map[string]int)
 	successRates := make(map[string]float64)
 	toolSuccesses := make(map[string]int)
-	avgDurations := make(map[string]time.Duration)
-	toolDurations := make(map[string][]time.Duration)
+	avgResultSizes := make(map[string]int)
+	toolResultSizes := make(map[string][]int)
 
 	for _, inv := range a.data.ToolInvocations {
 		toolCounts[inv.ToolName]++
 		if inv.Success {
 			toolSuccesses[inv.ToolName]++
 		}
-		toolDurations[inv.ToolName] = append(toolDurations[inv.ToolName], inv.Duration)
+		toolResultSizes[inv.ToolName] = append(toolResultSizes[inv.ToolName], inv.ResultSize)
 	}
 
 	for tool, count := range toolCounts {
 		successRates[tool] = float64(toolSuccesses[tool]) / float64(count) * 100
 
-		// Calculate average duration
-		durations := toolDurations[tool]
-		if len(durations) > 0 {
-			var total time.Duration
-			for _, d := range durations {
-				total += d
+		// Calculate average result size
+		sizes := toolResultSizes[tool]
+		if len(sizes) > 0 {
+			var total int
+			for _, s := range sizes {
+				total += s
 			}
-			avgDurations[tool] = total / time.Duration(len(durations))
+			avgResultSizes[tool] = total / len(sizes)
 		}
 	}
 
@@ -336,44 +260,11 @@ func (a *Analytics) GetSummary() map[string]interface{} {
 	return map[string]interface{}{
 		"total_tool_invocations": len(a.data.ToolInvocations),
 		"total_search_queries":   len(a.data.SearchQueries),
-		"active_sessions":        len(a.sessions),
 		"tool_usage_counts":      toolCounts,
 		"tool_success_rates":     successRates,
-		"tool_avg_durations_ms":  avgDurations,
+		"tool_avg_result_sizes":  avgResultSizes,
 		"search_success_rate":    searchSuccessRate,
 		"popular_search_terms":   searchTerms,
-		"session_summary":        a.getSessionSummary(),
-	}
-}
-
-func (a *Analytics) getSessionSummary() map[string]interface{} {
-	if len(a.sessions) == 0 {
-		return map[string]interface{}{}
-	}
-
-	var totalDuration time.Duration
-	var totalTools int
-	longestSession := time.Duration(0)
-	mostActiveSession := 0
-
-	for _, session := range a.sessions {
-		totalDuration += session.TotalDuration
-		totalTools += session.ToolCount
-
-		if session.TotalDuration > longestSession {
-			longestSession = session.TotalDuration
-		}
-
-		if session.ToolCount > mostActiveSession {
-			mostActiveSession = session.ToolCount
-		}
-	}
-
-	return map[string]interface{}{
-		"avg_session_duration_minutes": totalDuration.Minutes() / float64(len(a.sessions)),
-		"avg_tools_per_session":        float64(totalTools) / float64(len(a.sessions)),
-		"longest_session_minutes":      longestSession.Minutes(),
-		"most_tools_in_session":        mostActiveSession,
 	}
 }
 
@@ -397,21 +288,21 @@ func InitializeAnalytics(logFile string) {
 	writeDebugLog("[DEBUG] Analytics initialized, globalAnalytics is nil: %v\n", globalAnalytics == nil)
 }
 
-func LogTool(toolName string, args map[string]interface{}, success bool, duration time.Duration, resultSize int, errorMsg string, sessionID string) {
-	writeDebugLog("[DEBUG] LogTool ENTRY: tool=%s, session=%s, globalAnalytics_nil=%v\n", toolName, sessionID, globalAnalytics == nil)
+func LogTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
+	writeDebugLog("[DEBUG] LogTool ENTRY: tool=%s, globalAnalytics_nil=%v\n", toolName, globalAnalytics == nil)
 
 	if globalAnalytics != nil {
-		writeDebugLog("[DEBUG] LogTool CALLING_LogToolInvocation: tool=%s, session=%s\n", toolName, sessionID)
-		globalAnalytics.LogToolInvocation(toolName, args, success, duration, resultSize, errorMsg, sessionID)
-		writeDebugLog("[DEBUG] LogTool AFTER_LogToolInvocation: tool=%s, session=%s\n", toolName, sessionID)
+		writeDebugLog("[DEBUG] LogTool CALLING_LogToolInvocation: tool=%s\n", toolName)
+		globalAnalytics.LogToolInvocation(toolName, args, success, resultSize, errorMsg)
+		writeDebugLog("[DEBUG] LogTool AFTER_LogToolInvocation: tool=%s\n", toolName)
 	} else {
-		writeDebugLog("[DEBUG] LogTool SKIPPED: globalAnalytics is nil for tool=%s, session=%s\n", toolName, sessionID)
+		writeDebugLog("[DEBUG] LogTool SKIPPED: globalAnalytics is nil for tool=%s\n", toolName)
 	}
 }
 
-func LogSearch(toolName string, query string, resultCount int, success bool, duration time.Duration, sessionID string, searchPaths []string) {
+func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string) {
 	if globalAnalytics != nil {
-		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, duration, sessionID, searchPaths)
+		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths)
 	}
 }
 

@@ -38,49 +38,29 @@ func writeDebugLog(format string, args ...interface{}) {
 	debugLogFile.Sync()
 }
 
-// Helper function to extract session ID from context or request
-func extractSessionID(ctx context.Context, req mcp.CallToolRequest) string {
-	// Try to get session ID from context first
-	if sessionID, ok := ctx.Value("session_id").(string); ok && sessionID != "" {
-		return sessionID
-	}
 
-	// Try to get session ID from arguments
-	if req.Params.Arguments != nil {
-		if sessionID, ok := req.Params.Arguments["session_id"].(string); ok && sessionID != "" {
-			return sessionID
-		}
-	}
-
-	// Default to anonymous
-	return "anonymous"
-}
 
 // Wrapper function to add analytics to any tool handler
 func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// DEBUG: Log entry into withAnalytics wrapper
-		sessionID := extractSessionID(ctx, req)
-		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics ENTRY: tool=%s, session=%s\n", toolName, sessionID)
+		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
 
 		// Write to server.log
-		writeDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s, session=%s\n", time.Now().Format("15:04:05.000"), toolName, sessionID)
-
-		start := time.Now()
+		writeDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s\n", time.Now().Format("15:04:05.000"), toolName)
 
 		// DEBUG: Log before calling original handler
-		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s, session=%s\n", toolName, sessionID)
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s, session=%s\n", toolName, sessionID)
+		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
+		writeDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
 
 		// Call the original handler
 		result, err := handler(ctx, req)
 
 		// DEBUG: Log after calling original handler
-		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, session=%s, err=%v, result_nil=%v\n", toolName, sessionID, err, result == nil)
-		writeDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, session=%s, err=%v, result_nil=%v\n", toolName, sessionID, err, result == nil)
+		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
+		writeDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
 
 		// Calculate metrics
-		duration := time.Since(start)
 		success := err == nil && result != nil
 		resultSize := 0
 		errorMsg := ""
@@ -113,15 +93,15 @@ func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		}
 
 		// DEBUG: Log before calling LogTool
-		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, session=%s, success=%v, duration=%v, resultSize=%d\n", toolName, sessionID, success, duration, resultSize)
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, session=%s, success=%v, duration=%v, resultSize=%d\n", toolName, sessionID, success, duration, resultSize)
+		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
+		writeDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
 
 		// Log the invocation
-		LogTool(toolName, req.Params.Arguments, success, duration, resultSize, errorMsg, sessionID)
+		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
 
 		// DEBUG: Log after calling LogTool
-		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics AFTER_LOGGING: tool=%s, session=%s\n", toolName, sessionID)
-		writeDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s, session=%s\n", toolName, sessionID)
+		fmt.Fprintf(os.Stderr, "[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
+		writeDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 
 		return result, err
 	}
@@ -130,9 +110,6 @@ func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 // Special wrapper for search tools to capture additional search-specific metrics
 func withSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		start := time.Now()
-		sessionID := extractSessionID(ctx, req)
-
 		// Extract search query
 		query := ""
 		if req.Params.Arguments != nil {
@@ -145,7 +122,6 @@ func withSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		result, err := handler(ctx, req)
 
 		// Calculate metrics
-		duration := time.Since(start)
 		success := err == nil && result != nil
 		resultSize := 0
 		errorMsg := ""
@@ -177,11 +153,11 @@ func withSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		}
 
 		// Log both general tool usage and specific search metrics
-		LogTool(toolName, req.Params.Arguments, success, duration, resultSize, errorMsg, sessionID)
+		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
 
 		// Log search-specific data
 		searchPaths := getSearchPaths(toolName)
-		LogSearch(toolName, query, resultCount, success, duration, sessionID, searchPaths)
+		LogSearch(toolName, query, resultCount, success, searchPaths)
 
 		return result, err
 	}
