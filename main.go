@@ -1,6 +1,3 @@
-//go:build server
-// +build server
-
 package main
 
 import (
@@ -168,6 +165,24 @@ func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandl
 	}, nil
 }
 
+func getCurrentDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "unknown"
+	}
+	return dir
+}
+
+func writeDebugToFile(format string, args ...interface{}) {
+	file, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	fmt.Fprintf(file, format, args...)
+	file.Sync()
+}
+
 func main() {
 	// Define command-line flags
 	var (
@@ -307,7 +322,9 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	}
 
 	// Initialize analytics
-	analyticsFile := filepath.Join(filepath.Dir(os.Args[0]), "xmlui-mcp-analytics.json")
+	analyticsFile := "xmlui-mcp-analytics.json"
+	writeDebugToFile("[DEBUG] Analytics file path: %s\n", analyticsFile)
+	writeDebugToFile("[DEBUG] Current working directory: %s\n", getCurrentDir())
 	InitializeAnalytics(analyticsFile)
 
 	// Initialize session manager
