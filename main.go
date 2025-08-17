@@ -166,6 +166,14 @@ func (sm *SessionManager) InjectPrompt(sessionID, promptName string, promptHandl
 }
 
 func getCurrentDir() string {
+	// Try to get the directory of the executable
+	if exe, err := os.Executable(); err == nil {
+		if dir := filepath.Dir(exe); dir != "" {
+			return dir
+		}
+	}
+
+	// Fallback to current working directory
 	dir, err := os.Getwd()
 	if err != nil {
 		return "unknown"
@@ -322,7 +330,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	}
 
 	// Initialize analytics
-	analyticsFile := "xmlui-mcp-analytics.json"
+	analyticsFile := filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
 	writeDebugToFile("[DEBUG] Analytics file path: %s\n", analyticsFile)
 	writeDebugToFile("[DEBUG] Current working directory: %s\n", getCurrentDir())
 	InitializeAnalytics(analyticsFile)

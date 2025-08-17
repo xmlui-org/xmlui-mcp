@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Analytics structures for tracking agent usage
 type ToolInvocation struct {
+	Type       string                 `json:"type"`
 	Timestamp  time.Time              `json:"timestamp"`
 	ToolName   string                 `json:"tool_name"`
 	Arguments  map[string]interface{} `json:"arguments"`
@@ -22,6 +23,7 @@ type ToolInvocation struct {
 }
 
 type SearchQuery struct {
+	Type        string        `json:"type"`
 	Timestamp   time.Time     `json:"timestamp"`
 	ToolName    string        `json:"tool_name"`
 	Query       string        `json:"query"`
@@ -33,6 +35,7 @@ type SearchQuery struct {
 }
 
 type SessionActivity struct {
+	Type          string        `json:"type"`
 	SessionID     string        `json:"session_id"`
 	StartTime     time.Time     `json:"start_time"`
 	LastActivity  time.Time     `json:"last_activity"`
@@ -82,9 +85,49 @@ func (a *Analytics) loadData() {
 		return
 	}
 
-	if err := json.Unmarshal(content, &a.data); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse analytics data: %v\n", err)
-		return
+	// Parse JSONL format - one JSON object per line
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// First, try to determine the type from the JSON
+		var typeCheck struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &typeCheck); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to parse type from analytics line: %s\n", line)
+			continue
+		}
+
+		// Parse based on type
+		switch typeCheck.Type {
+		case "tool_invocation":
+			var invocation ToolInvocation
+			if err := json.Unmarshal([]byte(line), &invocation); err == nil {
+				a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to parse tool_invocation: %s\n", line)
+			}
+		case "search_query":
+			var searchQuery SearchQuery
+			if err := json.Unmarshal([]byte(line), &searchQuery); err == nil {
+				a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to parse search_query: %s\n", line)
+			}
+		case "session_activity":
+			var sessionActivity SessionActivity
+			if err := json.Unmarshal([]byte(line), &sessionActivity); err == nil {
+				a.data.SessionActivities = append(a.data.SessionActivities, sessionActivity)
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to parse session_activity: %s\n", line)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown analytics type: %s\n", typeCheck.Type)
+		}
 	}
 
 	// Rebuild sessions map from loaded data
@@ -95,62 +138,52 @@ func (a *Analytics) loadData() {
 }
 
 func (a *Analytics) writeLine(data interface{}) {
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine ENTRY: file=%s\n", a.logFile)
+
 	// Marshal the data to JSON
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal analytics data: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_MARSHAL: %v\n", err)
 		return
 	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine MARSHALED: %s\n", string(jsonData))
 
 	// Open file for appending
 	file, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to open analytics file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_OPEN: %v\n", err)
 		return
 	}
 	defer file.Close()
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FILE_OPENED: %s\n", a.logFile)
+
 	// Write the JSON line
-	if _, err := file.Write(jsonData); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write analytics data: %v\n", err)
+	bytesWritten, err := file.Write(jsonData)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_WRITE: %v\n", err)
 		return
 	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine WROTE_JSON: %d bytes\n", bytesWritten)
 
 	// Write newline
-	if _, err := file.Write([]byte("\n")); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write newline: %v\n", err)
+	newlineBytes, err := file.Write([]byte("\n"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_NEWLINE: %v\n", err)
 		return
 	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine WROTE_NEWLINE: %d bytes\n", newlineBytes)
 
 	// Sync to ensure it's written immediately
-	file.Sync()
-}
-
-func (a *Analytics) saveData() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// Update session activities from sessions map
-	a.data.SessionActivities = make([]SessionActivity, 0, len(a.sessions))
-	for _, session := range a.sessions {
-		a.data.SessionActivities = append(a.data.SessionActivities, *session)
-	}
-
-	data, err := json.MarshalIndent(a.data, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal analytics data: %v\n", err)
+	if err := file.Sync(); err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_SYNC: %v\n", err)
 		return
 	}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(a.logFile), 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create analytics directory: %v\n", err)
-		return
-	}
-
-	if err := os.WriteFile(a.logFile, data, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to save analytics data: %v\n", err)
-	}
+	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
 }
 
 func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface{}, success bool, duration time.Duration, resultSize int, errorMsg string, sessionID string) {
@@ -160,6 +193,7 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 	defer a.mu.Unlock()
 
 	invocation := ToolInvocation{
+		Type:       "tool_invocation",
 		Timestamp:  time.Now(),
 		ToolName:   toolName,
 		Arguments:  args,
@@ -184,7 +218,9 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 		toolName, sessionID, success, duration, resultSize)
 
 	// Save immediately for stdio mode (each call is a separate process)
-	a.saveData()
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_WRITELINE: calling writeLine\n")
+	a.writeLine(invocation)
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
 }
 
 func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, duration time.Duration, sessionID string, searchPaths []string) {
@@ -192,6 +228,7 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 	defer a.mu.Unlock()
 
 	searchQuery := SearchQuery{
+		Type:        "search_query",
 		Timestamp:   time.Now(),
 		ToolName:    toolName,
 		Query:       query,
@@ -205,7 +242,9 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
 
 	// Save immediately for stdio mode
-	a.saveData()
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogSearchQuery BEFORE_WRITELINE: calling writeLine\n")
+	a.writeLine(searchQuery)
+	fmt.Fprintf(os.Stderr, "[DEBUG] LogSearchQuery AFTER_WRITELINE: writeLine completed\n")
 }
 
 func (a *Analytics) updateSessionActivity(sessionID string, toolName string) {
@@ -216,6 +255,7 @@ func (a *Analytics) updateSessionActivity(sessionID string, toolName string) {
 	session, exists := a.sessions[sessionID]
 	if !exists {
 		session = &SessionActivity{
+			Type:         "session_activity",
 			SessionID:    sessionID,
 			StartTime:    time.Now(),
 			LastActivity: time.Now(),
@@ -223,6 +263,8 @@ func (a *Analytics) updateSessionActivity(sessionID string, toolName string) {
 			UniqueTools:  make([]string, 0),
 		}
 		a.sessions[sessionID] = session
+		// Write new session to JSONL file
+		a.writeLine(*session)
 	}
 
 	session.LastActivity = time.Now()
@@ -239,6 +281,8 @@ func (a *Analytics) updateSessionActivity(sessionID string, toolName string) {
 	}
 	if !found {
 		session.UniqueTools = append(session.UniqueTools, toolName)
+		// Write updated session to JSONL file
+		a.writeLine(*session)
 	}
 }
 
@@ -385,15 +429,12 @@ func ExportAnalyticsData() string {
 	return "{}"
 }
 
+// SaveAnalytics is no longer needed with JSONL format - each entry is written immediately
 func SaveAnalytics() {
-	if globalAnalytics != nil {
-		globalAnalytics.saveData()
-	}
+	// No-op: JSONL format writes each entry immediately
 }
 
-// ForceSaveAnalytics forces an immediate save of analytics data
+// ForceSaveAnalytics is no longer needed with JSONL format - each entry is written immediately
 func ForceSaveAnalytics() {
-	if globalAnalytics != nil {
-		globalAnalytics.saveData()
-	}
+	// No-op: JSONL format writes each entry immediately
 }
