@@ -29,6 +29,7 @@ type SearchQuery struct {
 	ResultCount int       `json:"result_count"`
 	Success     bool      `json:"success"`
 	SearchPaths []string  `json:"search_paths,omitempty"`
+	FoundURLs   []string  `json:"found_urls,omitempty"`
 }
 
 type AnalyticsData struct {
@@ -189,7 +190,7 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 	writeDebugLog("[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
 }
 
-func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string) {
+func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -204,6 +205,7 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 		ResultCount: resultCount,
 		Success:     success,
 		SearchPaths: searchPaths,
+		FoundURLs:   foundURLs,
 	}
 
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
@@ -303,10 +305,10 @@ func LogTool(toolName string, args map[string]interface{}, success bool, resultS
 	}
 }
 
-func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string) {
+func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
 	if globalAnalytics != nil {
 		writeDebugLog("[DEBUG] LogSearch ENTRY: tool=%s, query=%s\n", toolName, query)
-		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths)
+		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths, foundURLs)
 		writeDebugLog("[DEBUG] LogSearch AFTER_LogSearchQuery: tool=%s\n", toolName)
 	}
 }

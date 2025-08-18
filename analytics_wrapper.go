@@ -165,7 +165,8 @@ func withSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 
 		// Log search-specific data with search-specific success metric
 		searchPaths := getSearchPaths(toolName)
-		LogSearch(toolName, query, resultCount, searchSuccess, searchPaths)
+		foundURLs := extractFoundURLs(result)
+		LogSearch(toolName, query, resultCount, searchSuccess, searchPaths, foundURLs)
 
 		return result, err
 	}
@@ -215,4 +216,61 @@ func getSearchPaths(toolName string) []string {
 	default:
 		return []string{}
 	}
+}
+
+// extractFoundURLs parses the text result and returns a unique list of file-like URLs/paths
+func extractFoundURLs(result *mcp.CallToolResult) []string {
+	if result == nil {
+		return []string{}
+	}
+
+	// Collect lines from text content
+	lines := []string{}
+	for _, content := range result.Content {
+		switch c := content.(type) {
+		case *mcp.TextContent:
+			lines = append(lines, splitLines(c.Text)...)
+		case mcp.TextContent:
+			lines = append(lines, splitLines(c.Text)...)
+		}
+	}
+
+	// Extract before ':' as path for lines like "path:line: text" or "path: [filename match]"
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, line := range lines {
+		// Skip obvious non-matches
+		if line == "" || line == "No matches found." || line == "No examples found." {
+			continue
+		}
+		// Find first ':'
+		idx := -1
+		for i, ch := range line {
+			if ch == ':' {
+				idx = i
+				break
+			}
+		}
+		if idx <= 0 {
+			continue
+		}
+		path := line[:idx]
+		// Basic sanity: must contain a path separator and a file extension-ish dot
+		if (containsRune(path, '/') || containsRune(path, '\\')) && containsRune(path, '.') {
+			if _, ok := seen[path]; !ok {
+				seen[path] = struct{}{}
+				out = append(out, path)
+			}
+		}
+	}
+	return out
+}
+
+func containsRune(s string, r rune) bool {
+	for _, c := range s {
+		if c == r {
+			return true
+		}
+	}
+	return false
 }
