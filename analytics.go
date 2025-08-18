@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +22,13 @@ type ToolInvocation struct {
 }
 
 type SearchQuery struct {
-	Type        string   `json:"type"`
+	Type        string    `json:"type"`
 	Timestamp   time.Time `json:"timestamp"`
-	ToolName    string   `json:"tool_name"`
-	Query       string   `json:"query"`
-	ResultCount int      `json:"result_count"`
-	Success     bool     `json:"success"`
-	SearchPaths []string `json:"search_paths,omitempty"`
+	ToolName    string    `json:"tool_name"`
+	Query       string    `json:"query"`
+	ResultCount int       `json:"result_count"`
+	Success     bool      `json:"success"`
+	SearchPaths []string  `json:"search_paths,omitempty"`
 }
 
 type AnalyticsData struct {
@@ -108,56 +109,56 @@ func (a *Analytics) loadData() {
 }
 
 func (a *Analytics) writeLine(data interface{}) {
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine ENTRY: file=%s\n", a.logFile)
+	writeDebugLog("[DEBUG] writeLine ENTRY: file=%s\n", a.logFile)
 
 	// Marshal the data to JSON
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_MARSHAL: %v\n", err)
+		writeDebugLog("[DEBUG] writeLine FAILED_MARSHAL: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine MARSHALED: %s\n", string(jsonData))
+	writeDebugLog("[DEBUG] writeLine MARSHALED: %s\n", string(jsonData))
 
 	// Open file for appending
 	file, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_OPEN: %v\n", err)
+		writeDebugLog("[DEBUG] writeLine FAILED_OPEN: %v\n", err)
 		return
 	}
 	defer file.Close()
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FILE_OPENED: %s\n", a.logFile)
+	writeDebugLog("[DEBUG] writeLine FILE_OPENED: %s\n", a.logFile)
 
 	// Write the JSON line
 	bytesWritten, err := file.Write(jsonData)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_WRITE: %v\n", err)
+		writeDebugLog("[DEBUG] writeLine FAILED_WRITE: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine WROTE_JSON: %d bytes\n", bytesWritten)
+	writeDebugLog("[DEBUG] writeLine WROTE_JSON: %d bytes\n", bytesWritten)
 
 	// Write newline
 	newlineBytes, err := file.Write([]byte("\n"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_NEWLINE: %v\n", err)
+		writeDebugLog("[DEBUG] writeLine FAILED_NEWLINE: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine WROTE_NEWLINE: %d bytes\n", newlineBytes)
+	writeDebugLog("[DEBUG] writeLine WROTE_NEWLINE: %d bytes\n", newlineBytes)
 
 	// Sync to ensure it's written immediately
 	if err := file.Sync(); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] writeLine FAILED_SYNC: %v\n", err)
+		writeDebugLog("[DEBUG] writeLine FAILED_SYNC: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
+	writeDebugLog("[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
 }
 
 func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation ENTRY: tool=%s\n", toolName)
+	writeDebugLog("[DEBUG] LogToolInvocation ENTRY: tool=%s\n", toolName)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -172,25 +173,28 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 		ErrorMsg:   errorMsg,
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
+	writeDebugLog("[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
 
 	a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_APPEND: tool=%s, new_count=%d\n", toolName, len(a.data.ToolInvocations))
+	writeDebugLog("[DEBUG] LogToolInvocation AFTER_APPEND: tool=%s, new_count=%d\n", toolName, len(a.data.ToolInvocations))
 
 	// Write debug info to server.log file
 	writeDebugLog("[DEBUG] LogToolInvocation: tool=%s, success=%v, resultSize=%d\n",
 		toolName, success, resultSize)
 
 	// Save immediately for stdio mode (each call is a separate process)
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation BEFORE_WRITELINE: calling writeLine\n")
+	writeDebugLog("[DEBUG] LogToolInvocation BEFORE_WRITELINE: calling writeLine\n")
 	a.writeLine(invocation)
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
+	writeDebugLog("[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
 }
 
 func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// Debug to server.log instead of analytics file
+	writeDebugLog("[DEBUG] LogSearchQuery ENTRY: tool=%s, query=%s\n", toolName, query)
 
 	searchQuery := SearchQuery{
 		Type:        "search_query",
@@ -204,10 +208,14 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
 
+	// Debug before writeLine
+	writeDebugLog("[DEBUG] LogSearchQuery BEFORE_WRITELINE: calling writeLine\n")
+
 	// Save immediately for stdio mode
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogSearchQuery BEFORE_WRITELINE: calling writeLine\n")
 	a.writeLine(searchQuery)
-	fmt.Fprintf(os.Stderr, "[DEBUG] LogSearchQuery AFTER_WRITELINE: writeLine completed\n")
+
+	// Debug after writeLine
+	writeDebugLog("[DEBUG] LogSearchQuery AFTER_WRITELINE: writeLine completed\n")
 }
 
 func (a *Analytics) GetSummary() map[string]interface{} {
@@ -282,9 +290,15 @@ func (a *Analytics) ExportData() string {
 // Global analytics instance
 var globalAnalytics *Analytics
 
+// Global debug log path for server.log; set alongside analytics file
+var debugLogPath string
+
 func InitializeAnalytics(logFile string) {
-	writeDebugLog("[DEBUG] Initializing analytics with log file: %s\n", logFile)
+	// Initialize analytics storage
 	globalAnalytics = NewAnalytics(logFile)
+	// Ensure server.log is written next to analytics file
+	debugLogPath = filepath.Join(filepath.Dir(logFile), "server.log")
+	writeDebugLog("[DEBUG] Initializing analytics with log file: %s\n", logFile)
 	writeDebugLog("[DEBUG] Analytics initialized, globalAnalytics is nil: %v\n", globalAnalytics == nil)
 }
 
@@ -302,7 +316,9 @@ func LogTool(toolName string, args map[string]interface{}, success bool, resultS
 
 func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string) {
 	if globalAnalytics != nil {
+		writeDebugLog("[DEBUG] LogSearch ENTRY: tool=%s, query=%s\n", toolName, query)
 		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths)
+		writeDebugLog("[DEBUG] LogSearch AFTER_LogSearchQuery: tool=%s\n", toolName)
 	}
 }
 
