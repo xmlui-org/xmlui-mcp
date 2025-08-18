@@ -77,7 +77,7 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 
 Agents like Claude, Cursor, and Copilot typically use the server in stdio mode.
 
-You run the server in HTTP mode to see what tools and prompts are available.
+You can run the server in HTTP mode to see what tools and prompts are available.
 
 ```
 ~/xmlui-mcp$ ./xmlui-mcp --http  ~/xmlui ~  xmlui-invoice,xmlui-mastodon
@@ -156,26 +156,19 @@ curl -X POST http://localhost:8080/session/context \
 
 # View analytics summary
 curl http://localhost:8080/analytics/summary
-
-# Export all analytics data
-curl http://localhost:8080/analytics/export > analytics-backup.json
 ```
 
 ## Analytics
 
-The server now includes comprehensive analytics to track agent usage patterns and optimize the tools. See [ANALYTICS.md](ANALYTICS.md) for full documentation.
+The server now includes comprehensive analytics to track agent usage patterns and optimize the tools.
 
-**Quick Start:**
 - Analytics are automatically collected when agents use the server
-- Data is saved to `xmlui-mcp-analytics.json`
-- View analytics with: `./analytics-helper.sh summary`
-- Access via HTTP endpoints when running with `--http`
 
-**Key Features:**
-- Tool usage frequency and success rates
-- Search query patterns and effectiveness
-- Session activity tracking
-- Performance metrics and optimization insights
+- Data is saved to `xmlui-mcp-analytics.json`
+
+- View analytics with: `./analytics-helper.sh summary`
+
+- Access via HTTP endpoints when running with `--http`
 
 # Rules
 
