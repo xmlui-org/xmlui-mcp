@@ -340,8 +340,3 @@ func ExportAnalyticsData() string {
 func SaveAnalytics() {
 	// No-op: JSONL format writes each entry immediately
 }
-
-// ForceSaveAnalytics is no longer needed with JSONL format - each entry is written immediately
-func ForceSaveAnalytics() {
-	// No-op: JSONL format writes each entry immediately
-}

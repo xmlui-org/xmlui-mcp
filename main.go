@@ -486,20 +486,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	toolsList = append(toolsList, getPromptTool)
 	printToolRegistration(getPromptTool)
 
-	// Add analytics save tool for debugging
-	saveAnalyticsTool := mcp.NewTool("xmlui_save_analytics",
-		mcp.WithDescription("Manually save analytics data to disk (useful for debugging)"),
-	)
-
-	saveAnalyticsHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		ForceSaveAnalytics()
-		return mcp.NewToolResultText("✅ Analytics data saved to disk"), nil
-	}
-
-	s.AddTool(saveAnalyticsTool, saveAnalyticsHandler)
-	toolsList = append(toolsList, saveAnalyticsTool)
-	printToolRegistration(saveAnalyticsTool)
-
 	// Launch based on mode
 	if *httpMode {
 		// HTTP mode
