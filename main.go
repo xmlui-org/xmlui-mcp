@@ -486,12 +486,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	toolsList = append(toolsList, getPromptTool)
 	printToolRegistration(getPromptTool)
 
-	// Add analytics dashboard tool
-	analyticsDashboardTool, analyticsDashboardHandler := NewAnalyticsDashboardTool()
-	s.AddTool(analyticsDashboardTool, withAnalytics("xmlui_analytics_dashboard", analyticsDashboardHandler))
-	toolsList = append(toolsList, analyticsDashboardTool)
-	printToolRegistration(analyticsDashboardTool)
-
 	// Add analytics save tool for debugging
 	saveAnalyticsTool := mcp.NewTool("xmlui_save_analytics",
 		mcp.WithDescription("Manually save analytics data to disk (useful for debugging)"),
