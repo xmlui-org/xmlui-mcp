@@ -26,7 +26,6 @@ Commands:
     tools       Show tool usage statistics
     searches    Show search query analysis
 
-    export      Export all raw analytics data
     server      Show server analytics endpoints (when running in HTTP mode)
     help        Show this help message
 
@@ -34,7 +33,6 @@ Examples:
     $0 summary
     $0 tools
     $0 searches
-    $0 export > analytics-backup.json
 EOF
 }
 
@@ -172,8 +170,6 @@ show_searches() {
     fi
 }
 
-
-
 # Function to show server endpoints
 show_server() {
     cat << EOF
@@ -183,9 +179,6 @@ When running xmlui-mcp in HTTP mode (--http), these endpoints provide real-time 
 
 Analytics Summary:
    http://localhost:8080/analytics/summary
-
-Export All Data:
-   http://localhost:8080/analytics/export
 
 Tools List:
    http://localhost:8080/tools
@@ -198,7 +191,6 @@ Session Data:
 
 Examples:
    curl http://localhost:8080/analytics/summary | jq
-   curl http://localhost:8080/analytics/export > backup.json
    curl http://localhost:8080/tools | jq '.[] | .name'
 EOF
 }
@@ -213,10 +205,6 @@ case "${1:-help}" in
         ;;
     searches)
         show_searches
-        ;;
-
-    export)
-        cat "$ANALYTICS_FILE"
         ;;
     server)
         show_server
