@@ -58,7 +58,6 @@ show_summary() {
         jq -c 'select(.type != null)' "$ANALYTICS_FILE" | jq -s '
             "• Total tool invocations: \(map(select(.type == "tool_invocation")) | length)",
             "• Total search queries: \(map(select(.type == "search_query")) | length)",
-            "• Active sessions: \(map(select(.type == "session_activity")) | length)"
         '
 
         echo
