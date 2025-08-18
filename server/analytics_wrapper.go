@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func writeDebugLog(format string, args ...interface{}) {
 }
 
 // Wrapper function to add analytics to any tool handler
-func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// DEBUG: Log entry into withAnalytics wrapper
 		writeDebugLog("[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
@@ -113,7 +113,7 @@ func withAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 }
 
 // Special wrapper for search tools to capture additional search-specific metrics
-func withSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract search query
 		query := ""

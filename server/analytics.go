@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/json"
@@ -320,7 +320,3 @@ func GetAnalyticsSummary() map[string]interface{} {
 	return map[string]interface{}{}
 }
 
-// SaveAnalytics is no longer needed with JSONL format - each entry is written immediately
-func SaveAnalytics() {
-	// No-op: JSONL format writes each entry immediately
-}

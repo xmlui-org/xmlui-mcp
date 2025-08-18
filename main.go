@@ -16,6 +16,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	mcpserver "xmlui-mcp/server"
 )
 
 // Prompt API structures
@@ -288,7 +289,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	// Initialize analytics
 	analyticsFile := filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
-	InitializeAnalytics(analyticsFile)
+	mcpserver.InitializeAnalytics(analyticsFile)
 
 	// Initialize session manager
 	var sessionManager = &SessionManager{
@@ -298,38 +299,38 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	// Store tools for the /tools endpoint
 	var toolsList []mcp.Tool
 
-	listComponentsTool, listComponentsHandler := NewListComponentsTool(xmluiDir)
-	s.AddTool(listComponentsTool, withAnalytics("xmlui_list_components", listComponentsHandler))
+	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(xmluiDir)
+	s.AddTool(listComponentsTool, mcpserver.WithAnalytics("xmlui_list_components", listComponentsHandler))
 	toolsList = append(toolsList, listComponentsTool)
 	printToolRegistration(listComponentsTool)
 
-	componentDocsTool, componentDocsHandler := NewComponentDocsTool(xmluiDir)
-	s.AddTool(componentDocsTool, withAnalytics("xmlui_component_docs", componentDocsHandler))
+	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(xmluiDir)
+	s.AddTool(componentDocsTool, mcpserver.WithAnalytics("xmlui_component_docs", componentDocsHandler))
 	toolsList = append(toolsList, componentDocsTool)
 	printToolRegistration(componentDocsTool)
 
-	searchDocsTool, searchDocsHandler := NewSearchTool(xmluiDir)
-	s.AddTool(searchDocsTool, withSearchAnalytics("xmlui_search", searchDocsHandler))
+	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(xmluiDir)
+	s.AddTool(searchDocsTool, mcpserver.WithSearchAnalytics("xmlui_search", searchDocsHandler))
 	toolsList = append(toolsList, searchDocsTool)
 	printToolRegistration(searchDocsTool)
 
-	readFileTool, readFileHandler := NewReadFileTool(xmluiDir)
-	s.AddTool(readFileTool, withAnalytics("xmlui_read_file", readFileHandler))
+	readFileTool, readFileHandler := mcpserver.NewReadFileTool(xmluiDir)
+	s.AddTool(readFileTool, mcpserver.WithAnalytics("xmlui_read_file", readFileHandler))
 	toolsList = append(toolsList, readFileTool)
 	printToolRegistration(readFileTool)
 
-	examplesTool, examplesHandler := NewExamplesTool(exampleRoots)
-	s.AddTool(examplesTool, withSearchAnalytics("xmlui_examples", examplesHandler))
+	examplesTool, examplesHandler := mcpserver.NewExamplesTool(exampleRoots)
+	s.AddTool(examplesTool, mcpserver.WithSearchAnalytics("xmlui_examples", examplesHandler))
 	toolsList = append(toolsList, examplesTool)
 	printToolRegistration(examplesTool)
 
-	listHowtoTool, listHowtoHandler := NewListHowtoTool(xmluiDir)
-	s.AddTool(listHowtoTool, withAnalytics("xmlui_list_howto", listHowtoHandler))
+	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(xmluiDir)
+	s.AddTool(listHowtoTool, mcpserver.WithAnalytics("xmlui_list_howto", listHowtoHandler))
 	toolsList = append(toolsList, listHowtoTool)
 	printToolRegistration(listHowtoTool)
 
-	searchHowtoTool, searchHowtoHandler := NewSearchHowtoTool(xmluiDir)
-	s.AddTool(searchHowtoTool, withSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
+	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(xmluiDir)
+	s.AddTool(searchHowtoTool, mcpserver.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	toolsList = append(toolsList, searchHowtoTool)
 	printToolRegistration(searchHowtoTool)
 
@@ -382,7 +383,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		}
 	}
 
-	s.AddTool(injectPromptTool, withAnalytics("xmlui_inject_prompt", injectPromptHandler))
+	s.AddTool(injectPromptTool, mcpserver.WithAnalytics("xmlui_inject_prompt", injectPromptHandler))
 	toolsList = append(toolsList, injectPromptTool)
 	printToolRegistration(injectPromptTool)
 
@@ -403,7 +404,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.AddTool(listPromptsTool, withAnalytics("xmlui_list_prompts", listPromptsHandler))
+	s.AddTool(listPromptsTool, mcpserver.WithAnalytics("xmlui_list_prompts", listPromptsHandler))
 	toolsList = append(toolsList, listPromptsTool)
 	printToolRegistration(listPromptsTool)
 
@@ -482,7 +483,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.AddTool(getPromptTool, withAnalytics("xmlui_get_prompt", getPromptHandler))
+	s.AddTool(getPromptTool, mcpserver.WithAnalytics("xmlui_get_prompt", getPromptHandler))
 	toolsList = append(toolsList, getPromptTool)
 	printToolRegistration(getPromptTool)
 
@@ -682,7 +683,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 				return
 			}
 
-			summary := GetAnalyticsSummary()
+			summary := mcpserver.GetAnalyticsSummary()
 			json.NewEncoder(w).Encode(summary)
 		})
 
@@ -719,8 +720,7 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		// Wait for either server error or signal
 		select {
 		case <-sigChan:
-			fmt.Fprintf(os.Stderr, "Received shutdown signal, saving analytics...\n")
-			SaveAnalytics()
+			fmt.Fprintf(os.Stderr, "Received shutdown signal\n")
 			cancel()
 		case <-ctx.Done():
 			// Context was cancelled
