@@ -21,6 +21,8 @@ The MCP server will search these directories for component documentation, source
 
 To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
 
+On Mac or Linux, run `prepare-binary.sh` to handle permissions.
+
 ## Configure
 
 If you run the server interactively with no arguments it says:
