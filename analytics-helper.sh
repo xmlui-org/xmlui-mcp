@@ -164,6 +164,16 @@ show_searches() {
             .[:10] |
             .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_results | floor | tostring) + " results)"
         '
+
+        echo
+        echo "Most Found URLs (by frequency):"
+        jq -c 'select(.type == "search_query" and .found_urls != null)' "$ANALYTICS_FILE" | jq -s '
+            map(.found_urls // []) | flatten | group_by(.) |
+            map({url: .[0], count: length}) |
+            sort_by(.count) | reverse |
+            .[:15] |
+            .[] | "• " + .url + " (" + (.count | tostring) + " times)"
+        '
     else
         echo "Raw search query data:"
         cat "$ANALYTICS_FILE"
