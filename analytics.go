@@ -276,17 +276,6 @@ func (a *Analytics) GetSummary() map[string]interface{} {
 	}
 }
 
-func (a *Analytics) ExportData() string {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	data, err := json.MarshalIndent(a.data, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("Error exporting data: %v", err)
-	}
-	return string(data)
-}
-
 // Global analytics instance
 var globalAnalytics *Analytics
 
@@ -327,13 +316,6 @@ func GetAnalyticsSummary() map[string]interface{} {
 		return globalAnalytics.GetSummary()
 	}
 	return map[string]interface{}{}
-}
-
-func ExportAnalyticsData() string {
-	if globalAnalytics != nil {
-		return globalAnalytics.ExportData()
-	}
-	return "{}"
 }
 
 // SaveAnalytics is no longer needed with JSONL format - each entry is written immediately

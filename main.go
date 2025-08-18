@@ -686,21 +686,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			json.NewEncoder(w).Encode(summary)
 		})
 
-		mux.HandleFunc("/analytics/export", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			data := ExportAnalyticsData()
-			w.Write([]byte(data))
-		})
-
 		addr := ":" + *port
 		fmt.Fprintf(os.Stderr, "Starting HTTP server on port %s\n", *port)
 		fmt.Fprintf(os.Stderr, "SSE endpoint: http://localhost%s/sse\n", addr)
@@ -711,7 +696,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		fmt.Fprintf(os.Stderr, "Session context endpoint: http://localhost%s/session/{id}\n", addr)
 		fmt.Fprintf(os.Stderr, "Inject prompt endpoint: http://localhost%s/session/context\n", addr)
 		fmt.Fprintf(os.Stderr, "Analytics summary endpoint: http://localhost%s/analytics/summary\n", addr)
-		fmt.Fprintf(os.Stderr, "Analytics export endpoint: http://localhost%s/analytics/export\n", addr)
 
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
