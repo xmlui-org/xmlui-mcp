@@ -56,8 +56,8 @@ show_summary() {
     if check_jq; then
         echo "📊 Overall Statistics:"
         jq -c 'select(.type != null)' "$ANALYTICS_FILE" | jq -s '
-            "• Total tool invocations: \(map(select(.type == "tool_invocation")) | length)",
-            "• Total search queries: \(map(select(.type == "search_query")) | length)",
+            "• Total tool invocations: " + (map(select(.type == "tool_invocation")) | length | tostring),
+            "• Total search queries: " + (map(select(.type == "search_query")) | length | tostring)
         '
 
         echo
@@ -67,7 +67,7 @@ show_summary() {
             map({tool: .[0].tool_name, count: length}) |
             sort_by(.count) | reverse |
             .[:5] |
-            .[] | "• \(.tool): \(.count) uses"
+            .[] | "• " + .tool + ": " + (.count | tostring) + " uses"
         '
 
         echo
@@ -87,7 +87,7 @@ show_summary() {
             ) |
             sort_by(.count) | reverse |
             .[:10] |
-            .[] | "• \(.query) (\(.count) times, avg \(.avg_results | floor) results)"
+            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_results | floor | tostring) + " results)"
         '
     else
         cat "$ANALYTICS_FILE"
@@ -113,7 +113,6 @@ show_tools() {
                             (map(select(.success == true)) | length) * 100 / length
                         else 0 end
                     ),
-
                     avg_result_size: (
                         map(select(.result_size_chars != null) | .result_size_chars) as $sizes |
                         if $sizes | length > 0 then ($sizes | add) / ($sizes | length) else 0 end
@@ -122,11 +121,10 @@ show_tools() {
             ) |
             sort_by(.count) | reverse |
             .[] |
-            "• \(.tool):",
-            "  - Uses: \(.count)",
-            "  - Success Rate: \(.success_rate | floor)%",
-
-            "  - Avg Result Size: \(.avg_result_size | floor) chars",
+            "• " + .tool + ":",
+            "  - Uses: " + (.count | tostring),
+            "  - Success Rate: " + (.success_rate | floor | tostring) + "%",
+            "  - Avg Result Size: " + (.avg_result_size | floor | tostring) + " chars",
             ""
         '
     else
@@ -143,10 +141,10 @@ show_searches() {
     if check_jq; then
         echo "🔍 Search Patterns:"
         jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
-            "Total searches: \(length)",
-            "Unique queries: \(group_by(.query) | length)",
-            "Average results per search: \((map(.result_count // 0) | add) / length | floor)",
-            "Success rate: \((map(select(.success == true)) | length) * 100 / length | floor)%",
+            "Total searches: " + (length | tostring),
+            "Unique queries: " + (group_by(.query) | length | tostring),
+            "Average results per search: " + ((map(.result_count // 0) | add) / length | floor | tostring),
+            "Success rate: " + ((map(select(.success == true)) | length) * 100 / length | floor | tostring) + "%",
             "",
             "Most frequent searches:"
         '
@@ -166,7 +164,7 @@ show_searches() {
             ) |
             sort_by(.count) | reverse |
             .[:10] |
-            .[] | "• \(.query) (\(.count) times, avg \(.avg_results | floor) results)"
+            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_results | floor | tostring) + " results)"
         '
     else
         echo "Raw search query data:"
