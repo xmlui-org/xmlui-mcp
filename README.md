@@ -60,9 +60,9 @@ The paths for these config files on a Mac are:
 
 **Claude:** ~/Library/Application Support/Claude/claude_desktop_config.json
 
-**Copilot:** ~/Library/Application Support/Code/User/mcp.json
-
 **Cursor:** ~/.cursor.mcp.json
+
+**Copilot:** ~/Library/Application Support/Code/User/mcp.json (created initially by `MCP: Add Server`)
 
 With this setup I am giving the agents access to the XMLUI projects I'm working on (xmlui-invoice, xmlui-mastodon), so they can both read and write those projects.
 
@@ -136,10 +136,9 @@ Message endpoint: http://localhost:8080/message
 Tools endpoint: http://localhost:8080/tools
 Prompts list endpoint: http://localhost:8080/prompts
 Specific prompt endpoint: http://localhost:8080/prompts/{name}
-Session context endpoint: http://localhost:8080/session/{id}
 Inject prompt endpoint: http://localhost:8080/session/context
 Analytics summary endpoint: http://localhost:8080/analytics/summary
-Analytics export endpoint: http://localhost:8080/analytics/export
+
 
 # Test available tools
 curl http://localhost:8080/tools
