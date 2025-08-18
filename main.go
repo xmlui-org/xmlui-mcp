@@ -231,57 +231,12 @@ func main() {
 		server.WithPromptCapabilities(true),
 	)
 
-	// Add XMLUI development rules prompt
-	xmluiRulesPrompt := mcp.NewPrompt("xmlui_rules",
-		mcp.WithPromptDescription("Essential rules and guidelines for XMLUI development"))
-
-	s.AddPrompt(xmluiRulesPrompt, func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		return mcp.NewGetPromptResult(
-			"XMLUI Development Rules and Guidelines",
-			[]mcp.PromptMessage{
-				mcp.NewPromptMessage(
-					mcp.RoleUser,
-					mcp.NewTextContent(`You are assisting with XMLUI development. Follow these essential rules:
-
-1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval.
-
-2 don't add any xmlui styling, let the theme and layout engine do its job
-
-3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
-
-4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
-
-5 never touch the dom. we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
-
-6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
-
-7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
-
-8 always do the simplest thing possible
-
-9 use a neutral tone. do not say "Perfect!" etc. in fact never use exclamation marks at all
-
-10 when creating examples for live playgrounds, observe the conventions for ---app and ---comp
-
-11 VStack is the default, don't use it unless necessary
-
-12 always search XMLUI-related resources first and prioritize them over other sources
-
-These rules ensure clean, maintainable XMLUI applications that follow best practices.`),
-				),
-			},
-		), nil
-	})
-
-	printPromptRegistration(xmluiRulesPrompt)
-
 	// Store prompts and their handlers for API access
 	var promptsList []mcp.Prompt
 	var promptHandlers map[string]PromptHandler = make(map[string]PromptHandler)
 
-	// Register the xmlui_rules prompt
-	promptsList = append(promptsList, xmluiRulesPrompt)
-	promptHandlers["xmlui_rules"] = func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	// Define the xmlui_rules prompt handler once
+	xmluiRulesHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return mcp.NewGetPromptResult(
 			"XMLUI Development Rules and Guidelines",
 			[]mcp.PromptMessage{
@@ -318,6 +273,18 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			},
 		), nil
 	}
+
+	// Create the xmlui_rules prompt
+	xmluiRulesPrompt := mcp.NewPrompt("xmlui_rules",
+		mcp.WithPromptDescription("Essential rules and guidelines for XMLUI development"))
+
+	// Store in our lists for API access
+	promptsList = append(promptsList, xmluiRulesPrompt)
+	promptHandlers["xmlui_rules"] = xmluiRulesHandler
+
+	// Register with MCP server
+	s.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
+	printPromptRegistration(xmluiRulesPrompt)
 
 	// Initialize analytics
 	analyticsFile := filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
