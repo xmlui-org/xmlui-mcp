@@ -80,9 +80,9 @@ jobs:
           # Copy scripts
           cp run-mcp-client.bat package/xmlui-mcp/
           cp run-mcp-client.sh package/xmlui-mcp/
-          cp prepare-binaries.sh package/xmlui-mcp/
+          cp prepare-binary.sh package/xmlui-mcp/
           chmod +x package/xmlui-mcp/run-mcp-client.sh
-          chmod +x package/xmlui-mcp/prepare-binaries.sh
+          chmod +x package/xmlui-mcp/prepare-binary.sh
           chmod +x package/xmlui-mcp/xmlui-mcp${{ matrix.server_ext }}
           chmod +x package/xmlui-mcp/xmlui-mcp-client${{ matrix.client_ext }}
 
