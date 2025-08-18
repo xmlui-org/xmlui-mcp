@@ -54,14 +54,14 @@ show_summary() {
     echo
 
     if check_jq; then
-        echo "📊 Overall Statistics:"
+        echo "Overall Statistics:"
         jq -c 'select(.type != null)' "$ANALYTICS_FILE" | jq -s '
             "• Total tool invocations: " + (map(select(.type == "tool_invocation")) | length | tostring),
             "• Total search queries: " + (map(select(.type == "search_query")) | length | tostring)
         '
 
         echo
-        echo "🔧 Most Used Tools:"
+        echo "Most Used Tools:"
         jq -c 'select(.type == "tool_invocation")' "$ANALYTICS_FILE" | jq -s '
             group_by(.tool_name) |
             map({tool: .[0].tool_name, count: length}) |
@@ -71,7 +71,7 @@ show_summary() {
         '
 
         echo
-        echo "🔍 Popular Search Terms:"
+        echo "Popular Search Terms:"
         jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
             group_by(.query) |
             map(
@@ -100,7 +100,7 @@ show_tools() {
     echo
 
     if check_jq; then
-        echo "📈 Tool Performance:"
+        echo "Tool Performance:"
         jq -c 'select(.type == "tool_invocation")' "$ANALYTICS_FILE" | jq -s '
             group_by(.tool_name) |
             map(
@@ -139,7 +139,7 @@ show_searches() {
     echo
 
     if check_jq; then
-        echo "🔍 Search Patterns:"
+        echo "Search Patterns:"
         jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
             "Total searches: " + (length | tostring),
             "Unique queries: " + (group_by(.query) | length | tostring),
@@ -181,19 +181,19 @@ show_server() {
 
 When running xmlui-mcp in HTTP mode (--http), these endpoints provide real-time analytics:
 
-📊 Analytics Summary:
+Analytics Summary:
    http://localhost:8080/analytics/summary
 
-📁 Export All Data:
+Export All Data:
    http://localhost:8080/analytics/export
 
-🔧 Tools List:
+Tools List:
    http://localhost:8080/tools
 
-📝 Prompts List:
+Prompts List:
    http://localhost:8080/prompts
 
-👥 Session Data:
+Session Data:
    http://localhost:8080/session/{session_id}
 
 Examples:
