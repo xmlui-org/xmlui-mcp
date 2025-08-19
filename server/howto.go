@@ -16,12 +16,12 @@ func fuzzyMatch(text, query string) bool {
 	textLower := strings.ToLower(text)
 	queryLower := strings.ToLower(query)
 	queryWords := strings.Fields(queryLower)
-	
+
 	// If single word query, use simple contains check
 	if len(queryWords) == 1 {
 		return strings.Contains(textLower, queryLower)
 	}
-	
+
 	// For multiple words, require ALL words to be present (AND logic)
 	for _, word := range queryWords {
 		if !strings.Contains(textLower, word) {
@@ -87,7 +87,7 @@ func parseHowtoSections(howtoPath string) ([]string, []string, error) {
 func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	howtoPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
 	tool := mcp.NewTool(
-		"xmlui-list-howto",
+		"xmlui_list_howto",
 		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto.md."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -104,7 +104,7 @@ func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Call
 func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	howtoPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
 	tool := mcp.NewTool(
-		"xmlui-search-howto",
+		"xmlui_search_howto",
 		mcp.WithDescription("Search for 'How To' entries in docs/public/pages/howto.md by keyword or phrase. Returns full markdown sections."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keyword or phrase to search for.")),
 	)

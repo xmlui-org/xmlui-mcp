@@ -58,67 +58,121 @@ type InjectPromptResponse struct {
 	Content []mcp.PromptMessage `json:"content,omitempty"`
 }
 
-func printToolRegistration(tool mcp.Tool) {
-	fmt.Printf("%s\n", tool.Name)
-	fmt.Printf(" %s\n", tool.Description)
+// Startup information structure
+type StartupInfo struct {
+	Type       string         `json:"type"`
+	Prompts    []PromptInfo   `json:"prompts"`
+	Tools      []ToolInfo     `json:"tools"`
+	XmluiRules XmluiRulesInfo `json:"xmlui_rules"`
+}
+
+type ToolInfo struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"input_schema,omitempty"`
+}
+
+type XmluiRulesInfo struct {
+	Description string `json:"description"`
+	Content     string `json:"content"`
+}
+
+func getToolInfo(tool mcp.Tool) ToolInfo {
+	toolInfo := ToolInfo{
+		Name:        tool.Name,
+		Description: tool.Description,
+	}
 
 	if len(tool.InputSchema.Properties) > 0 {
-		fmt.Printf(" Input schema:\n")
+		toolInfo.InputSchema = make(map[string]interface{})
 		for name, prop := range tool.InputSchema.Properties {
-			required := ""
+			// Check if this property is required
+			required := false
 			for _, req := range tool.InputSchema.Required {
 				if req == name {
-					required = "(required)"
+					required = true
 					break
 				}
 			}
 
-			// Safely extract description if present
-			desc := "(no description)"
+			// Create property info
+			propInfo := map[string]interface{}{
+				"required": required,
+			}
+
+			// Extract description if present
 			if propMap, ok := prop.(map[string]interface{}); ok {
 				if d, ok := propMap["description"].(string); ok {
-					desc = d
+					propInfo["description"] = d
+				}
+				if t, ok := propMap["type"].(string); ok {
+					propInfo["type"] = t
 				}
 			}
 
-			fmt.Printf("   - %s %s: %s\n", name, required, desc)
+			toolInfo.InputSchema[name] = propInfo
 		}
 	}
 
-	fmt.Printf("\n")
+	return toolInfo
 }
 
-func printPromptRegistration(prompt mcp.Prompt) {
-	fmt.Printf("PROMPT: %s\n", prompt.Name)
-	fmt.Printf(" %s\n", prompt.Description)
-	fmt.Printf("\n")
-}
-
-func printXmluiRules(handler PromptHandler) {
-	// Get the xmlui_rules prompt content
+func getXmluiRulesContent(handler PromptHandler) string {
 	ctx := context.Background()
 	request := mcp.GetPromptRequest{}
 
-	// Use the provided handler to get the content
 	result, err := handler(ctx, request)
 	if err != nil {
-		fmt.Printf("Error getting xmlui_rules: %v\n", err)
+		return fmt.Sprintf("Error getting xmlui_rules: %v", err)
+	}
+
+	var content strings.Builder
+	for _, message := range result.Messages {
+		switch textContent := message.Content.(type) {
+		case *mcp.TextContent:
+			content.WriteString(textContent.Text)
+		case mcp.TextContent:
+			content.WriteString(textContent.Text)
+		}
+	}
+	return content.String()
+}
+
+func printStartupInfo(prompts []mcp.Prompt, tools []mcp.Tool, xmluiRulesHandler PromptHandler) {
+	// Convert prompts to PromptInfo
+	var promptInfos []PromptInfo
+	for _, prompt := range prompts {
+		promptInfos = append(promptInfos, PromptInfo{
+			Name:        prompt.Name,
+			Description: prompt.Description,
+		})
+	}
+
+	// Convert tools to ToolInfo
+	var toolInfos []ToolInfo
+	for _, tool := range tools {
+		toolInfos = append(toolInfos, getToolInfo(tool))
+	}
+
+	// Create startup info
+	startupInfo := StartupInfo{
+		Type:    "xmlui_mcp_startup",
+		Prompts: promptInfos,
+		Tools:   toolInfos,
+		XmluiRules: XmluiRulesInfo{
+			Description: "Essential rules and guidelines for XMLUI development",
+			Content:     getXmluiRulesContent(xmluiRulesHandler),
+		},
+	}
+
+	// Output as JSON to stderr to avoid interfering with MCP protocol
+	jsonData, err := json.MarshalIndent(startupInfo, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling startup info: %v\n", err)
 		return
 	}
 
-	fmt.Printf("XMLUI RULES:\n")
-	fmt.Printf(" Essential rules and guidelines for XMLUI development\n\n")
-
-	// Print the content from the prompt
-	for _, message := range result.Messages {
-		switch content := message.Content.(type) {
-		case *mcp.TextContent:
-			fmt.Printf("%s\n", content.Text)
-		case mcp.TextContent:
-			fmt.Printf("%s\n", content.Text)
-		}
-	}
-	fmt.Printf("\n")
+	fmt.Fprintf(os.Stderr, "%s\n", string(jsonData))
 }
 
 // Session management methods
@@ -313,10 +367,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	// Register with MCP server
 	s.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
-	printPromptRegistration(xmluiRulesPrompt)
-
-	// Print the xmlui rules to stdout so the agent sees them on startup
-	printXmluiRules(xmluiRulesHandler)
 
 	// Initialize analytics
 	analyticsFile := filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
@@ -333,37 +383,30 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(xmluiDir)
 	s.AddTool(listComponentsTool, mcpserver.WithAnalytics("xmlui_list_components", listComponentsHandler))
 	toolsList = append(toolsList, listComponentsTool)
-	printToolRegistration(listComponentsTool)
 
 	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(xmluiDir)
 	s.AddTool(componentDocsTool, mcpserver.WithAnalytics("xmlui_component_docs", componentDocsHandler))
 	toolsList = append(toolsList, componentDocsTool)
-	printToolRegistration(componentDocsTool)
 
 	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(xmluiDir)
 	s.AddTool(searchDocsTool, mcpserver.WithSearchAnalytics("xmlui_search", searchDocsHandler))
 	toolsList = append(toolsList, searchDocsTool)
-	printToolRegistration(searchDocsTool)
 
 	readFileTool, readFileHandler := mcpserver.NewReadFileTool(xmluiDir)
 	s.AddTool(readFileTool, mcpserver.WithAnalytics("xmlui_read_file", readFileHandler))
 	toolsList = append(toolsList, readFileTool)
-	printToolRegistration(readFileTool)
 
 	examplesTool, examplesHandler := mcpserver.NewExamplesTool(exampleRoots)
 	s.AddTool(examplesTool, mcpserver.WithSearchAnalytics("xmlui_examples", examplesHandler))
 	toolsList = append(toolsList, examplesTool)
-	printToolRegistration(examplesTool)
 
 	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(xmluiDir)
 	s.AddTool(listHowtoTool, mcpserver.WithAnalytics("xmlui_list_howto", listHowtoHandler))
 	toolsList = append(toolsList, listHowtoTool)
-	printToolRegistration(listHowtoTool)
 
 	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(xmluiDir)
 	s.AddTool(searchHowtoTool, mcpserver.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	toolsList = append(toolsList, searchHowtoTool)
-	printToolRegistration(searchHowtoTool)
 
 	// Add prompt injection tool
 	injectPromptTool := mcp.NewTool("xmlui_inject_prompt",
@@ -416,7 +459,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	s.AddTool(injectPromptTool, mcpserver.WithAnalytics("xmlui_inject_prompt", injectPromptHandler))
 	toolsList = append(toolsList, injectPromptTool)
-	printToolRegistration(injectPromptTool)
 
 	// Add prompt listing tool
 	listPromptsTool := mcp.NewTool("xmlui_list_prompts",
@@ -437,7 +479,6 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	s.AddTool(listPromptsTool, mcpserver.WithAnalytics("xmlui_list_prompts", listPromptsHandler))
 	toolsList = append(toolsList, listPromptsTool)
-	printToolRegistration(listPromptsTool)
 
 	// Add prompt content retrieval tool
 	getPromptTool := mcp.NewTool("xmlui_get_prompt",
@@ -516,7 +557,9 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	s.AddTool(getPromptTool, mcpserver.WithAnalytics("xmlui_get_prompt", getPromptHandler))
 	toolsList = append(toolsList, getPromptTool)
-	printToolRegistration(getPromptTool)
+
+	// Print startup information as JSON to stderr
+	printStartupInfo(promptsList, toolsList, xmluiRulesHandler)
 
 	// Launch based on mode
 	if *httpMode {
