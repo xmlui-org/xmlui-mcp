@@ -94,6 +94,33 @@ func printPromptRegistration(prompt mcp.Prompt) {
 	fmt.Printf("\n")
 }
 
+func printXmluiRules(handler PromptHandler) {
+	// Get the xmlui_rules prompt content
+	ctx := context.Background()
+	request := mcp.GetPromptRequest{}
+
+	// Use the provided handler to get the content
+	result, err := handler(ctx, request)
+	if err != nil {
+		fmt.Printf("Error getting xmlui_rules: %v\n", err)
+		return
+	}
+
+	fmt.Printf("XMLUI RULES:\n")
+	fmt.Printf(" Essential rules and guidelines for XMLUI development\n\n")
+
+	// Print the content from the prompt
+	for _, message := range result.Messages {
+		switch content := message.Content.(type) {
+		case *mcp.TextContent:
+			fmt.Printf("%s\n", content.Text)
+		case mcp.TextContent:
+			fmt.Printf("%s\n", content.Text)
+		}
+	}
+	fmt.Printf("\n")
+}
+
 // Session management methods
 func (sm *SessionManager) GetOrCreateSession(id string) *SessionContext {
 	sm.mutex.Lock()
@@ -287,6 +314,9 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	// Register with MCP server
 	s.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
 	printPromptRegistration(xmluiRulesPrompt)
+
+	// Print the xmlui rules to stdout so the agent sees them on startup
+	printXmluiRules(xmluiRulesHandler)
 
 	// Initialize analytics
 	analyticsFile := filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
