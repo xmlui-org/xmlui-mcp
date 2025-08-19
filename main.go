@@ -14,9 +14,10 @@ import (
 	"syscall"
 	"time"
 
+	mcpserver "xmlui-mcp/server"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	mcpserver "xmlui-mcp/server"
 )
 
 // Prompt API structures
@@ -58,11 +59,11 @@ type InjectPromptResponse struct {
 }
 
 func printToolRegistration(tool mcp.Tool) {
-	fmt.Fprintf(os.Stderr, "%s\n", tool.Name)
-	fmt.Fprintf(os.Stderr, " %s\n", tool.Description)
+	fmt.Printf("%s\n", tool.Name)
+	fmt.Printf(" %s\n", tool.Description)
 
 	if len(tool.InputSchema.Properties) > 0 {
-		fmt.Fprintf(os.Stderr, " Input schema:\n")
+		fmt.Printf(" Input schema:\n")
 		for name, prop := range tool.InputSchema.Properties {
 			required := ""
 			for _, req := range tool.InputSchema.Required {
@@ -80,17 +81,17 @@ func printToolRegistration(tool mcp.Tool) {
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "   - %s %s: %s\n", name, required, desc)
+			fmt.Printf("   - %s %s: %s\n", name, required, desc)
 		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	fmt.Printf("\n")
 }
 
 func printPromptRegistration(prompt mcp.Prompt) {
-	fmt.Fprintf(os.Stderr, "PROMPT: %s\n", prompt.Name)
-	fmt.Fprintf(os.Stderr, " %s\n", prompt.Description)
-	fmt.Fprintln(os.Stderr)
+	fmt.Printf("PROMPT: %s\n", prompt.Name)
+	fmt.Printf(" %s\n", prompt.Description)
+	fmt.Printf("\n")
 }
 
 // Session management methods
@@ -688,18 +689,18 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		})
 
 		addr := ":" + *port
-		fmt.Fprintf(os.Stderr, "Starting HTTP server on port %s\n", *port)
-		fmt.Fprintf(os.Stderr, "SSE endpoint: http://localhost%s/sse\n", addr)
-		fmt.Fprintf(os.Stderr, "Message endpoint: http://localhost%s/message\n", addr)
-		fmt.Fprintf(os.Stderr, "Tools endpoint: http://localhost%s/tools\n", addr)
-		fmt.Fprintf(os.Stderr, "Prompts list endpoint: http://localhost%s/prompts\n", addr)
-		fmt.Fprintf(os.Stderr, "Specific prompt endpoint: http://localhost%s/prompts/{name}\n", addr)
-		fmt.Fprintf(os.Stderr, "Session context endpoint: http://localhost%s/session/{id}\n", addr)
-		fmt.Fprintf(os.Stderr, "Inject prompt endpoint: http://localhost%s/session/context\n", addr)
-		fmt.Fprintf(os.Stderr, "Analytics summary endpoint: http://localhost%s/analytics/summary\n", addr)
+		mcpserver.WriteDebugLog("Starting HTTP server on port %s\n", *port)
+		mcpserver.WriteDebugLog("SSE endpoint: http://localhost%s/sse\n", addr)
+		mcpserver.WriteDebugLog("Message endpoint: http://localhost%s/message\n", addr)
+		mcpserver.WriteDebugLog("Tools endpoint: http://localhost%s/tools\n", addr)
+		mcpserver.WriteDebugLog("Prompts list endpoint: http://localhost%s/prompts\n", addr)
+		mcpserver.WriteDebugLog("Specific prompt endpoint: http://localhost%s/prompts/{name}\n", addr)
+		mcpserver.WriteDebugLog("Session context endpoint: http://localhost%s/session/{id}\n", addr)
+		mcpserver.WriteDebugLog("Inject prompt endpoint: http://localhost%s/session/context\n", addr)
+		mcpserver.WriteDebugLog("Analytics summary endpoint: http://localhost%s/analytics/summary\n", addr)
 
 		if err := http.ListenAndServe(addr, mux); err != nil {
-			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
+			mcpserver.WriteDebugLog("HTTP server error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -721,22 +722,22 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		case err := <-serverDone:
 			// Server finished (normally or with error)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+				mcpserver.WriteDebugLog("Server error: %v\n", err)
 				os.Exit(1)
 			}
 		case <-sigChan:
-			fmt.Fprintf(os.Stderr, "Received shutdown signal, initiating graceful shutdown\n")
+			mcpserver.WriteDebugLog("Received shutdown signal, initiating graceful shutdown\n")
 
 			// Wait for server to shutdown gracefully with timeout
 			select {
 			case err := <-serverDone:
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Server shutdown with error: %v\n", err)
+					mcpserver.WriteDebugLog("Server shutdown with error: %v\n", err)
 				} else {
-					fmt.Fprintf(os.Stderr, "Server shutdown complete\n")
+					mcpserver.WriteDebugLog("Server shutdown complete\n")
 				}
 			case <-time.After(5 * time.Second):
-				fmt.Fprintf(os.Stderr, "Server shutdown timeout, forcing exit\n")
+				mcpserver.WriteDebugLog("Server shutdown timeout, forcing exit\n")
 				os.Exit(1)
 			}
 		}

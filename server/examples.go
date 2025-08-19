@@ -33,7 +33,7 @@ func fuzzyMatchExamples(text, query string) bool {
 }
 
 func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	fmt.Fprintf(os.Stderr, "Example roots configured: %v\n", exampleRoots)
+	WriteDebugLog("Example roots configured: %v\n", exampleRoots)
 
 	tool := mcp.NewTool("xmlui_examples",
 		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for."),
@@ -42,7 +42,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		log := func(msg string, args ...any) {
-			fmt.Fprintf(os.Stderr, msg+"\n", args...)
+			WriteDebugLog(msg+"\n", args...)
 		}
 
 		log("📥 Received arguments: %+v", req.Params.Arguments)

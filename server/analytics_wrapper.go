@@ -16,8 +16,8 @@ var (
 	debugLogMutex sync.Mutex
 )
 
-// writeDebugLog writes debug messages to server.log in a thread-safe way
-func writeDebugLog(format string, args ...interface{}) {
+// WriteDebugLog writes debug messages to server.log in a thread-safe way
+func WriteDebugLog(format string, args ...interface{}) {
 	debugLogMutex.Lock()
 	defer debugLogMutex.Unlock()
 
@@ -49,21 +49,21 @@ func writeDebugLog(format string, args ...interface{}) {
 func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// DEBUG: Log entry into withAnalytics wrapper
-		writeDebugLog("[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
+		WriteDebugLog("[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
 
 		// Write to server.log
-		writeDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s\n", time.Now().Format("15:04:05.000"), toolName)
+		WriteDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s\n", time.Now().Format("15:04:05.000"), toolName)
 
 		// DEBUG: Log before calling original handler
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
+		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
+		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
 
 		// Call the original handler
 		result, err := handler(ctx, req)
 
 		// DEBUG: Log after calling original handler
-		writeDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
-		writeDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
+		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
+		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
 
 		// Calculate metrics
 		success := err == nil && result != nil
@@ -98,15 +98,15 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		}
 
 		// DEBUG: Log before calling LogTool
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
-		writeDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
+		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
+		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
 
 		// Log the invocation
 		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
 
 		// DEBUG: Log after calling LogTool
-		writeDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
-		writeDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
+		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
+		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 
 		return result, err
 	}
