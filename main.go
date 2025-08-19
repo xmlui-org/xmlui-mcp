@@ -702,33 +702,43 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 			os.Exit(1)
 		}
+
 	} else {
 		// Stdio mode with graceful shutdown
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 
 		// Set up signal handling for graceful shutdown
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 		// Start server in a goroutine
-		var serverErr error
+		serverDone := make(chan error, 1)
 		go func() {
-			serverErr = server.ServeStdio(s)
+			serverDone <- server.ServeStdio(s)
 		}()
 
 		// Wait for either server error or signal
 		select {
+		case err := <-serverDone:
+			// Server finished (normally or with error)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+				os.Exit(1)
+			}
 		case <-sigChan:
-			fmt.Fprintf(os.Stderr, "Received shutdown signal\n")
-			cancel()
-		case <-ctx.Done():
-			// Context was cancelled
-		}
+			fmt.Fprintf(os.Stderr, "Received shutdown signal, initiating graceful shutdown\n")
 
-		if serverErr != nil {
-			fmt.Fprintf(os.Stderr, "Server error: %v\n", serverErr)
-			os.Exit(1)
+			// Wait for server to shutdown gracefully with timeout
+			select {
+			case err := <-serverDone:
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Server shutdown with error: %v\n", err)
+				} else {
+					fmt.Fprintf(os.Stderr, "Server shutdown complete\n")
+				}
+			case <-time.After(5 * time.Second):
+				fmt.Fprintf(os.Stderr, "Server shutdown timeout, forcing exit\n")
+				os.Exit(1)
+			}
 		}
 	}
 }
