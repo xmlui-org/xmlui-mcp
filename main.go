@@ -558,8 +558,73 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	s.AddTool(getPromptTool, mcpserver.WithAnalytics("xmlui_get_prompt", getPromptHandler))
 	toolsList = append(toolsList, getPromptTool)
 
+	// Add session context retrieval tool
+	getSessionContextTool := mcp.NewTool("xmlui_get_session_context",
+		mcp.WithDescription("Retrieves the current session context including any injected prompts"),
+	)
+
+	getSessionContextTool.InputSchema = mcp.ToolInputSchema{
+		Type: "object",
+		Properties: map[string]interface{}{
+			"session_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Session ID (optional, defaults to 'default')",
+				"default":     "default",
+			},
+		},
+		Required: []string{},
+	}
+
+	getSessionContextHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Extract session ID
+		sessionID := "default" // default
+		if request.Params.Arguments != nil {
+			if id, ok := request.Params.Arguments["session_id"].(string); ok && id != "" {
+				sessionID = id
+			}
+		}
+
+		session := sessionManager.GetOrCreateSession(sessionID)
+
+		// Format the output
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("# Session Context: %s\n\n", session.ID))
+		out.WriteString(fmt.Sprintf("**Last Activity:** %s\n\n", session.LastActivity.Format(time.RFC3339)))
+		out.WriteString(fmt.Sprintf("**Injected Prompts:** %s\n\n", strings.Join(session.InjectedPrompts, ", ")))
+
+		if len(session.Context) > 0 {
+			out.WriteString("**Context Content:**\n\n")
+			for i, message := range session.Context {
+				out.WriteString(fmt.Sprintf("### Message %d\n\n", i+1))
+				switch content := message.Content.(type) {
+				case *mcp.TextContent:
+					out.WriteString(content.Text)
+					out.WriteString("\n\n")
+				case mcp.TextContent:
+					out.WriteString(content.Text)
+					out.WriteString("\n\n")
+				}
+			}
+		} else {
+			out.WriteString("**Context Content:** No content in session context.\n\n")
+		}
+
+		return mcp.NewToolResultText(out.String()), nil
+	}
+
+	s.AddTool(getSessionContextTool, mcpserver.WithAnalytics("xmlui_get_session_context", getSessionContextHandler))
+	toolsList = append(toolsList, getSessionContextTool)
+
 	// Print startup information as JSON to stderr
 	printStartupInfo(promptsList, toolsList, xmluiRulesHandler)
+
+	// Automatically inject XMLUI rules into the default session at startup
+	_, err := sessionManager.InjectPrompt("default", "xmlui_rules", promptHandlers)
+	if err != nil {
+		mcpserver.WriteDebugLog("Failed to auto-inject xmlui_rules: %v\n", err)
+	} else {
+		mcpserver.WriteDebugLog("Auto-injected xmlui_rules into default session\n")
+	}
 
 	// Launch based on mode
 	if *httpMode {
