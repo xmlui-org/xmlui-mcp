@@ -19,8 +19,7 @@ The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exi
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
 > [!TIP]
-> The rules injected into the agents' session tell them to prioritize searching How To articles,
-> which always lead to working examples. But it helps to say that explicitly if that is your preference.
+> The rules injected into the agent's session tell it to prioritize searching and citing How To articles which lead to non-hallucinated known-working examples. But it helps to say that explicitly, and in general to often say "remember the rules" because LLMs are forgetful and need constant reminding.
 
 ## Install
 
