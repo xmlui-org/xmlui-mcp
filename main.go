@@ -327,29 +327,31 @@ func main() {
 					mcp.RoleUser,
 					mcp.NewTextContent(`You are assisting with XMLUI development. Follow these essential rules:
 
-1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval.
+1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval
 
 2 don't add any xmlui styling, let the theme and layout engine do its job
 
 3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
 
-4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
+4 do not invent any xmlui syntax, only use constructs for which you can find examples in the docs and sample apps, and always cite your sources.
 
-5 never touch the dom. we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
+5 never touch the dom, we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
 
 6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
 
-7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
+7 use this xmlui-mcp server to list and show component docs but also search xmlui source, docs, examples, and howto articles
 
 8 always do the simplest thing possible
 
-9 use a neutral tone. do not say "Perfect!" etc. in fact never use exclamation marks at all
+9 use a neutral tone, do not say "Perfect!" etc, in fact never use exclamation marks at all
 
-10 when creating examples for live playgrounds, observe the conventions for ---app and ---comp
+10 when creating examples for live playgrounds, observe the conventions for ---app, ---comp and --api
 
 11 VStack is the default, don't use it unless necessary
 
-12 always search XMLUI-related resources first and prioritize them over other sources
+12 prioritize XMLUI tools, especially xmlui_list_howto and xmlui_search_howto, and always cite the urls of found articles
+
+13 before answering any XMLUI question, confirm with the user: 'Would you like me to start by searching the howto articles?' and wait for their response before using any tools"
 
 These rules ensure clean, maintainable XMLUI applications that follow best practices.`),
 				),
