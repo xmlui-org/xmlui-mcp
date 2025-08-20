@@ -46,24 +46,56 @@ func titleToAnchor(title string) string {
 	return result.String()
 }
 
-// Helper: Parse howto.md into sections (split on "## " heading)
-func parseHowtoSections(howtoPath string) ([]string, []string, error) {
-	file, err := os.Open(howtoPath)
+// Helper: Read all top-level howto files and aggregate their contents
+func readAllHowtoFiles(howtoDir string) ([]string, error) {
+	files, err := os.ReadDir(howtoDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	defer file.Close()
+	var docs []string
+	for _, file := range files {
+		if !file.IsDir() {
+			path := filepath.Join(howtoDir, file.Name())
+			data, err := os.ReadFile(path)
+			if err == nil {
+				docs = append(docs, string(data))
+			}
+		}
+	}
+	return docs, nil
+}
 
+// Helper: Parse a single document - handles both legacy (## sections) and new (# title) formats
+func parseHowtoSections(doc string) ([]string, []string) {
 	var sections []string
 	var titles []string
+	
+	scanner := bufio.NewScanner(strings.NewReader(doc))
+	
+	// Check if this is a new-format file (starts with # title)
+	firstLine := ""
+	if scanner.Scan() {
+		firstLine = scanner.Text()
+	}
+	
+	if strings.HasPrefix(firstLine, "# ") {
+		// New format: single file with # title
+		title := strings.TrimSpace(firstLine[2:])
+		sections = append(sections, doc)
+		titles = append(titles, title)
+		return sections, titles
+	}
+	
+	// Legacy format: parse ## sections
 	var current strings.Builder
 	var currentTitle string
-
-	scanner := bufio.NewScanner(file)
+	
+	// Reset scanner to beginning since we already read the first line
+	scanner = bufio.NewScanner(strings.NewReader(doc))
+	
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "## ") {
-			// Save previous section
 			if current.Len() > 0 {
 				sections = append(sections, current.String())
 				titles = append(titles, currentTitle)
@@ -75,44 +107,72 @@ func parseHowtoSections(howtoPath string) ([]string, []string, error) {
 			current.WriteString(line + "\n")
 		}
 	}
-	// Add last section
 	if current.Len() > 0 {
 		sections = append(sections, current.String())
 		titles = append(titles, currentTitle)
 	}
-	return sections, titles, scanner.Err()
+	
+	return sections, titles
+}
+
+// Helper: Parse multiple howto docs into sections
+func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
+	var allSections []string
+	var allTitles []string
+	
+	for _, doc := range docs {
+		sections, titles := parseHowtoSections(doc)
+		allSections = append(allSections, sections...)
+		allTitles = append(allTitles, titles...)
+	}
+	
+	return allSections, allTitles
 }
 
 // NewListHowtoTool returns the MCP tool and handler for listing howto titles
 func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	howtoPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
+	howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
 	tool := mcp.NewTool(
 		"xmlui_list_howto",
-		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto.md."),
+		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/ (and legacy howto.md if present)."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		_, titles, err := parseHowtoSections(howtoPath)
-		if err != nil {
-			return mcp.NewToolResultError("Failed to parse howto.md: " + err.Error()), nil
+		var docs []string
+		// Try legacy howto.md
+		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
+		if data, err := os.ReadFile(legacyPath); err == nil {
+			docs = append(docs, string(data))
 		}
-		return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
+		// Add all top-level howto files
+		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
+			docs = append(docs, moreDocs...)
+		}
+	_, titles := parseHowtoSectionsMulti(docs)
+	return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
 	}
 	return tool, handler
 }
 
 // NewSearchHowtoTool returns the MCP tool and handler for searching howto entries
 func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	howtoPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
+	howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
 	tool := mcp.NewTool(
 		"xmlui_search_howto",
-		mcp.WithDescription("Search for 'How To' entries in docs/public/pages/howto.md by keyword or phrase. Returns full markdown sections."),
+		mcp.WithDescription("Search for 'How To' entries in docs/public/pages/howto/ (and legacy howto.md if present) by keyword or phrase. Returns full markdown sections."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Keyword or phrase to search for.")),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sections, titles, err := parseHowtoSections(howtoPath)
-		if err != nil {
-			return mcp.NewToolResultError("Failed to parse howto.md: " + err.Error()), nil
+		var docs []string
+		// Try legacy howto.md
+		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
+		if data, err := os.ReadFile(legacyPath); err == nil {
+			docs = append(docs, string(data))
 		}
+		// Add all top-level howto files
+		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
+			docs = append(docs, moreDocs...)
+		}
+		sections, titles := parseHowtoSectionsMulti(docs)
 		query, ok := req.Params.Arguments["query"].(string)
 		if !ok || strings.TrimSpace(query) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
