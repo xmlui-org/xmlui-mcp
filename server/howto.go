@@ -65,68 +65,34 @@ func readAllHowtoFiles(howtoDir string) ([]string, error) {
 	return docs, nil
 }
 
-// Helper: Parse a single document - handles both legacy (## sections) and new (# title) formats
-func parseHowtoSections(doc string) ([]string, []string) {
+// Helper: Parse multiple howto docs into sections (split on "## " heading)
+func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
 	var sections []string
 	var titles []string
-	
-	scanner := bufio.NewScanner(strings.NewReader(doc))
-	
-	// Check if this is a new-format file (starts with # title)
-	firstLine := ""
-	if scanner.Scan() {
-		firstLine = scanner.Text()
-	}
-	
-	if strings.HasPrefix(firstLine, "# ") {
-		// New format: single file with # title
-		title := strings.TrimSpace(firstLine[2:])
-		sections = append(sections, doc)
-		titles = append(titles, title)
-		return sections, titles
-	}
-	
-	// Legacy format: parse ## sections
-	var current strings.Builder
-	var currentTitle string
-	
-	// Reset scanner to beginning since we already read the first line
-	scanner = bufio.NewScanner(strings.NewReader(doc))
-	
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "## ") {
-			if current.Len() > 0 {
-				sections = append(sections, current.String())
-				titles = append(titles, currentTitle)
-				current.Reset()
-			}
-			currentTitle = strings.TrimSpace(line[3:])
-		}
-		if current.Len() > 0 || strings.HasPrefix(line, "## ") {
-			current.WriteString(line + "\n")
-		}
-	}
-	if current.Len() > 0 {
-		sections = append(sections, current.String())
-		titles = append(titles, currentTitle)
-	}
-	
-	return sections, titles
-}
-
-// Helper: Parse multiple howto docs into sections
-func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
-	var allSections []string
-	var allTitles []string
-	
 	for _, doc := range docs {
-		sections, titles := parseHowtoSections(doc)
-		allSections = append(allSections, sections...)
-		allTitles = append(allTitles, titles...)
+		var current strings.Builder
+		var currentTitle string
+		scanner := bufio.NewScanner(strings.NewReader(doc))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "## ") {
+				if current.Len() > 0 {
+					sections = append(sections, current.String())
+					titles = append(titles, currentTitle)
+					current.Reset()
+				}
+				currentTitle = strings.TrimSpace(line[3:])
+			}
+			if current.Len() > 0 || strings.HasPrefix(line, "## ") {
+				current.WriteString(line + "\n")
+			}
+		}
+		if current.Len() > 0 {
+			sections = append(sections, current.String())
+			titles = append(titles, currentTitle)
+		}
 	}
-	
-	return allSections, allTitles
+	return sections, titles
 }
 
 // NewListHowtoTool returns the MCP tool and handler for listing howto titles
