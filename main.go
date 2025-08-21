@@ -351,7 +351,7 @@ func main() {
 
 12 prioritize XMLUI tools, especially xmlui_list_howto and xmlui_search_howto, and always cite the urls of found articles
 
-13 before answering any XMLUI question, confirm with the user: 'Would you like me to start by searching the howto articles?' and wait for their response before using any tools"
+13 prioritize xmlui-pg examples in .md files under src/components
 
 These rules ensure clean, maintainable XMLUI applications that follow best practices.`),
 				),
