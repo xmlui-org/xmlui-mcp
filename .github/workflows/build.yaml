@@ -27,25 +27,21 @@ jobs:
             goos: linux
             goarch: amd64
             server_ext: ""
-            client_ext: ""
             label: linux-amd64
           - os: macos-latest
             goos: darwin
             goarch: arm64
             server_ext: ""
-            client_ext: ""
             label: mac-arm
           - os: macos-latest
             goos: darwin
             goarch: amd64
             server_ext: ""
-            client_ext: ""
             label: mac-intel
           - os: ubuntu-latest
             goos: windows
             goarch: amd64
             server_ext: .exe
-            client_ext: .exe
             label: windows-amd64
     runs-on: ${{ matrix.os }}
     steps:
@@ -60,14 +56,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -tags server -o xmlui-mcp${{ matrix.server_ext }}
-
-      - name: Build client
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          go build -tags client -o xmlui-mcp-client${{ matrix.client_ext }}
+          go build -o xmlui-mcp${{ matrix.server_ext }}
 
       - name: Prepare package contents
         run: |
@@ -75,16 +64,13 @@ jobs:
 
           # Copy binaries
           cp xmlui-mcp${{ matrix.server_ext }} package/xmlui-mcp/
-          cp xmlui-mcp-client${{ matrix.client_ext }} package/xmlui-mcp/
 
           # Copy scripts
-          cp run-mcp-client.bat package/xmlui-mcp/
-          cp run-mcp-client.sh package/xmlui-mcp/
+          cp analytics-helper.sh package/xmlui-mcp/
           cp prepare-binary.sh package/xmlui-mcp/
-          chmod +x package/xmlui-mcp/run-mcp-client.sh
+          chmod +x package/xmlui-mcp/analytics-helper.sh
           chmod +x package/xmlui-mcp/prepare-binary.sh
           chmod +x package/xmlui-mcp/xmlui-mcp${{ matrix.server_ext }}
-          chmod +x package/xmlui-mcp/xmlui-mcp-client${{ matrix.client_ext }}
 
           # Copy README
           cp README.md package/xmlui-mcp/
