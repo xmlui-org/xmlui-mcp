@@ -29,19 +29,12 @@ func titleToAnchor(title string) string {
 func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_list_howto",
-		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/ (and legacy howto.md if present)."),
+		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Use the original implementation for listing - no need for mediated search here
+		// Read all howto files from the howto directory
 		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
-
 		var docs []string
-		// Try legacy howto.md
-		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
-		if data, err := readFile(legacyPath); err == nil {
-			docs = append(docs, string(data))
-		}
-		// Add all top-level howto files
 		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
 			docs = append(docs, moreDocs...)
 		}
@@ -76,7 +69,6 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 		// Howto search roots
 		roots := []string{
 			filepath.Join(xmluiDir, "docs", "public", "pages", "howto"),
-			filepath.Join(xmluiDir, "docs", "public", "pages"), // for legacy howto.md
 		}
 
 		cfg := MediatorConfig{
@@ -104,11 +96,7 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 // HowtoClassifier returns a classifier that identifies howto content.
 func HowtoClassifier(homeDir string) func(rel string) string {
 	return func(rel string) string {
-		r := strings.ReplaceAll(rel, "\\", "/")
-		if strings.Contains(r, "howto") {
-			return "howtos"
-		}
-		return "howtos" // everything in this search is howto content
+		return "howtos" // everything in howto search is howto content
 	}
 }
 

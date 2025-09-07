@@ -154,13 +154,17 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		uniqueFiles[section][rel] = struct{}{}
 	}
 
-	runStage := func(stageName, stageQuery string, roots []string) int {
+	runStage := func(stageName, stageQuery string, roots []string, usePartialMatch bool) int {
 		hits := 0
 		if stageQuery == "" {
 			jsonOut.QueryPlan = append(jsonOut.QueryPlan, stageHit{Stage: stageName, Query: stageQuery, Hits: 0})
 			return 0
 		}
 		lq := strings.ToLower(stageQuery)
+		minWords := 0
+		if usePartialMatch {
+			minWords = calculateMinWords(len(strings.Fields(lq)))
+		}
 
 		for _, root := range roots {
 			_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -178,7 +182,16 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				}
 
 				// filename match (optional)
-				if cfg.EnableFilenameMatches && fuzzyMatch(d.Name(), lq) {
+				var matchFunc func(string, string) bool
+				if usePartialMatch {
+					matchFunc = func(text, query string) bool {
+						return partialMatch(text, query, minWords)
+					}
+				} else {
+					matchFunc = fuzzyMatch
+				}
+				
+				if cfg.EnableFilenameMatches && matchFunc(d.Name(), lq) {
 					rel, _ := filepath.Rel(homeDir, path)
 					addHit(rel, 0, "[filename match]")
 					hits++
@@ -197,7 +210,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				ln := 1
 				for sc.Scan() {
 					line := sc.Text()
-					if fuzzyMatch(line, lq) {
+					if matchFunc(line, lq) {
 						rel, _ := filepath.Rel(homeDir, path)
 						addHit(rel, ln, line)
 						hits++
@@ -222,7 +235,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	totalHits := 0
 
 	// Stage 1: exact (legacy behavior)
-	totalHits += runStage("exact", strings.ToLower(originalQuery), cfg.Roots)
+	totalHits += runStage("exact", strings.ToLower(originalQuery), cfg.Roots, false)
 
 	// Stage 2: relaxed (strip sigils/stopwords)
 	kept, removed := normalizeTokens(originalQuery, cfg.Stopwords)
@@ -230,24 +243,21 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	jsonOut.Tokens["removed"] = removed
 	if len(kept) > 0 && len(results) < cfg.MaxResults {
 		relaxed := strings.Join(kept, " ")
-		totalHits += runStage("relaxed", relaxed, cfg.Roots)
+		totalHits += runStage("relaxed", relaxed, cfg.Roots, false)
 	}
 
-	// Stage 3: synonyms; bias preferred sections if the tokens look like a concept
+	// Stage 3: partial matching (relaxed word requirements)
 	if len(kept) > 0 && len(results) < cfg.MaxResults {
-		expanded := expandSynonyms(kept, cfg.Synonyms)
-		jsonOut.Tokens["expanded"] = expanded
-
-		if len(expanded) > 0 {
-			expandedQ := strings.Join(expanded, " ")
-
-			roots := cfg.Roots
-			if looksLikeConcept(kept) && len(cfg.PreferSections) > 0 {
-				// re-order roots so preferred sections' paths come first
-				roots = reorderRootsByPreference(cfg.Roots, cfg.PreferSections)
-			}
-			totalHits += runStage("synonyms", expandedQ, roots)
+		relaxed := strings.Join(kept, " ")
+		roots := cfg.Roots
+		if looksLikeConcept(kept) && len(cfg.PreferSections) > 0 {
+			// re-order roots so preferred sections' paths come first
+			roots = reorderRootsByPreference(cfg.Roots, cfg.PreferSections)
 		}
+		totalHits += runStage("partial", relaxed, roots, true)
+		
+		// Update tokens to show we used partial matching
+		jsonOut.Tokens["expanded"] = kept // Show what we searched with partial matching
 	}
 
 	// Build facets with both file counts and match counts
@@ -334,6 +344,37 @@ func fuzzyMatch(text, query string) bool {
 		}
 	}
 	return true
+}
+
+// partialMatch: relaxed matching requiring only a subset of words to be present.
+func partialMatch(text, query string, minWords int) bool {
+	t := strings.ToLower(text)
+	words := strings.Fields(strings.ToLower(query))
+	if len(words) <= 1 {
+		return strings.Contains(t, strings.ToLower(query))
+	}
+	
+	found := 0
+	for _, w := range words {
+		if strings.Contains(t, w) {
+			found++
+		}
+	}
+	return found >= minWords
+}
+
+// calculateMinWords: smart threshold calculation for partial matching.
+func calculateMinWords(totalWords int) int {
+	switch {
+	case totalWords <= 2:
+		return totalWords     // 100% for 1-2 words
+	case totalWords == 3:
+		return 2              // 67% for 3 words
+	case totalWords >= 4:
+		return totalWords - 1 // 75% for 4+ words
+	default:
+		return 1
+	}
 }
 
 func hasAllowedExt(name string, allowed []string) bool {
@@ -509,10 +550,9 @@ func SimpleClassifier(homeDir string) func(rel string) string {
 		switch {
 		case strings.HasPrefix(r, "docs/content/components/"):
 			return "components"
+		case strings.HasPrefix(r, "docs/public/pages/howto/"):
+			return "howtos"
 		case strings.HasPrefix(r, "docs/public/pages/"):
-			if strings.Contains(r, "howto") {
-				return "howtos"
-			}
 			return "components"
 		case strings.HasPrefix(r, "docs/src/components/"):
 			return "examples"
