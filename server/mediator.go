@@ -664,6 +664,15 @@ func analyzeContentCoverage(sections map[string][]resultItem, queryTokens []stri
 	return warnings
 }
 
+// generateExplicitSelfCheck provides mandatory self-check instructions
+func generateExplicitSelfCheck() []string {
+	return []string{
+		"🚨 BEFORE RESPONDING: Ask yourself 'Am I about to provide code without a documented working example?' If yes, STOP and acknowledge the limitation instead",
+		"🚨 PRIORITY ORDER: 1) Check for documented working examples 2) IF NONE FOUND: Explicitly state this and provide no code 3) ONLY THEN: Provide general documentation URLs (if any exist)",
+		"🚨 MANDATORY ACKNOWLEDGMENT: When no documented examples are found, you MUST start your response with: 'I am following the guidance by not providing code examples because no documented working examples were found.'",
+	}
+}
+
 // generateAgentGuidance provides rule reminders and guidance for scenarios that need extra caution
 // IMPORTANT: URL citation is now MANDATORY whenever any documentation hits are found
 func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
@@ -707,7 +716,7 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	}
 
 	guidance := &AgentGuidance{
-		RuleReminders:     []string{},
+		RuleReminders:     generateExplicitSelfCheck(), // Always include self-check instructions
 		URLBase:           constructURLBase(homeDir),
 		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase(homeDir)),
 	}
@@ -729,8 +738,11 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 			"✅ REQUIRED: Say 'This feature is not documented' instead",
 			"✅ REQUIRED: Acknowledge the limitation explicitly",
 			"🔗 Always provide URLs to documentation when available - convert file paths to clickable links",
+			"🚨 MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
+			"🚨 ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
+			"🚨 VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
 		}
-		guidance.SuggestedApproach = "MANDATORY: Respond with 'Based on my search of the documentation, this feature does not appear to be documented. The available documentation covers: [list what WAS found].'"
+		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].'"
 		return guidance
 	}
 
@@ -742,8 +754,11 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 			"🔒 EVIDENCE REQUIRED: Must cite specific line numbers for any code provided",
 			"🔒 EVIDENCE REQUIRED: Must show exact file path where syntax is documented",
 			"🔗 REQUIRED: Always provide URLs to documentation - see documentation_urls for available sources",
+			"🚨 MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
+			"🚨 ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
+			"🚨 VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
 		}
-		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' or 'This combination is not documented - I cannot provide code examples.' Always cite URLs from documentation_urls."
+		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' If you must provide code, FORMAT REQUIRED: 'According to [file:line], the syntax is...' Always cite URLs from documentation_urls."
 		return guidance
 	}
 
