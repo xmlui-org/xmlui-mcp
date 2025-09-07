@@ -25,6 +25,8 @@ Commands:
     summary     Show a summary of agent usage patterns
     tools       Show tool usage statistics
     searches    Show search query analysis
+    xmlui_search Show xmlui_search queries and results analysis
+    xmlui_search_fail Show failed xmlui_search queries (no results found)
 
     server      Show server analytics endpoints (when running in HTTP mode)
     help        Show this help message
@@ -33,6 +35,8 @@ Examples:
     $0 summary
     $0 tools
     $0 searches
+    $0 xmlui_search
+    $0 xmlui_search_fail
 EOF
 }
 
@@ -180,6 +184,123 @@ show_searches() {
     fi
 }
 
+# Function to show xmlui_search analysis
+show_xmlui() {
+    echo "=== XMLUI Search Analysis ==="
+    echo
+
+    if check_jq; then
+        echo "XMLUI Search Overview:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+            "Total xmlui_search queries: " + (length | tostring),
+            "Unique queries: " + (group_by(.query) | length | tostring),
+            "Successful searches: " + (map(select(.success == true)) | length | tostring),
+            "Failed searches: " + (map(select(.success == false)) | length | tostring),
+            "Average results per search: " + ((map(.result_count // 0) | add) / length | floor | tostring),
+            ""
+        '
+
+        echo "Search Query Details:"
+        echo "===================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+            sort_by(.timestamp) |
+            .[] |
+            "Query: " + .query,
+            "  Time: " + .timestamp,
+            "  Success: " + (.success | tostring),
+            "  Results: " + (.result_count | tostring),
+            "  Search Paths: " + (.search_paths | join(", ")),
+            (if .found_urls and (.found_urls | length) > 0 then
+                "  Found Files (" + (.found_urls | length | tostring) + "):",
+                (.found_urls | .[] | "    • " + .)
+            else
+                "  No files found"
+            end),
+            ""
+        '
+
+        echo
+        echo "Most Frequent XMLUI Search Queries:"
+        echo "==================================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+            group_by(.query) |
+            map(
+                . as $group |
+                {
+                    query: $group[0].query,
+                    count: ($group | length),
+                    success_count: (map(select(.success == true)) | length),
+                    avg_results: (
+                        ($group | map(.result_count // 0) | add)
+                        / ($group | length)
+                    ),
+                    total_results: ($group | map(.result_count // 0) | add)
+                }
+            ) |
+            sort_by(.count) | reverse |
+            .[] |
+            "• " + .query,
+            "  Searched " + (.count | tostring) + " times",
+            "  Successful: " + (.success_count | tostring) + "/" + (.count | tostring),
+            "  Avg results: " + (.avg_results | floor | tostring),
+            "  Total results found: " + (.total_results | tostring),
+            ""
+        '
+
+        echo
+        echo "Most Found Files in XMLUI Searches:"
+        echo "==================================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .found_urls != null)' "$ANALYTICS_FILE" | jq -s '
+            map(.found_urls // []) | flatten | group_by(.) |
+            map({url: .[0], count: length}) |
+            sort_by(.count) | reverse |
+            .[:20] |
+            .[] | "• " + .url + " (" + (.count | tostring) + " times)"
+        '
+
+        echo
+        echo "Search Path Analysis:"
+        echo "===================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+            map(.search_paths // []) | flatten | group_by(.) |
+            map({path: .[0], count: length}) |
+            sort_by(.count) | reverse |
+            .[] | "• " + .path + " (" + (.count | tostring) + " searches)"
+        '
+
+    else
+        echo "Raw xmlui_search data:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE"
+    fi
+}
+
+# Function to show failed xmlui_search queries
+show_xmlui_search_fail() {
+    echo "=== Failed XMLUI Search Queries ==="
+    echo
+
+    if check_jq; then
+        echo "Search terms that returned no results (case-insensitive alphabetical order):"
+        echo "============================================================================="
+
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE" | jq -s '
+            map(.query) | unique | sort_by(ascii_downcase) |
+            .[] | "• " + .
+        '
+
+        echo
+        echo "Summary:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE" | jq -s '
+            "Total failed searches: " + (length | tostring),
+            "Unique failed search terms: " + (map(.query) | unique | length | tostring)
+        '
+
+    else
+        echo "Raw failed xmlui_search data:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE"
+    fi
+}
+
 # Function to show server endpoints
 show_server() {
     cat << EOF
@@ -215,6 +336,12 @@ case "${1:-help}" in
         ;;
     searches)
         show_searches
+        ;;
+    xmlui_search)
+        show_xmlui
+        ;;
+    xmlui_search_fail)
+        show_xmlui_search_fail
         ;;
     server)
         show_server
