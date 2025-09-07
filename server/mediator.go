@@ -58,25 +58,28 @@ type FacetCounts struct {
 type AgentGuidance struct {
 	RuleReminders     []string `json:"rule_reminders"`
 	SuggestedApproach string   `json:"suggested_approach"`
+	URLBase           string   `json:"url_base,omitempty"` // Base URL for constructing documentation links
 }
 
 // MediatorJSON is the machine-readable summary we append after the human block.
 type MediatorJSON struct {
-	QueryPlan      []stageHit                     `json:"query_plan"`
-	Tokens         map[string][]string            `json:"tokens"` // kept/removed/expanded
-	Sections       map[string][]resultItem        `json:"sections"`
-	Facets         map[string]FacetCounts         `json:"facets"`
-	Confidence     string                         `json:"confidence"`
-	RelatedQueries []string                       `json:"related_queries"`
-	AgentGuidance  *AgentGuidance                 `json:"agent_guidance,omitempty"`
-	Diagnostics    map[string]any                 `json:"diagnostics,omitempty"`
+	QueryPlan      []stageHit              `json:"query_plan"`
+	Tokens         map[string][]string     `json:"tokens"` // kept/removed/expanded
+	Sections       map[string][]resultItem `json:"sections"`
+	Facets         map[string]FacetCounts  `json:"facets"`
+	Confidence     string                  `json:"confidence"`
+	RelatedQueries []string                `json:"related_queries"`
+	AgentGuidance  *AgentGuidance          `json:"agent_guidance,omitempty"`
+	Diagnostics    map[string]any          `json:"diagnostics,omitempty"`
 }
 
 // ExecuteMediatedSearch runs the staged scan and returns:
-//  1) human readable block,
 //
-//	2) JSON summary (also included at the end of the human block),
-//	3) error if something goes wrong (I/O etc. are soft-failed inside).
+//  1. human readable block,
+//
+//  2. JSON summary (also included at the end of the human block),
+//
+//  3. error if something goes wrong (I/O etc. are soft-failed inside).
 func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery string) (string, MediatorJSON, error) {
 	// defaults
 	if cfg.MaxResults <= 0 {
@@ -98,15 +101,15 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 
 	// Prepare accumulators
-	results := []string{}         // human-visible lines
-	seen := map[string]struct{}{} // dedupe key: path:line:text
+	results := []string{}                               // human-visible lines
+	seen := map[string]struct{}{}                       // dedupe key: path:line:text
 	uniqueFiles := make(map[string]map[string]struct{}) // section -> set of file paths
 
 	jsonOut := MediatorJSON{
-		QueryPlan:  []stageHit{},
-		Tokens:     map[string][]string{"kept": {}, "removed": {}, "expanded": {}},
-		Sections:   make(map[string][]resultItem),
-		Facets:     make(map[string]FacetCounts),
+		QueryPlan: []stageHit{},
+		Tokens:    map[string][]string{"kept": {}, "removed": {}, "expanded": {}},
+		Sections:  make(map[string][]resultItem),
+		Facets:    make(map[string]FacetCounts),
 		Diagnostics: map[string]any{
 			"original_query": strings.TrimSpace(originalQuery),
 		},
@@ -252,7 +255,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	jsonOut.Confidence = confidenceHeuristicV2(jsonOut.Facets, totalHits)
 
 	// Agent guidance for low-confidence scenarios
-	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, originalQuery)
+	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, originalQuery, homeDir)
 
 	// Related queries
 	if cfg.RelatedFunc != nil {
@@ -531,15 +534,18 @@ func defaultRelated(original string, kept []string) []string {
 	return out
 }
 
-// generateAgentGuidance provides rule reminders and guidance for low-confidence scenarios
-func generateAgentGuidance(confidence string, facets map[string]FacetCounts, originalQuery string) *AgentGuidance {
-	// Only provide guidance for low-confidence or problematic scenarios
-	if confidence != "low" && !isProblematicQuery(facets, originalQuery) {
+// generateAgentGuidance provides rule reminders and guidance for scenarios that need extra caution
+func generateAgentGuidance(confidence string, facets map[string]FacetCounts, originalQuery string, homeDir string) *AgentGuidance {
+	// Always provide guidance for syntax queries, low confidence, or problematic scenarios
+	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery)
+
+	if !shouldProvideGuidance {
 		return nil
 	}
 
 	guidance := &AgentGuidance{
 		RuleReminders: []string{},
+		URLBase:       constructURLBase(homeDir),
 	}
 
 	// Analyze the scenario and provide appropriate reminders
@@ -556,8 +562,35 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, ori
 			"Do not invent XMLUI syntax - only use documented constructs",
 			"Always do the simplest thing possible",
 			"Preview and discuss limitations before providing code",
+			"Never provide code without being able to cite specific documentation or examples",
+			"Always provide URLs to documentation when available - convert file paths to clickable links",
 		}
-		guidance.SuggestedApproach = "Low confidence suggests this feature may not exist. Acknowledge the limitation rather than inventing syntax."
+		guidance.SuggestedApproach = "No documentation found. Acknowledge the limitation rather than inventing syntax. Suggest alternative approaches or ask user to verify the feature exists. If any documentation is found, always provide URLs."
+		return guidance
+	}
+
+	// Syntax queries - always provide strong guidance
+	if isSyntaxQuery(originalQuery) {
+		hasExamples := facets["examples"].Files > 0
+		hasHowtos := facets["howtos"].Files > 0
+		hasComponents := facets["components"].Files > 0
+
+		guidance.RuleReminders = []string{
+			"Do not invent XMLUI syntax - only use documented constructs",
+			"Always cite your sources when providing code examples",
+			"Always provide URLs to documentation - convert file paths to clickable links",
+			"Use the provided URL base to construct full documentation URLs",
+			"Provide file paths and line numbers when referencing documentation",
+			"Preview and discuss limitations before providing code",
+		}
+
+		if !hasExamples && !hasHowtos {
+			guidance.SuggestedApproach = "No examples or tutorials found. Only provide syntax that you can cite from component documentation. Always provide URLs to documentation sources."
+		} else if hasComponents && (!hasExamples || !hasHowtos) {
+			guidance.SuggestedApproach = "Limited examples found. Cross-reference component documentation with any available examples. Always provide URLs to documentation sources."
+		} else {
+			guidance.SuggestedApproach = "Examples available but verify syntax against component documentation. Always provide URLs to documentation sources."
+		}
 		return guidance
 	}
 
@@ -566,22 +599,28 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, ori
 		guidance.RuleReminders = []string{
 			"Do not invent XMLUI syntax - only use documented constructs",
 			"Preview and discuss limitations before providing code",
+			"Always cite your sources when providing code examples",
+			"Always provide URLs to documentation - convert file paths to clickable links",
+			"Use the provided URL base to construct full documentation URLs",
 		}
 		if totalFiles <= 1 {
-			guidance.SuggestedApproach = "Limited documentation found. Verify feature exists before providing implementation details."
+			guidance.SuggestedApproach = "Limited documentation found. Verify feature exists before providing implementation details. Always provide URLs to any available sources."
 		} else {
-			guidance.SuggestedApproach = "Mixed signals in documentation. Cross-reference sources and acknowledge uncertainties."
+			guidance.SuggestedApproach = "Mixed signals in documentation. Cross-reference sources and acknowledge uncertainties. Always provide URLs to documentation sources."
 		}
 		return guidance
 	}
 
-	// Syntax-heavy queries without good coverage
-	if isSyntaxQuery(originalQuery) && (facets["examples"].Files == 0 && facets["howtos"].Files == 0) {
+	// "How to" queries without howtos
+	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
 		guidance.RuleReminders = []string{
 			"Do not invent XMLUI syntax - only use documented constructs",
 			"Always cite your sources when providing code examples",
+			"Always provide URLs to documentation - convert file paths to clickable links",
+			"Use the provided URL base to construct full documentation URLs",
+			"Provide file paths and line numbers when referencing documentation",
 		}
-		guidance.SuggestedApproach = "No examples or tutorials found. Only provide syntax that you can cite from component documentation."
+		guidance.SuggestedApproach = "No how-to guides found. Use component documentation and examples. Always provide URLs to documentation sources."
 		return guidance
 	}
 
@@ -595,8 +634,29 @@ func isProblematicQuery(facets map[string]FacetCounts, query string) bool {
 		return facets["examples"].Files == 0 && facets["howtos"].Files == 0
 	}
 	// "How to" queries without howtos
-	if strings.Contains(strings.ToLower(query), "how to") || strings.Contains(strings.ToLower(query), "how do") {
+	if isHowToQuery(query) {
 		return facets["howtos"].Files == 0
+	}
+	// Queries asking for specific implementation without good coverage
+	if isImplementationQuery(query) {
+		return facets["examples"].Files == 0 && facets["howtos"].Files == 0
+	}
+	return false
+}
+
+// isImplementationQuery detects queries asking for specific implementation details
+func isImplementationQuery(query string) bool {
+	lq := strings.ToLower(query)
+	implPatterns := []string{
+		"implement", "create", "build", "make", "setup", "configure",
+		"customize", "modify", "change", "add", "remove", "update",
+		"styling", "theming", "layout", "design", "ui", "interface",
+		"workaround", "solution", "fix", "issue", "problem",
+	}
+	for _, pattern := range implPatterns {
+		if strings.Contains(lq, pattern) {
+			return true
+		}
 	}
 	return false
 }
@@ -608,6 +668,12 @@ func isSyntaxQuery(query string) bool {
 	syntaxPatterns := []string{
 		"<", ">", "=", "align", "style", "property", "attribute",
 		"bindto", "onclick", "textsize", "color", "width", "height",
+		"padding", "margin", "border", "background", "font", "text",
+		"horizontal", "vertical", "center", "left", "right", "top", "bottom",
+		"justify", "flex", "grid", "layout", "position", "display",
+		"theme", "variant", "size", "orientation", "direction",
+		"template", "component", "element", "tag", "markup",
+		"xmlui", "syntax", "code", "example", "usage",
 	}
 	for _, pattern := range syntaxPatterns {
 		if strings.Contains(lq, pattern) {
@@ -615,4 +681,33 @@ func isSyntaxQuery(query string) bool {
 		}
 	}
 	return false
+}
+
+// isHowToQuery detects queries asking for how-to instructions
+func isHowToQuery(query string) bool {
+	lq := strings.ToLower(query)
+	howToPatterns := []string{
+		"how to", "how do", "how can", "how should", "how would",
+		"tutorial", "guide", "step by step", "instructions",
+		"walkthrough", "example", "demonstration",
+	}
+	for _, pattern := range howToPatterns {
+		if strings.Contains(lq, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// constructURLBase provides the base URL for documentation links
+func constructURLBase(homeDir string) string {
+	// This is a placeholder - in a real implementation, you might:
+	// 1. Read from a config file
+	// 2. Use environment variables
+	// 3. Detect from the repository structure
+	// 4. Use a known documentation site URL
+
+	// For now, return a generic base that can be used to construct URLs
+	// The actual URL construction would happen in the client/agent
+	return "https://docs.xmlui.org"
 }

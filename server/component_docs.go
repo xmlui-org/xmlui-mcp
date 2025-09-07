@@ -40,7 +40,7 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 		}
 
 		// Add source URL
-		baseURL := "https://docs.xmlui.com/components"
+		baseURL := "https://docs.xmlui.org/components"
 		componentURL := baseURL + "/" + componentName
 		contentWithURL := string(content) + "\n\n**Source:** " + componentURL
 
