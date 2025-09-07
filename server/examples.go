@@ -45,7 +45,6 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            ExamplesClassifier(),
 			EnableFilenameMatches: true,
-			// RelatedFunc:         nil, // use defaultRelated
 		}
 
 		// Use a synthetic homeDir for relative paths in examples

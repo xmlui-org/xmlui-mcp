@@ -48,7 +48,6 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            SimpleClassifier(homeDir),
 			EnableFilenameMatches: true,
-			// RelatedFunc:         nil, // use defaultRelated
 		}
 
 		human, _, err := ExecuteMediatedSearch(homeDir, cfg, query)

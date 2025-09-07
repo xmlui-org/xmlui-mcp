@@ -38,9 +38,6 @@ type MediatorConfig struct {
 	// Optional: synonyms expansion (token → []alternatives or phrases).
 	Synonyms map[string][]string
 
-	// Optional: related query suggestions.
-	RelatedFunc func(original string, kept []string) []string
-
 	// Optional: per-hit classifier (relpath -> section key). If nil, SimpleClassifier() is used.
 	Classifier func(rel string) string
 
@@ -276,12 +273,8 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Agent guidance for low-confidence scenarios
 	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
 
-	// Related queries
-	if cfg.RelatedFunc != nil {
-		jsonOut.RelatedQueries = cfg.RelatedFunc(originalQuery, kept)
-	} else {
-		jsonOut.RelatedQueries = defaultRelated(originalQuery, kept)
-	}
+	// Related queries - removed for now
+	jsonOut.RelatedQueries = []string{}
 
 	// Human block
 	var out strings.Builder
@@ -542,15 +535,6 @@ func DefaultStopwords() map[string]struct{} {
 // DefaultSynonyms provides minimal, generic expansions; override if desired.
 func DefaultSynonyms() map[string][]string {
 	return map[string][]string{}
-}
-
-// defaultRelated gives generic follow-ups when a custom RelatedFunc isn't provided.
-func defaultRelated(original string, kept []string) []string {
-	out := []string{}
-	if len(kept) > 0 {
-		out = append(out, strings.Join(kept, " "))
-	}
-	return out
 }
 
 // validateTokenCombinations checks if multiple query tokens appear together in any single result

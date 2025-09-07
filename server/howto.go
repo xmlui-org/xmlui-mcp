@@ -34,7 +34,7 @@ func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Call
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Use the original implementation for listing - no need for mediated search here
 		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
-		
+
 		var docs []string
 		// Try legacy howto.md
 		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
@@ -89,7 +89,6 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            HowtoClassifier(xmluiDir),
 			EnableFilenameMatches: true,
-			RelatedFunc:           HowtoRelatedQueries,
 		}
 
 		human, _, err := ExecuteMediatedSearch(xmluiDir, cfg, query)
@@ -111,34 +110,6 @@ func HowtoClassifier(homeDir string) func(rel string) string {
 		}
 		return "howtos" // everything in this search is howto content
 	}
-}
-
-// HowtoRelatedQueries provides howto-specific related query suggestions.
-func HowtoRelatedQueries(original string, kept []string) []string {
-	out := []string{}
-	if len(kept) > 0 {
-		out = append(out, strings.Join(kept, " "))
-	}
-	lq := strings.ToLower(original)
-	
-	// Howto-specific suggestions
-	if strings.Contains(lq, "form") {
-		out = append(out, "form validation", "form data binding")
-	}
-	if strings.Contains(lq, "list") {
-		out = append(out, "list pagination", "list filtering")
-	}
-	if strings.Contains(lq, "button") {
-		out = append(out, "button events", "button styling")
-	}
-	if strings.Contains(lq, "component") {
-		out = append(out, "build component", "custom component")
-	}
-	if strings.Contains(lq, "data") {
-		out = append(out, "data binding", "data source")
-	}
-	
-	return out
 }
 
 // Helper functions for backwards compatibility
