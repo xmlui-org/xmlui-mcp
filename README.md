@@ -78,60 +78,20 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 
 ## Test the server
 
-Agents like Claude, Cursor, and Copilot typically use the server in stdio mode.
-
-You can run the server in HTTP mode to see what tools and prompts are available.
+Agents like Claude, Cursor, and Copilot typically use the server in stdio mode. You can use the server directly that way.
 
 ```
-~/xmlui-mcp$ ./xmlui-mcp --http  ~/xmlui ~  xmlui-invoice,xmlui-mastodon
-PROMPT: xmlui_rules
- Essential rules and guidelines for XMLUI development
+npx @modelcontextprotocol/inspector
+http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=550d43b6ac5b2881185e81c9c4abdb8115bc90ac3e277d97076bfcc84f4d6288
+```
 
-xmlui_list_components
- Lists all available XMLUI components based on .md files in docs/content/components.
+If a browser does not auto-launch, copy/paste that URL. In the inspector, fill in Command and Arguments.
 
-xmlui_component_docs
- Returns the Markdown documentation for a given XMLUI component from docs/content/components.
- Input schema:
-   - component (required): Component name, e.g. 'Button', 'Avatar', or 'Stack/VStack'
+Command: /path/to/xmlui-mcp
 
-xmlui_search
- Searches XMLUI source and documentation files.
- Input schema:
-   - query (required): Search term, e.g. 'Slider' or 'boxShadow'
+Arguments: /path/to/xmlui path/to/examples "folder1,folder2"
 
-xmlui_read_file
- Reads a .mdx, .tsx, .scss, or .md file from the XMLUI source or docs tree.
- Input schema:
-   - path (required): Relative path under docs/content/components, xmlui/src/components, or docs/public/pages, e.g. 'xmlui/src/components/Spinner/Spinner.tsx'
-
-Example roots configured: [/Users/jonudell/xmlui-invoice /Users/jonudell/xmlui-mastodon]
-xmlui_examples
- Searches local sample apps for usage examples of XMLUI components. Provide a query string to search for.
- Input schema:
-   - query (required): Search term, e.g. 'Spinner', 'AppState', or 'delay="1000"'
-
-xmlui_list_howto
- List all 'How To' entry titles from docs/public/pages/howto.md.
-
-xmlui_search_howto
- Search for 'How To' entries in docs/public/pages/howto.md by keyword or phrase. Returns full markdown sections.
- Input schema:
-   - query (required): Keyword or phrase to search for.
-
-xmlui_inject_prompt
- Inject a prompt into the current session context for guidance
- Input schema:
-   - prompt_name (required): Name of the prompt to inject (e.g., 'xmlui_rules')
-   - session_id : Session ID (optional, defaults to 'default')
-
-xmlui_list_prompts
- Lists all available prompts that can be injected into session context
-
-xmlui_get_prompt
- Retrieves the content of a specific prompt for review
- Input schema:
-   - prompt_name (required): Name of the prompt to retrieve (e.g., 'xmlui_rules')
+Then click Connect.
 
 # Guidance
 
