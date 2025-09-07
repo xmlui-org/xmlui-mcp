@@ -368,10 +368,10 @@ func calculateMinWords(totalWords int) int {
 	switch {
 	case totalWords <= 2:
 		return totalWords     // 100% for 1-2 words
-	case totalWords == 3:
-		return 2              // 67% for 3 words
-	case totalWords >= 4:
-		return totalWords - 1 // 75% for 4+ words
+	case totalWords <= 4:
+		return 2              // 50% for 3-4 words  
+	case totalWords >= 5:
+		return 2              // Just 2 words for 5+ word queries
 	default:
 		return 1
 	}
