@@ -255,7 +255,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	jsonOut.Confidence = confidenceHeuristicV2(jsonOut.Facets, totalHits)
 
 	// Agent guidance for low-confidence scenarios
-	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, originalQuery, homeDir)
+	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
 
 	// Related queries
 	if cfg.RelatedFunc != nil {
@@ -534,10 +534,144 @@ func defaultRelated(original string, kept []string) []string {
 	return out
 }
 
+// validateTokenCombinations checks if multiple query tokens appear together in any single result
+func validateTokenCombinations(sections map[string][]resultItem, queryTokens []string) *AgentGuidance {
+	if len(queryTokens) < 2 {
+		return nil // Single token queries don't need combination validation
+	}
+
+	// Check if ANY result contains multiple query tokens together
+	hasTokenCombination := false
+	for _, sectionItems := range sections {
+		for _, item := range sectionItems {
+			snippet := strings.ToLower(item.Snippet)
+			tokensFound := 0
+			for _, token := range queryTokens {
+				if strings.Contains(snippet, token) {
+					tokensFound++
+				}
+			}
+			if tokensFound >= 2 { // At least 2 tokens in same result
+				hasTokenCombination = true
+				break
+			}
+		}
+		if hasTokenCombination {
+			break
+		}
+	}
+
+	if !hasTokenCombination && len(queryTokens) >= 2 {
+		return &AgentGuidance{
+			RuleReminders: []string{
+				"⚠️  Multiple query terms found only in separate contexts",
+				"❌ Do not combine features without documented evidence they work together",
+				"✅ Only use documented feature combinations",
+			},
+			SuggestedApproach: "Query terms found in separate documentation. Do not assume they work together without explicit documented examples.",
+		}
+	}
+	return nil
+}
+
+// detectSyntaxInventionRisk identifies scenarios with high risk of syntax invention
+func detectSyntaxInventionRisk(queryTokens []string, facets map[string]FacetCounts) bool {
+	// Risk factors (generic patterns, not domain-specific)
+	riskFactors := 0
+
+	// Factor 1: Multiple technical terms (likely asking about combining features)
+	if len(queryTokens) >= 2 {
+		riskFactors++
+	}
+
+	// Factor 2: Low documentation coverage
+	totalDocs := 0
+	for _, facet := range facets {
+		totalDocs += facet.Files
+	}
+	if totalDocs < 3 {
+		riskFactors++
+	}
+
+	// Factor 3: No examples/howtos (implementation guidance missing)
+	if facets["examples"].Files == 0 && facets["howtos"].Files == 0 {
+		riskFactors++
+	}
+
+	return riskFactors >= 2
+}
+
+// analyzeContentCoverage looks for gaps in documentation coverage
+func analyzeContentCoverage(sections map[string][]resultItem, queryTokens []string) []string {
+	warnings := []string{}
+
+	// Check if results are fragmented across different sections
+	tokenToSections := make(map[string]map[string]bool)
+
+	for sectionName, items := range sections {
+		for _, item := range items {
+			snippet := strings.ToLower(item.Snippet)
+			for _, token := range queryTokens {
+				if strings.Contains(snippet, token) {
+					if tokenToSections[token] == nil {
+						tokenToSections[token] = make(map[string]bool)
+					}
+					tokenToSections[token][sectionName] = true
+				}
+			}
+		}
+	}
+
+	// If tokens only appear in different sections, warn about combination
+	if len(queryTokens) >= 2 {
+		allSeparated := true
+		for i := 0; i < len(queryTokens)-1; i++ {
+			for j := i + 1; j < len(queryTokens); j++ {
+				token1Sections := tokenToSections[queryTokens[i]]
+				token2Sections := tokenToSections[queryTokens[j]]
+
+				// Check if they share any section
+				shareSection := false
+				for section := range token1Sections {
+					if token2Sections[section] {
+						shareSection = true
+						break
+					}
+				}
+				if shareSection {
+					allSeparated = false
+					break
+				}
+			}
+			if !allSeparated {
+				break
+			}
+		}
+
+		if allSeparated {
+			warnings = append(warnings, "Query terms appear only in separate documentation sections")
+		}
+	}
+
+	return warnings
+}
+
 // generateAgentGuidance provides rule reminders and guidance for scenarios that need extra caution
-func generateAgentGuidance(confidence string, facets map[string]FacetCounts, originalQuery string, homeDir string) *AgentGuidance {
-	// Always provide guidance for syntax queries, low confidence, or problematic scenarios
-	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery)
+func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
+	// First check for token combination issues - this is the strongest validation
+	if combinationGuidance := validateTokenCombinations(sections, queryTokens); combinationGuidance != nil {
+		combinationGuidance.URLBase = constructURLBase(homeDir)
+		return combinationGuidance
+	}
+
+	// Check for high syntax invention risk
+	hasInventionRisk := detectSyntaxInventionRisk(queryTokens, facets)
+
+	// Check for content coverage issues
+	coverageWarnings := analyzeContentCoverage(sections, queryTokens)
+
+	// Always provide guidance for syntax queries, low confidence, problematic scenarios, or high risk
+	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0
 
 	if !shouldProvideGuidance {
 		return nil
@@ -559,14 +693,32 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, ori
 	// No matches at all - strongest rule reminder
 	if totalFiles == 0 && totalMatches == 0 {
 		guidance.RuleReminders = []string{
-			"Do not invent XMLUI syntax - only use documented constructs",
-			"Always do the simplest thing possible",
-			"Preview and discuss limitations before providing code",
-			"Never provide code without being able to cite specific documentation or examples",
+			"⚠️  STOP: No documentation found - DO NOT provide code examples",
+			"❌ FORBIDDEN: Do not invent syntax that isn't documented",
+			"✅ REQUIRED: Say 'This feature is not documented' instead",
+			"✅ REQUIRED: Acknowledge the limitation explicitly",
 			"Always provide URLs to documentation when available - convert file paths to clickable links",
 		}
-		guidance.SuggestedApproach = "No documentation found. Acknowledge the limitation rather than inventing syntax. Suggest alternative approaches or ask user to verify the feature exists. If any documentation is found, always provide URLs."
+		guidance.SuggestedApproach = "MANDATORY: Respond with 'Based on my search of the documentation, this feature does not appear to be documented. The available documentation covers: [list what WAS found].'"
 		return guidance
+	}
+
+	// High invention risk - provide very strong guidance
+	if hasInventionRisk {
+		guidance.RuleReminders = []string{
+			"⚠️  HIGH RISK: Multiple terms with limited documentation coverage",
+			"❌ FORBIDDEN: Do not combine features without explicit documented examples",
+			"🔒 EVIDENCE REQUIRED: Must cite specific line numbers for any code provided",
+			"🔒 EVIDENCE REQUIRED: Must show exact file path where syntax is documented",
+			"Always provide URLs to documentation - convert file paths to clickable links",
+		}
+		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' or 'This combination is not documented - I cannot provide code examples.'"
+		return guidance
+	}
+
+	// Include coverage warnings in guidance
+	if len(coverageWarnings) > 0 {
+		guidance.RuleReminders = append(guidance.RuleReminders, "⚠️  "+coverageWarnings[0])
 	}
 
 	// Syntax queries - always provide strong guidance
@@ -575,14 +727,13 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, ori
 		hasHowtos := facets["howtos"].Files > 0
 		hasComponents := facets["components"].Files > 0
 
-		guidance.RuleReminders = []string{
-			"Do not invent XMLUI syntax - only use documented constructs",
-			"Always cite your sources when providing code examples",
-			"Always provide URLs to documentation - convert file paths to clickable links",
-			"Use the provided URL base to construct full documentation URLs",
-			"Provide file paths and line numbers when referencing documentation",
-			"Preview and discuss limitations before providing code",
-		}
+		guidance.RuleReminders = append(guidance.RuleReminders, []string{
+			"❌ Do not invent syntax - only use documented constructs",
+			"📝 Always cite your sources when providing code examples",
+			"🔗 Always provide URLs to documentation - convert file paths to clickable links",
+			"📍 Provide file paths and line numbers when referencing documentation",
+			"⚠️ Preview and discuss limitations before providing code",
+		}...)
 
 		if !hasExamples && !hasHowtos {
 			guidance.SuggestedApproach = "No examples or tutorials found. Only provide syntax that you can cite from component documentation. Always provide URLs to documentation sources."
