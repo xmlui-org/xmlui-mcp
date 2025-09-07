@@ -13,13 +13,10 @@ The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exi
 
    - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
    - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
-   - `$HOME/xmlui/docs/public/pages/howto.md` - HowTo docs with working playgrounds
+   - `$HOME/xmlui/docs/public/pages/howto` - HowTo docs with working playgrounds
    - `$HOME/xmlui/xmlui/src/components/` - Source code (.tsx, .scss files)
 
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
-
-> [!TIP]
-> The rules injected into the agent's session tell it to prioritize searching and citing How To articles which lead to non-hallucinated known-working examples. But it helps to say that explicitly, and in general to often say "remember the rules" because LLMs are forgetful and need constant reminding.
 
 ## Install
 
@@ -136,75 +133,19 @@ xmlui_get_prompt
  Input schema:
    - prompt_name (required): Name of the prompt to retrieve (e.g., 'xmlui_rules')
 
-Starting HTTP server on port 8080
-SSE endpoint: http://localhost:8080/sse
-Message endpoint: http://localhost:8080/message
-Tools endpoint: http://localhost:8080/tools
-Prompts list endpoint: http://localhost:8080/prompts
-Specific prompt endpoint: http://localhost:8080/prompts/{name}
-Inject prompt endpoint: http://localhost:8080/session/context
-Analytics summary endpoint: http://localhost:8080/analytics/summary
+# Guidance
 
+As agents use this server to search docs and examples, they receive strong guidance to prefer working examples, cite URLs when found, and admit ignorance when not found. It helps to reinforce that guidance in their rules files.
 
-# Test available tools
-curl http://localhost:8080/tools
+- Obey the guidance you receive from the xmlui-mcp server.
 
-# Test available prompts
-curl http://localhost:8080/prompts
+- I will disbelieve any answer for which you cannot cite an URL to documentation or a working example.
 
-# Get specific prompt content
-curl http://localhost:8080/prompts/xmlui_rules
+- If you don't find an URL, say so.
 
-# Inject prompt into session ("remember the rules" workflow)
-curl -X POST http://localhost:8080/session/context \
-  -H "Content-Type: application/json" \
-  -d '{"prompt_name": "xmlui_rules"}'
-
-# View analytics summary
-curl http://localhost:8080/analytics/summary
-```
+- If you do find one, cite it.
 
 ## Analytics
 
-The server now includes comprehensive analytics to track agent usage patterns and optimize the tools.
-
-- Analytics are automatically collected when agents use the server
-
-- Data is saved to `xmlui-mcp-analytics.json`
-
-- View analytics with: `./analytics-helper.sh summary`
-
-- Access via HTTP endpoints when running with `--http`
-
-# Rules
-
-The server contains these rules:
-
-```
-1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval.
-
-2 don't add any xmlui styling, let the theme and layout engine do its job
-
-3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
-
-4 do not invent any xmlui syntax. only use constructs for which you can find examples in the docs and sample apps. cite your sources.
-
-5 never touch the dom. we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
-
-6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
-
-7 use the xmlui mcp server to list and show component docs but also search xmlui source, docs, and examples
-
-8 always do the simplest thing possible
-
-9 use a neutral tone. do not say "Perfect!" etc. in fact never use exclamation marks at all
-
-10 when creating examples for live playgrounds, observe the conventions for ---app and ---comp
-
-11 VStack is the default, don't use it unless necessary
-
-12 always search XMLUI-related resources first and prioritize them over other sources
-```
-
-Agents should see these rules when starting the xmlui-mcp server but they are forgetful and when they do forget you can try saying "remember the rules" to reinject them into your session's context.
+The server saves logs to enable tracking agent usage patterns and optimizing the tools. Data is saved to `xmlui-mcp-analytics.json`. Use `./analytics-helper.sh` for overviews of what's been captured.
 
