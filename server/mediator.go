@@ -63,22 +63,24 @@ type DocumentationURL struct {
 
 // AgentGuidance provides rule reminders and suggestions for low-confidence scenarios
 type AgentGuidance struct {
-	RuleReminders     []string           `json:"rule_reminders"`
-	SuggestedApproach string             `json:"suggested_approach"`
-	URLBase           string             `json:"url_base,omitempty"`           // Base URL for constructing documentation links
-	DocumentationURLs []DocumentationURL `json:"documentation_urls,omitempty"` // Specific URLs found in documentation
+	RuleReminders        []string           `json:"rule_reminders"`
+	SuggestedApproach    string             `json:"suggested_approach"`
+	URLBase              string             `json:"url_base,omitempty"`           // Base URL for constructing documentation links
+	DocumentationURLs    []DocumentationURL `json:"documentation_urls,omitempty"` // Specific URLs found in documentation
+	SearchToolPreference string             `json:"search_tool_preference,omitempty"`
 }
 
 // MediatorJSON is the machine-readable summary we append after the human block.
 type MediatorJSON struct {
-	QueryPlan      []stageHit              `json:"query_plan"`
-	Tokens         map[string][]string     `json:"tokens"` // kept/removed/expanded
-	Sections       map[string][]resultItem `json:"sections"`
-	Facets         map[string]FacetCounts  `json:"facets"`
-	Confidence     string                  `json:"confidence"`
-	RelatedQueries []string                `json:"related_queries"`
-	AgentGuidance  *AgentGuidance          `json:"agent_guidance,omitempty"`
-	Diagnostics    map[string]any          `json:"diagnostics,omitempty"`
+	QueryPlan           []stageHit              `json:"query_plan"`
+	Tokens              map[string][]string     `json:"tokens"` // kept/removed/expanded
+	Sections            map[string][]resultItem `json:"sections"`
+	Facets              map[string]FacetCounts  `json:"facets"`
+	Confidence          string                  `json:"confidence"`
+	RelatedQueries      []string                `json:"related_queries"`
+	AgentGuidance       *AgentGuidance          `json:"agent_guidance,omitempty"`
+	Diagnostics         map[string]any          `json:"diagnostics,omitempty"`
+	SearchToolHierarchy []string                `json:"search_tool_hierarchy,omitempty"`
 }
 
 // ExecuteMediatedSearch runs the staged scan and returns:
@@ -261,6 +263,15 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 	// Confidence heuristic (updated to use new facet structure)
 	jsonOut.Confidence = confidenceHeuristicV2(jsonOut.Facets, totalHits)
+
+	// Set search tool hierarchy for howto/example queries
+	if isHowToQuery(originalQuery) || isExampleQuery(originalQuery) {
+		jsonOut.SearchToolHierarchy = []string{
+			"xmlui_examples (preferred)",
+			"xmlui_search_howto (preferred)",
+			"xmlui_search (fallback)",
+		}
+	}
 
 	// Agent guidance for low-confidence scenarios
 	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
@@ -707,18 +718,31 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	// Check for content coverage issues
 	coverageWarnings := analyzeContentCoverage(sections, queryTokens)
 
-	// Always provide guidance for syntax queries, low confidence, problematic scenarios, high risk, OR when we have documentation hits
-	// URL citation is mandatory whenever we find documentation, so we must provide guidance
-	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0 || hasDocumentationHits
+	// Check for search strategy issues
+	searchStrategyWarnings := validateSearchStrategy(originalQuery, facets)
 
-	if !shouldProvideGuidance {
-		return nil
-	}
-
+	// Always provide guidance - search strategy should always be included
 	guidance := &AgentGuidance{
 		RuleReminders:     generateExplicitSelfCheck(), // Always include self-check instructions
 		URLBase:           constructURLBase(homeDir),
 		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase(homeDir)),
+	}
+
+	// Always include search strategy guidance
+	searchStrategyReminders := []string{
+		"🔍 SEARCH STRATEGY: Use xmlui_examples and xmlui_search_howto first, then fall back to xmlui_search",
+		"📚 PREFER: Examples and howtos over general component documentation",
+		"🔄 FALLBACK: If no examples/howtos found, then search general documentation",
+		"🔗 MANDATORY: Always include documentation or example URLs in your response",
+	}
+	guidance.RuleReminders = append(guidance.RuleReminders, searchStrategyReminders...)
+
+	// Check if we should provide additional guidance beyond the basic search strategy
+	shouldProvideAdditionalGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0 || len(searchStrategyWarnings) > 0 || hasDocumentationHits
+
+	if !shouldProvideAdditionalGuidance {
+		// Still return guidance with just the search strategy
+		return guidance
 	}
 
 	// If we have documentation hits, URL citation is mandatory - add this first
@@ -767,6 +791,11 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 		guidance.RuleReminders = append(guidance.RuleReminders, "⚠️  "+coverageWarnings[0])
 	}
 
+	// Include search strategy warnings in guidance
+	if len(searchStrategyWarnings) > 0 {
+		guidance.RuleReminders = append(guidance.RuleReminders, searchStrategyWarnings...)
+	}
+
 	// Syntax queries - always provide strong guidance
 	if isSyntaxQuery(originalQuery) {
 		hasExamples := facets["examples"].Files > 0
@@ -811,17 +840,25 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 		return guidance
 	}
 
-	// "How to" queries without howtos
-	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
-		baseReminders := []string{
-			"Do not invent XMLUI syntax - only use documented constructs",
-			"Always cite your sources when providing code examples",
-			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
-			"Use the provided URL base to construct full documentation URLs",
-			"Provide file paths and line numbers when referencing documentation",
+	// "How to" queries - provide specific guidance
+	if isHowToQuery(originalQuery) {
+		if facets["howtos"].Files == 0 {
+			guidance.SuggestedApproach = "No how-to guides found. Search strategy: 1) Try xmlui_examples 2) Try xmlui_search_howto 3) Fall back to xmlui_search if needed"
+		} else {
+			guidance.SuggestedApproach = "How-to guides found. Search strategy: 1) Use xmlui_examples and xmlui_search_howto first 2) Fall back to xmlui_search if needed"
 		}
-		guidance.RuleReminders = append(guidance.RuleReminders, baseReminders...)
-		guidance.SuggestedApproach = "No how-to guides found. Use component documentation and examples. Always provide URLs to documentation sources."
+		guidance.SearchToolPreference = "xmlui_search_howto"
+		return guidance
+	}
+
+	// Example queries - provide specific guidance
+	if isExampleQuery(originalQuery) {
+		if facets["examples"].Files == 0 {
+			guidance.SuggestedApproach = "No examples found. Search strategy: 1) Try xmlui_examples 2) Try xmlui_search_howto 3) Fall back to xmlui_search if needed"
+		} else {
+			guidance.SuggestedApproach = "Examples found. Search strategy: 1) Use xmlui_examples and xmlui_search_howto first 2) Fall back to xmlui_search if needed"
+		}
+		guidance.SearchToolPreference = "xmlui_examples"
 		return guidance
 	}
 
@@ -833,10 +870,19 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 			"✅ VERIFY: You must include at least one URL from documentation_urls in your response")
 	}
 
+	// Set search tool preference based on query type
+	if isHowToQuery(originalQuery) {
+		guidance.SearchToolPreference = "xmlui_search_howto"
+	} else if isExampleQuery(originalQuery) {
+		guidance.SearchToolPreference = "xmlui_examples"
+	} else {
+		guidance.SearchToolPreference = "xmlui_search"
+	}
+
 	return guidance
 }
 
-// isProblematicQuery detects scenarios that warrant agent guidance even with medium confidence
+// isProblematicQuery detects scenarios that warrant additional agent guidance beyond basic search strategy
 func isProblematicQuery(facets map[string]FacetCounts, query string) bool {
 	// Syntax queries without examples/howtos
 	if isSyntaxQuery(query) {
@@ -845,6 +891,10 @@ func isProblematicQuery(facets map[string]FacetCounts, query string) bool {
 	// "How to" queries without howtos
 	if isHowToQuery(query) {
 		return facets["howtos"].Files == 0
+	}
+	// Example queries without examples
+	if isExampleQuery(query) {
+		return facets["examples"].Files == 0
 	}
 	// Queries asking for specific implementation without good coverage
 	if isImplementationQuery(query) {
@@ -898,9 +948,24 @@ func isHowToQuery(query string) bool {
 	howToPatterns := []string{
 		"how to", "how do", "how can", "how should", "how would",
 		"tutorial", "guide", "step by step", "instructions",
-		"walkthrough", "example", "demonstration",
+		"walkthrough", "demonstration",
 	}
 	for _, pattern := range howToPatterns {
+		if strings.Contains(lq, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// isExampleQuery detects queries asking for examples
+func isExampleQuery(query string) bool {
+	lq := strings.ToLower(query)
+	examplePatterns := []string{
+		"example", "examples", "demo", "sample", "show me",
+		"working example", "code example", "usage example",
+	}
+	for _, pattern := range examplePatterns {
 		if strings.Contains(lq, pattern) {
 			return true
 		}
@@ -980,4 +1045,19 @@ func extractTitleFromPath(filePath string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// validateSearchStrategy validates if the right search strategy was used
+func validateSearchStrategy(originalQuery string, facets map[string]FacetCounts) []string {
+	warnings := []string{}
+
+	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
+		warnings = append(warnings, "Howto query found no howtos - try xmlui_search_howto")
+	}
+
+	if isExampleQuery(originalQuery) && facets["examples"].Files == 0 {
+		warnings = append(warnings, "Example query found no examples - try xmlui_examples")
+	}
+
+	return warnings
 }
