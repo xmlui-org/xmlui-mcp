@@ -1,41 +1,19 @@
 package server
 
 import (
-	"bufio"
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// Helper: Fuzzy word matching - returns true if text matches query with word-based fuzzy logic
-func fuzzyMatchSearch(text, query string) bool {
-	textLower := strings.ToLower(text)
-	queryLower := strings.ToLower(query)
-	queryWords := strings.Fields(queryLower)
-
-	// If single word query, use simple contains check
-	if len(queryWords) == 1 {
-		return strings.Contains(textLower, queryLower)
-	}
-
-	// For multiple words, require ALL words to be present (AND logic)
-	for _, word := range queryWords {
-		if !strings.Contains(textLower, word) {
-			return false
-		}
-	}
-	return true
-}
-
+// NewSearchTool wires xmlui_search to the shared search mediator.
 func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-
-	tool := mcp.NewTool("xmlui_search",
-		mcp.WithDescription("Searches XMLUI source and documentation files."),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Slider' or 'boxShadow'")),
+	tool := mcp.NewTool(
+		"xmlui_search",
+		mcp.WithDescription("Searches XMLUI source, docs, and examples using a staged search mediator. Returns human-readable matches plus a JSON summary."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Search term, e.g. 'Slider', 'boxShadow', or 'pathname context variable'")),
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
@@ -46,74 +24,38 @@ func NewSearchTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTool
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		query, ok := req.Params.Arguments["query"].(string)
-		if !ok || strings.TrimSpace(query) == "" {
+		raw, ok := req.Params.Arguments["query"].(string)
+		if !ok || strings.TrimSpace(raw) == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
 		}
+		query := strings.TrimSpace(raw)
 
-		query = strings.ToLower(query)
-		results := []string{}
-
-		searchRoots := []string{
+		// Repository roots to scan (order matters for biasing)
+		roots := []string{
 			filepath.Join(homeDir, "docs", "content", "components"),
 			filepath.Join(homeDir, "docs", "public", "pages"),
 			filepath.Join(homeDir, "docs", "src", "components"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 		}
 
-		for _, root := range searchRoots {
-			filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-
-				if d.IsDir() {
-					if d.Name() == "node_modules" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-
-				if !(strings.HasSuffix(d.Name(), ".mdx") || strings.HasSuffix(d.Name(), ".tsx") || strings.HasSuffix(d.Name(), ".md") || strings.HasSuffix(d.Name(), ".scss")) {
-					return nil
-				}
-
-				// Add filename match
-				if fuzzyMatchSearch(d.Name(), query) {
-					rel, _ := filepath.Rel(homeDir, path)
-					results = append(results, fmt.Sprintf("%s: [filename match]", rel))
-					if len(results) >= 50 {
-						return nil
-					}
-				}
-
-				file, err := os.Open(path)
-				if err != nil {
-					return nil
-				}
-				defer file.Close()
-
-				scanner := bufio.NewScanner(file)
-				lineNum := 1
-				for scanner.Scan() {
-					line := scanner.Text()
-					if fuzzyMatchSearch(line, query) {
-						rel, _ := filepath.Rel(homeDir, path)
-						results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, line))
-						if len(results) >= 50 {
-							return nil
-						}
-					}
-					lineNum++
-				}
-				return nil
-			})
+		cfg := MediatorConfig{
+			Roots:                 roots,
+			SectionKeys:           []string{"components", "howtos", "examples", "source"},
+			PreferSections:        []string{"components", "howtos"}, // bias docs/howtos when expanding
+			MaxResults:            50,
+			FileExtensions:        []string{".mdx", ".md", ".tsx", ".scss"},
+			Stopwords:             DefaultStopwords(),
+			Synonyms:              DefaultSynonyms(),
+			Classifier:            SimpleClassifier(homeDir),
+			EnableFilenameMatches: true,
+			// RelatedFunc:         nil, // use defaultRelated
 		}
 
-		if len(results) == 0 {
-			return mcp.NewToolResultText("No matches found."), nil
+		human, _, err := ExecuteMediatedSearch(homeDir, cfg, query)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(strings.Join(results, "\n")), nil
+		return mcp.NewToolResultText(human), nil
 	}
 
 	return tool, handler

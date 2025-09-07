@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"os"
 	"path/filepath"
@@ -10,26 +9,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
-
-// Helper: Fuzzy word matching - returns true if text matches query with word-based fuzzy logic
-func fuzzyMatch(text, query string) bool {
-	textLower := strings.ToLower(text)
-	queryLower := strings.ToLower(query)
-	queryWords := strings.Fields(queryLower)
-
-	// If single word query, use simple contains check
-	if len(queryWords) == 1 {
-		return strings.Contains(textLower, queryLower)
-	}
-
-	// For multiple words, require ALL words to be present (AND logic)
-	for _, word := range queryWords {
-		if !strings.Contains(textLower, word) {
-			return false
-		}
-	}
-	return true
-}
 
 // Helper: Convert title to URL anchor
 func titleToAnchor(title string) string {
@@ -46,7 +25,127 @@ func titleToAnchor(title string) string {
 	return result.String()
 }
 
-// Helper: Read all top-level howto files and aggregate their contents
+// NewListHowtoTool returns the MCP tool and handler for listing howto titles
+func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+	tool := mcp.NewTool(
+		"xmlui_list_howto",
+		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/ (and legacy howto.md if present)."),
+	)
+	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Use the original implementation for listing - no need for mediated search here
+		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
+		
+		var docs []string
+		// Try legacy howto.md
+		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
+		if data, err := readFile(legacyPath); err == nil {
+			docs = append(docs, string(data))
+		}
+		// Add all top-level howto files
+		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
+			docs = append(docs, moreDocs...)
+		}
+		_, titles := parseHowtoSectionsMulti(docs)
+		return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
+	}
+	return tool, handler
+}
+
+// NewSearchHowtoTool wires xmlui_search_howto to the shared search mediator.
+func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+	tool := mcp.NewTool(
+		"xmlui_search_howto",
+		mcp.WithDescription("Search for 'How To' entries using a staged search mediator. Returns human-readable matches plus a JSON summary."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Keyword or phrase to search for.")),
+	)
+
+	tool.Annotations = mcp.ToolAnnotation{
+		ReadOnlyHint:    true,
+		DestructiveHint: false,
+		IdempotentHint:  true,
+		OpenWorldHint:   false,
+	}
+
+	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		raw, ok := req.Params.Arguments["query"].(string)
+		if !ok || strings.TrimSpace(raw) == "" {
+			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
+		}
+		query := strings.TrimSpace(raw)
+
+		// Howto search roots
+		roots := []string{
+			filepath.Join(xmluiDir, "docs", "public", "pages", "howto"),
+			filepath.Join(xmluiDir, "docs", "public", "pages"), // for legacy howto.md
+		}
+
+		cfg := MediatorConfig{
+			Roots:                 roots,
+			SectionKeys:           []string{"howtos"},
+			PreferSections:        []string{"howtos"}, // bias towards howtos (though all are howtos)
+			MaxResults:            50,
+			FileExtensions:        []string{".md", ".mdx"},
+			Stopwords:             DefaultStopwords(),
+			Synonyms:              DefaultSynonyms(),
+			Classifier:            HowtoClassifier(xmluiDir),
+			EnableFilenameMatches: true,
+			RelatedFunc:           HowtoRelatedQueries,
+		}
+
+		human, _, err := ExecuteMediatedSearch(xmluiDir, cfg, query)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(human), nil
+	}
+
+	return tool, handler
+}
+
+// HowtoClassifier returns a classifier that identifies howto content.
+func HowtoClassifier(homeDir string) func(rel string) string {
+	return func(rel string) string {
+		r := strings.ReplaceAll(rel, "\\", "/")
+		if strings.Contains(r, "howto") {
+			return "howtos"
+		}
+		return "howtos" // everything in this search is howto content
+	}
+}
+
+// HowtoRelatedQueries provides howto-specific related query suggestions.
+func HowtoRelatedQueries(original string, kept []string) []string {
+	out := []string{}
+	if len(kept) > 0 {
+		out = append(out, strings.Join(kept, " "))
+	}
+	lq := strings.ToLower(original)
+	
+	// Howto-specific suggestions
+	if strings.Contains(lq, "form") {
+		out = append(out, "form validation", "form data binding")
+	}
+	if strings.Contains(lq, "list") {
+		out = append(out, "list pagination", "list filtering")
+	}
+	if strings.Contains(lq, "button") {
+		out = append(out, "button events", "button styling")
+	}
+	if strings.Contains(lq, "component") {
+		out = append(out, "build component", "custom component")
+	}
+	if strings.Contains(lq, "data") {
+		out = append(out, "data binding", "data source")
+	}
+	
+	return out
+}
+
+// Helper functions for backwards compatibility
+func readFile(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
 func readAllHowtoFiles(howtoDir string) ([]string, error) {
 	files, err := os.ReadDir(howtoDir)
 	if err != nil {
@@ -65,16 +164,14 @@ func readAllHowtoFiles(howtoDir string) ([]string, error) {
 	return docs, nil
 }
 
-// Helper: Parse multiple howto docs into sections (split on "## " heading)
 func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
 	var sections []string
 	var titles []string
 	for _, doc := range docs {
 		var current strings.Builder
 		var currentTitle string
-		scanner := bufio.NewScanner(strings.NewReader(doc))
-		for scanner.Scan() {
-			line := scanner.Text()
+		lines := strings.Split(doc, "\n")
+		for _, line := range lines {
 			if strings.HasPrefix(line, "## ") {
 				if current.Len() > 0 {
 					sections = append(sections, current.String())
@@ -93,70 +190,4 @@ func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
 		}
 	}
 	return sections, titles
-}
-
-// NewListHowtoTool returns the MCP tool and handler for listing howto titles
-func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
-	tool := mcp.NewTool(
-		"xmlui_list_howto",
-		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/ (and legacy howto.md if present)."),
-	)
-	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var docs []string
-		// Try legacy howto.md
-		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
-		if data, err := os.ReadFile(legacyPath); err == nil {
-			docs = append(docs, string(data))
-		}
-		// Add all top-level howto files
-		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
-			docs = append(docs, moreDocs...)
-		}
-	_, titles := parseHowtoSectionsMulti(docs)
-	return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
-	}
-	return tool, handler
-}
-
-// NewSearchHowtoTool returns the MCP tool and handler for searching howto entries
-func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
-	tool := mcp.NewTool(
-		"xmlui_search_howto",
-		mcp.WithDescription("Search for 'How To' entries in docs/public/pages/howto/ (and legacy howto.md if present) by keyword or phrase. Returns full markdown sections."),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Keyword or phrase to search for.")),
-	)
-	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var docs []string
-		// Try legacy howto.md
-		legacyPath := filepath.Join(xmluiDir, "docs", "public", "pages", "howto.md")
-		if data, err := os.ReadFile(legacyPath); err == nil {
-			docs = append(docs, string(data))
-		}
-		// Add all top-level howto files
-		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
-			docs = append(docs, moreDocs...)
-		}
-		sections, titles := parseHowtoSectionsMulti(docs)
-		query, ok := req.Params.Arguments["query"].(string)
-		if !ok || strings.TrimSpace(query) == "" {
-			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
-		}
-		var matches []string
-		for i, section := range sections {
-			if fuzzyMatch(section, query) {
-				baseURL := "https://docs.xmlui.com/howto"
-				anchor := titleToAnchor(titles[i])
-				url := baseURL + "#" + anchor
-				matchWithURL := section + "\n\n**Source:** " + url
-				matches = append(matches, matchWithURL)
-			}
-		}
-		if len(matches) == 0 {
-			return mcp.NewToolResultText("No matches found."), nil
-		}
-		return mcp.NewToolResultText(strings.Join(matches, "\n---\n")), nil
-	}
-	return tool, handler
 }
