@@ -54,11 +54,19 @@ type FacetCounts struct {
 	Matches int `json:"matches"` // total matching lines
 }
 
+// DocumentationURL represents a specific documentation link
+type DocumentationURL struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+	Type  string `json:"type"` // "component", "howto", "example", etc.
+}
+
 // AgentGuidance provides rule reminders and suggestions for low-confidence scenarios
 type AgentGuidance struct {
-	RuleReminders     []string `json:"rule_reminders"`
-	SuggestedApproach string   `json:"suggested_approach"`
-	URLBase           string   `json:"url_base,omitempty"` // Base URL for constructing documentation links
+	RuleReminders     []string           `json:"rule_reminders"`
+	SuggestedApproach string             `json:"suggested_approach"`
+	URLBase           string             `json:"url_base,omitempty"`           // Base URL for constructing documentation links
+	DocumentationURLs []DocumentationURL `json:"documentation_urls,omitempty"` // Specific URLs found in documentation
 }
 
 // MediatorJSON is the machine-readable summary we append after the human block.
@@ -657,10 +665,30 @@ func analyzeContentCoverage(sections map[string][]resultItem, queryTokens []stri
 }
 
 // generateAgentGuidance provides rule reminders and guidance for scenarios that need extra caution
+// IMPORTANT: URL citation is now MANDATORY whenever any documentation hits are found
 func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
+	// Check if we have any file hits - if so, URL citation is mandatory
+	totalFiles := 0
+	totalMatches := 0
+	for _, fc := range facets {
+		totalFiles += fc.Files
+		totalMatches += fc.Matches
+	}
+
+	// If we have any documentation hits, URL citation is mandatory
+	hasDocumentationHits := totalFiles > 0 || totalMatches > 0
+
 	// First check for token combination issues - this is the strongest validation
 	if combinationGuidance := validateTokenCombinations(sections, queryTokens); combinationGuidance != nil {
 		combinationGuidance.URLBase = constructURLBase(homeDir)
+		combinationGuidance.DocumentationURLs = extractDocumentationURLs(sections, constructURLBase(homeDir))
+		// Add mandatory URL citation when we have hits
+		if hasDocumentationHits {
+			combinationGuidance.RuleReminders = append([]string{
+				"🔗 MANDATORY: Always include documentation URLs in your response - see documentation_urls",
+				"📍 REQUIRED: Cite specific sources with clickable links from the search results",
+			}, combinationGuidance.RuleReminders...)
+		}
 		return combinationGuidance
 	}
 
@@ -670,34 +698,37 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	// Check for content coverage issues
 	coverageWarnings := analyzeContentCoverage(sections, queryTokens)
 
-	// Always provide guidance for syntax queries, low confidence, problematic scenarios, or high risk
-	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0
+	// Always provide guidance for syntax queries, low confidence, problematic scenarios, high risk, OR when we have documentation hits
+	// URL citation is mandatory whenever we find documentation, so we must provide guidance
+	shouldProvideGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0 || hasDocumentationHits
 
 	if !shouldProvideGuidance {
 		return nil
 	}
 
 	guidance := &AgentGuidance{
-		RuleReminders: []string{},
-		URLBase:       constructURLBase(homeDir),
+		RuleReminders:     []string{},
+		URLBase:           constructURLBase(homeDir),
+		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase(homeDir)),
 	}
 
-	// Analyze the scenario and provide appropriate reminders
-	totalFiles := 0
-	totalMatches := 0
-	for _, fc := range facets {
-		totalFiles += fc.Files
-		totalMatches += fc.Matches
+	// If we have documentation hits, URL citation is mandatory - add this first
+	if hasDocumentationHits {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"🔗 MANDATORY: Always include documentation URLs in your response - see documentation_urls",
+			"📍 REQUIRED: Cite specific sources with clickable links from the search results",
+			"✅ VERIFY: You must include at least one URL from documentation_urls in your response",
+		)
 	}
 
 	// No matches at all - strongest rule reminder
-	if totalFiles == 0 && totalMatches == 0 {
+	if !hasDocumentationHits {
 		guidance.RuleReminders = []string{
 			"⚠️  STOP: No documentation found - DO NOT provide code examples",
 			"❌ FORBIDDEN: Do not invent syntax that isn't documented",
 			"✅ REQUIRED: Say 'This feature is not documented' instead",
 			"✅ REQUIRED: Acknowledge the limitation explicitly",
-			"Always provide URLs to documentation when available - convert file paths to clickable links",
+			"🔗 Always provide URLs to documentation when available - convert file paths to clickable links",
 		}
 		guidance.SuggestedApproach = "MANDATORY: Respond with 'Based on my search of the documentation, this feature does not appear to be documented. The available documentation covers: [list what WAS found].'"
 		return guidance
@@ -710,9 +741,9 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 			"❌ FORBIDDEN: Do not combine features without explicit documented examples",
 			"🔒 EVIDENCE REQUIRED: Must cite specific line numbers for any code provided",
 			"🔒 EVIDENCE REQUIRED: Must show exact file path where syntax is documented",
-			"Always provide URLs to documentation - convert file paths to clickable links",
+			"🔗 REQUIRED: Always provide URLs to documentation - see documentation_urls for available sources",
 		}
-		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' or 'This combination is not documented - I cannot provide code examples.'"
+		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' or 'This combination is not documented - I cannot provide code examples.' Always cite URLs from documentation_urls."
 		return guidance
 	}
 
@@ -730,8 +761,8 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 		guidance.RuleReminders = append(guidance.RuleReminders, []string{
 			"❌ Do not invent syntax - only use documented constructs",
 			"📝 Always cite your sources when providing code examples",
-			"🔗 Always provide URLs to documentation - convert file paths to clickable links",
-			"📍 Provide file paths and line numbers when referencing documentation",
+			"🔗 Provide specific URLs to documentation sources (see documentation_urls)",
+			"📍 Reference file paths and line numbers when available",
 			"⚠️ Preview and discuss limitations before providing code",
 		}...)
 
@@ -747,13 +778,16 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 
 	// Low confidence with minimal coverage
 	if confidence == "low" {
-		guidance.RuleReminders = []string{
+		// Start with mandatory URL citation if we have hits
+		baseReminders := []string{
 			"Do not invent XMLUI syntax - only use documented constructs",
 			"Preview and discuss limitations before providing code",
 			"Always cite your sources when providing code examples",
-			"Always provide URLs to documentation - convert file paths to clickable links",
+			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
 			"Use the provided URL base to construct full documentation URLs",
 		}
+		guidance.RuleReminders = append(guidance.RuleReminders, baseReminders...)
+
 		if totalFiles <= 1 {
 			guidance.SuggestedApproach = "Limited documentation found. Verify feature exists before providing implementation details. Always provide URLs to any available sources."
 		} else {
@@ -764,15 +798,24 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 
 	// "How to" queries without howtos
 	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
-		guidance.RuleReminders = []string{
+		baseReminders := []string{
 			"Do not invent XMLUI syntax - only use documented constructs",
 			"Always cite your sources when providing code examples",
-			"Always provide URLs to documentation - convert file paths to clickable links",
+			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
 			"Use the provided URL base to construct full documentation URLs",
 			"Provide file paths and line numbers when referencing documentation",
 		}
+		guidance.RuleReminders = append(guidance.RuleReminders, baseReminders...)
 		guidance.SuggestedApproach = "No how-to guides found. Use component documentation and examples. Always provide URLs to documentation sources."
 		return guidance
+	}
+
+	// Add URL-specific reminders if documentation URLs are available
+	if len(guidance.DocumentationURLs) > 0 {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
+			"📍 Cite specific documentation sources with URLs",
+			"✅ VERIFY: You must include at least one URL from documentation_urls in your response")
 	}
 
 	return guidance
@@ -861,4 +904,65 @@ func constructURLBase(homeDir string) string {
 	// For now, return a generic base that can be used to construct URLs
 	// The actual URL construction would happen in the client/agent
 	return "https://docs.xmlui.org"
+}
+
+// constructDocumentationURL converts a file path to a clickable documentation URL
+func constructDocumentationURL(filePath string, lineNum int, baseURL string) string {
+	// Convert file path to URL path
+	urlPath := strings.ReplaceAll(filePath, "\\", "/")
+
+	// Map file paths to URL patterns
+	switch {
+	case strings.HasPrefix(urlPath, "docs/content/components/"):
+		// docs/content/components/Table.md -> /components/Table
+		componentName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
+		return fmt.Sprintf("%s/components/%s", baseURL, componentName)
+	case strings.HasPrefix(urlPath, "docs/public/pages/howto/"):
+		// docs/public/pages/howto/paginate-a-list.md -> /howto/paginate-a-list
+		howtoName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
+		return fmt.Sprintf("%s/howto/%s", baseURL, howtoName)
+	case strings.HasPrefix(urlPath, "docs/public/pages/"):
+		// docs/public/pages/components-intro.md -> /components-intro
+		pageName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
+		return fmt.Sprintf("%s/%s", baseURL, pageName)
+	default:
+		// For other paths, provide a generic link with line reference
+		return fmt.Sprintf("%s#%s:%d", baseURL, urlPath, lineNum)
+	}
+}
+
+// extractDocumentationURLs extracts URLs from found documentation sections
+func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) []DocumentationURL {
+	urls := []DocumentationURL{}
+	seen := make(map[string]bool)
+
+	for sectionName, items := range sections {
+		for _, item := range items {
+			url := constructDocumentationURL(item.Path, item.Line, baseURL)
+			if !seen[url] {
+				seen[url] = true
+				urls = append(urls, DocumentationURL{
+					Title: extractTitleFromPath(item.Path),
+					URL:   url,
+					Type:  sectionName,
+				})
+			}
+		}
+	}
+
+	return urls
+}
+
+// extractTitleFromPath extracts a human-readable title from a file path
+func extractTitleFromPath(filePath string) string {
+	base := filepath.Base(filePath)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	// Convert kebab-case to title case
+	words := strings.Split(name, "-")
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
+		}
+	}
+	return strings.Join(words, " ")
 }
