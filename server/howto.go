@@ -34,11 +34,16 @@ func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Call
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Read all howto files from the howto directory
 		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
+		WriteDebugLog("xmlui_list_howto: xmluiDir=%s, howtoDir=%s\n", xmluiDir, howtoDir)
 		var docs []string
 		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
 			docs = append(docs, moreDocs...)
+			WriteDebugLog("xmlui_list_howto: found %d docs\n", len(docs))
+		} else {
+			WriteDebugLog("xmlui_list_howto: error reading howto files: %v\n", err)
 		}
 		_, titles := parseHowtoSectionsMulti(docs)
+		WriteDebugLog("xmlui_list_howto: found %d titles\n", len(titles))
 		return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
 	}
 	return tool, handler
@@ -131,15 +136,15 @@ func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
 		var currentTitle string
 		lines := strings.Split(doc, "\n")
 		for _, line := range lines {
-			if strings.HasPrefix(line, "## ") {
+			if strings.HasPrefix(line, "# ") {
 				if current.Len() > 0 {
 					sections = append(sections, current.String())
 					titles = append(titles, currentTitle)
 					current.Reset()
 				}
-				currentTitle = strings.TrimSpace(line[3:])
+				currentTitle = strings.TrimSpace(line[2:])
 			}
-			if current.Len() > 0 || strings.HasPrefix(line, "## ") {
+			if current.Len() > 0 || strings.HasPrefix(line, "# ") {
 				current.WriteString(line + "\n")
 			}
 		}
