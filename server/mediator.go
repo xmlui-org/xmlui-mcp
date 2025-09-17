@@ -190,7 +190,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				} else {
 					matchFunc = fuzzyMatch
 				}
-				
+
 				if cfg.EnableFilenameMatches && matchFunc(d.Name(), lq) {
 					rel, _ := filepath.Rel(homeDir, path)
 					addHit(rel, 0, "[filename match]")
@@ -255,7 +255,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 			roots = reorderRootsByPreference(cfg.Roots, cfg.PreferSections)
 		}
 		totalHits += runStage("partial", relaxed, roots, true)
-		
+
 		// Update tokens to show we used partial matching
 		jsonOut.Tokens["expanded"] = kept // Show what we searched with partial matching
 	}
@@ -353,7 +353,7 @@ func partialMatch(text, query string, minWords int) bool {
 	if len(words) <= 1 {
 		return strings.Contains(t, strings.ToLower(query))
 	}
-	
+
 	found := 0
 	for _, w := range words {
 		if strings.Contains(t, w) {
@@ -369,7 +369,7 @@ func calculateMinWords(totalWords int) int {
 	case totalWords <= 2:
 		return totalWords     // 100% for 1-2 words
 	case totalWords <= 4:
-		return 2              // 50% for 3-4 words  
+		return 2              // 50% for 3-4 words
 	case totalWords >= 5:
 		return 2              // Just 2 words for 5+ word queries
 	default:
