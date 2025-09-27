@@ -27,6 +27,7 @@ Commands:
     searches    Show search query analysis
     xmlui_search Show xmlui_search queries and results analysis
     xmlui_search_fail Show failed xmlui_search queries (no results found)
+    xmlui_search_success Show successful xmlui_search terms only
 
     server      Show server analytics endpoints (when running in HTTP mode)
     help        Show this help message
@@ -37,6 +38,7 @@ Examples:
     $0 searches
     $0 xmlui_search
     $0 xmlui_search_fail
+    $0 xmlui_search_success
 EOF
 }
 
@@ -301,6 +303,46 @@ show_xmlui_search_fail() {
     fi
 }
 
+# Function to show successful xmlui_search terms
+show_xmlui_search_success() {
+    echo "=== Successful XMLUI Search Terms ==="
+    echo
+    
+    if check_jq; then
+        echo "All successful search queries (alphabetical):"
+        echo "============================================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
+            map(.query) |
+            unique |
+            sort |
+            .[] |
+            "• " + .
+        '
+        
+        echo
+        echo "Successful queries by frequency:"
+        echo "==============================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
+            group_by(.query) |
+            map({query: .[0].query, count: length}) |
+            sort_by(-.count) |
+            .[] |
+            .query + " (" + (.count | tostring) + "x)"
+        '
+        
+        echo
+        echo "Summary:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
+            "Total successful searches: " + (length | tostring),
+            "Unique successful search terms: " + (map(.query) | unique | length | tostring)
+        '
+        
+    else
+        echo "Raw successful xmlui_search data:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE"
+    fi
+}
+
 # Function to show server endpoints
 show_server() {
     cat << EOF
@@ -342,6 +384,9 @@ case "${1:-help}" in
         ;;
     xmlui_search_fail)
         show_xmlui_search_fail
+        ;;
+    xmlui_search_success)
+        show_xmlui_search_success
         ;;
     server)
         show_server
