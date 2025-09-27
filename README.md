@@ -76,6 +76,26 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 <img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
 
+## Tips for working with agents that use this server
+
+As agents use this server to search docs and examples, they receive strong guidance to prefer working examples, cite URLs when found, and admit ignorance when not found.
+
+It helps to reinforce that guidance in their rules files.
+
+- Obey the guidance you receive from the xmlui-mcp server.
+
+- I will disbelieve any answer for which you cannot cite an URL to documentation or a working example.
+
+- If you don't find an URL, say so.
+
+- If you do find one, cite it.
+
+Despite all this guidance, agents can wrongly report solutions for which they did not find documented examples. You can minimize that risk by being explicit in every interaction.
+
+Instead of: *How can I right-align a Column in an XMLUI Table*
+
+Say: *Show me a documented example of right-aligning a Column in an XMLUI Table*
+
 ## Test the server
 
 Agents like Claude, Cursor, and Copilot typically use the server in stdio mode. You can use the server directly that way.
@@ -93,17 +113,6 @@ Arguments: /path/to/xmlui path/to/examples "folder1,folder2"
 
 Then click Connect.
 
-# Guidance
-
-As agents use this server to search docs and examples, they receive strong guidance to prefer working examples, cite URLs when found, and admit ignorance when not found. It helps to reinforce that guidance in their rules files.
-
-- Obey the guidance you receive from the xmlui-mcp server.
-
-- I will disbelieve any answer for which you cannot cite an URL to documentation or a working example.
-
-- If you don't find an URL, say so.
-
-- If you do find one, cite it.
 
 ## Analytics
 

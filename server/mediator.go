@@ -438,24 +438,6 @@ func normalizeTokens(q string, stop map[string]struct{}) (kept []string, removed
 	return
 }
 
-// expandSynonyms: token-wise, include simple alternates/phrases.
-func expandSynonyms(tokens []string, syn map[string][]string) (expanded []string) {
-	seen := map[string]struct{}{}
-	for _, t := range tokens {
-		expanded = append(expanded, t)
-		if alts, ok := syn[t]; ok {
-			for _, a := range alts {
-				for _, at := range strings.Fields(strings.ToLower(a)) {
-					if _, dup := seen[at]; !dup {
-						expanded = append(expanded, at)
-						seen[at] = struct{}{}
-					}
-				}
-			}
-		}
-	}
-	return
-}
 
 // looksLikeConcept: simple heuristic — any token looks "identifier-ish"
 func looksLikeConcept(tokens []string) bool {
@@ -644,61 +626,6 @@ func detectSyntaxInventionRisk(queryTokens []string, facets map[string]FacetCoun
 	}
 
 	return riskFactors >= 2
-}
-
-// analyzeContentCoverage looks for gaps in documentation coverage
-func analyzeContentCoverage(sections map[string][]resultItem, queryTokens []string) []string {
-	warnings := []string{}
-
-	// Check if results are fragmented across different sections
-	tokenToSections := make(map[string]map[string]bool)
-
-	for sectionName, items := range sections {
-		for _, item := range items {
-			snippet := strings.ToLower(item.Snippet)
-			for _, token := range queryTokens {
-				if strings.Contains(snippet, token) {
-					if tokenToSections[token] == nil {
-						tokenToSections[token] = make(map[string]bool)
-					}
-					tokenToSections[token][sectionName] = true
-				}
-			}
-		}
-	}
-
-	// If tokens only appear in different sections, warn about combination
-	if len(queryTokens) >= 2 {
-		allSeparated := true
-		for i := 0; i < len(queryTokens)-1; i++ {
-			for j := i + 1; j < len(queryTokens); j++ {
-				token1Sections := tokenToSections[queryTokens[i]]
-				token2Sections := tokenToSections[queryTokens[j]]
-
-				// Check if they share any section
-				shareSection := false
-				for section := range token1Sections {
-					if token2Sections[section] {
-						shareSection = true
-						break
-					}
-				}
-				if shareSection {
-					allSeparated = false
-					break
-				}
-			}
-			if !allSeparated {
-				break
-			}
-		}
-
-		if allSeparated {
-			warnings = append(warnings, "Query terms appear only in separate documentation sections")
-		}
-	}
-
-	return warnings
 }
 
 // generateAgentGuidance provides focused guidance prioritizing tool redirection
@@ -915,28 +842,13 @@ func extractTitleFromPath(filePath string) string {
 	return strings.Join(words, " ")
 }
 
-// validateSearchStrategy validates if the right search strategy was used
-func validateSearchStrategy(originalQuery string, facets map[string]FacetCounts) []string {
-	warnings := []string{}
-
-	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
-		warnings = append(warnings, "Howto query found no howtos - try xmlui_search_howto")
-	}
-
-	if isExampleQuery(originalQuery) && facets["examples"].Files == 0 {
-		warnings = append(warnings, "Example query found no examples - try xmlui_examples")
-	}
-
-	return warnings
-}
-
 // generateFailureGuidance provides specific guidance when no results are found
 func generateFailureGuidance(originalQuery string, queryPlan []stageHit, kept []string) *AgentGuidance {
 	guidance := &AgentGuidance{
 		RuleReminders: []string{
-			"⚠️  STOP: No documentation found - DO NOT provide code examples",
-			"✅ REQUIRED: Say 'This feature is not documented' instead",
-			"✅ REQUIRED: Acknowledge the limitation explicitly",
+			"STOP: No documentation found - DO NOT provide code examples",
+			"REQUIRED: Say 'This feature is not documented' instead",
+			"REQUIRED: Acknowledge the limitation explicitly",
 			"No results found - use the correct search tools:",
 		},
 	}
