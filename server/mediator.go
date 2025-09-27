@@ -289,8 +289,26 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Human block
 	var out strings.Builder
 	if len(results) == 0 {
+		out.WriteString("No matches found.\n\n")
+		out.WriteString("SEARCH STRATEGY GUIDANCE:\n")
+
+		if jsonOut.AgentGuidance != nil {
+			for _, reminder := range jsonOut.AgentGuidance.RuleReminders {
+				out.WriteString("• " + reminder + "\n")
+			}
+
+			if jsonOut.AgentGuidance.SuggestedApproach != "" {
+				out.WriteString("\nRECOMMENDED APPROACH:\n")
+				out.WriteString(jsonOut.AgentGuidance.SuggestedApproach + "\n")
+			}
+
+			if jsonOut.AgentGuidance.SearchToolPreference != "" {
+				out.WriteString("\nPREFERRED TOOL: " + jsonOut.AgentGuidance.SearchToolPreference + "\n")
+			}
+		}
+
 		blob, _ := json.MarshalIndent(jsonOut, "", "  ")
-		out.WriteString("No matches found.\n\n---\nJSON:\n")
+		out.WriteString("\n---\nJSON:\n")
 		out.Write(blob)
 		return out.String(), jsonOut, nil
 	}
@@ -577,44 +595,28 @@ func DefaultSynonyms() map[string][]string {
 	return map[string][]string{}
 }
 
-// validateTokenCombinations checks if multiple query tokens appear together in any single result
-func validateTokenCombinations(sections map[string][]resultItem, queryTokens []string) *AgentGuidance {
+// detectFeatureCombination identifies when query asks for combining features that aren't documented together
+func detectFeatureCombination(queryTokens []string, sections map[string][]resultItem) bool {
 	if len(queryTokens) < 2 {
-		return nil // Single token queries don't need combination validation
+		return false // Single feature queries can't be combinations
 	}
 
-	// Check if ANY result contains multiple query tokens together
-	hasTokenCombination := false
-	for _, sectionItems := range sections {
-		for _, item := range sectionItems {
+	// Check if any single result shows multiple query tokens together
+	for _, items := range sections {
+		for _, item := range items {
+			tokensInSameResult := 0
 			snippet := strings.ToLower(item.Snippet)
-			tokensFound := 0
 			for _, token := range queryTokens {
-				if strings.Contains(snippet, token) {
-					tokensFound++
+				if strings.Contains(snippet, strings.ToLower(token)) {
+					tokensInSameResult++
 				}
 			}
-			if tokensFound >= 2 { // At least 2 tokens in same result
-				hasTokenCombination = true
-				break
+			if tokensInSameResult >= 2 {
+				return false // Found tokens together in same result = safe
 			}
 		}
-		if hasTokenCombination {
-			break
-		}
 	}
-
-	if !hasTokenCombination && len(queryTokens) >= 2 {
-		return &AgentGuidance{
-			RuleReminders: []string{
-				"⚠️  Multiple query terms found only in separate contexts",
-				"❌ Do not combine features without documented evidence they work together",
-				"✅ Only use documented feature combinations",
-			},
-			SuggestedApproach: "Query terms found in separate documentation. Do not assume they work together without explicit documented examples.",
-		}
-	}
-	return nil
+	return true // Never found tokens together = risky combination
 }
 
 // detectSyntaxInventionRisk identifies scenarios with high risk of syntax invention
@@ -699,272 +701,123 @@ func analyzeContentCoverage(sections map[string][]resultItem, queryTokens []stri
 	return warnings
 }
 
-// generateExplicitSelfCheck provides mandatory self-check instructions
-func generateExplicitSelfCheck() []string {
-	return []string{
-		"🚨 BEFORE RESPONDING: Ask yourself 'Am I about to provide code without a documented working example?' If yes, STOP and acknowledge the limitation instead",
-		"🚨 PRIORITY ORDER: 1) Check for documented working examples 2) IF NONE FOUND: Explicitly state this and provide no code 3) ONLY THEN: Provide general documentation URLs (if any exist)",
-		"🚨 MANDATORY ACKNOWLEDGMENT: When no documented examples are found, you MUST start your response with: 'I am following the guidance by not providing code examples because no documented working examples were found.'",
-	}
-}
-
-// generateAgentGuidance provides rule reminders and guidance for scenarios that need extra caution
-// IMPORTANT: URL citation is now MANDATORY whenever any documentation hits are found
+// generateAgentGuidance provides focused guidance prioritizing tool redirection
+// CRITICAL: Always includes mandatory warnings about evidence citing and syntax invention
 func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
-	// Check if we have any file hits - if so, URL citation is mandatory
-	totalFiles := 0
-	totalMatches := 0
+	// MANDATORY BASE WARNINGS - MUST APPEAR IN EVERY RESPONSE
+	baseWarnings := []string{
+		"CRITICAL: Do not provide code without documented working examples",
+		"FORBIDDEN: Do not invent syntax that isn't documented",
+		"REQUIRED: Always cite sources with file paths and line numbers",
+		"MANDATORY: Always provide URLs to documentation when available - convert file paths to clickable links",
+		"REQUIRED: Report exact file names and line numbers for all code examples",
+	}
+
+	// PRE-RESPONSE CHECKLIST ENFORCEMENT
+	checklistWarnings := []string{
+		"BEFORE RESPONDING: Complete this checklist:",
+		"Did I find a code example showing the exact requested combination?",
+		"Can I cite a specific file:line where this pattern is demonstrated?",
+		"Or am I combining separate pieces of documentation?",
+		"If you answered 'no' to the first two: STOP and acknowledge the limitation.",
+	}
+
+	// Calculate total hits
+	totalHits := 0
 	for _, fc := range facets {
-		totalFiles += fc.Files
-		totalMatches += fc.Matches
+		totalHits += fc.Files + fc.Matches
 	}
 
-	// If we have any documentation hits, URL citation is mandatory
-	hasDocumentationHits := totalFiles > 0 || totalMatches > 0
-
-	// First check for token combination issues - this is the strongest validation
-	if combinationGuidance := validateTokenCombinations(sections, queryTokens); combinationGuidance != nil {
-		combinationGuidance.URLBase = constructURLBase(homeDir)
-		combinationGuidance.DocumentationURLs = extractDocumentationURLs(sections, constructURLBase(homeDir))
-		// Add mandatory URL citation when we have hits
-		if hasDocumentationHits {
-			combinationGuidance.RuleReminders = append([]string{
-				"🔗 MANDATORY: Always include documentation URLs in your response - see documentation_urls",
-				"📍 REQUIRED: Cite specific sources with clickable links from the search results",
-			}, combinationGuidance.RuleReminders...)
+	// PRIORITY 1: No results at all - strongest warnings + tool redirection
+	if totalHits == 0 {
+		guidance := generateFailureGuidance(originalQuery, nil, queryTokens)
+		// Prepend the mandatory no-results warnings
+		noResultsWarnings := []string{
+			"MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
+			"ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
+			"VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
 		}
-		return combinationGuidance
+		// Combine all warnings: base + checklist + no-results + existing failure guidance
+		allWarnings := append([]string{}, baseWarnings...)
+		allWarnings = append(allWarnings, checklistWarnings...)
+		allWarnings = append(allWarnings, noResultsWarnings...)
+		allWarnings = append(allWarnings, guidance.RuleReminders...)
+		guidance.RuleReminders = allWarnings
+		return guidance
 	}
 
-	// Check for high syntax invention risk
-	hasInventionRisk := detectSyntaxInventionRisk(queryTokens, facets)
+	// PRIORITY 2: Feature Combination Risk - new priority check
+	if detectFeatureCombination(queryTokens, sections) {
+		combinationWarnings := []string{
+			"SYNTHESIS FORBIDDEN: Do not combine documentation from separate sources",
+			"STOP: If no single example shows features working together, say 'This combination is not documented'",
+			"VIOLATION: Suggesting untested combinations violates the guidance even if individual features exist",
+			"EVIDENCE THRESHOLD: Must find examples showing the EXACT syntax combination requested",
+			"INSUFFICIENT: General component documentation + separate feature documentation ≠ valid combination",
+			"REQUIRED: Single code example demonstrating the complete requested pattern",
+		}
 
-	// Check for content coverage issues
-	coverageWarnings := analyzeContentCoverage(sections, queryTokens)
+		guidance := &AgentGuidance{
+			RuleReminders:     append(append(append([]string{}, baseWarnings...), checklistWarnings...), combinationWarnings...),
+			URLBase:           constructURLBase(),
+			DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
+			SuggestedApproach: "MANDATORY TEMPLATE: Start with 'I searched for [specific feature combination] and found no documented working examples showing these features used together.'",
+		}
+		return guidance
+	}
 
-	// Check for search strategy issues
-	searchStrategyWarnings := validateSearchStrategy(originalQuery, facets)
-
-	// Always provide guidance - search strategy should always be included
+	// Initialize guidance with mandatory warnings for all successful searches
 	guidance := &AgentGuidance{
-		RuleReminders:     generateExplicitSelfCheck(), // Always include self-check instructions
-		URLBase:           constructURLBase(homeDir),
-		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase(homeDir)),
+		RuleReminders:     append(append([]string{}, baseWarnings...), checklistWarnings...),
+		URLBase:           constructURLBase(),
+		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
 	}
 
-	// Always include search strategy guidance
-	searchStrategyReminders := []string{
-		"🔍 SEARCH STRATEGY: Use xmlui_examples and xmlui_search_howto first, then fall back to xmlui_search",
-		"📚 PREFER: Examples and howtos over general component documentation",
-		"🔄 FALLBACK: If no examples/howtos found, then search general documentation",
-		"🔗 MANDATORY: Always include documentation or example URLs in your response",
-	}
-	guidance.RuleReminders = append(guidance.RuleReminders, searchStrategyReminders...)
-
-	// Check if we should provide additional guidance beyond the basic search strategy
-	shouldProvideAdditionalGuidance := confidence == "low" || isProblematicQuery(facets, originalQuery) || isSyntaxQuery(originalQuery) || hasInventionRisk || len(coverageWarnings) > 0 || len(searchStrategyWarnings) > 0 || hasDocumentationHits
-
-	if !shouldProvideAdditionalGuidance {
-		// Still return guidance with just the search strategy
-		return guidance
-	}
-
-	// If we have documentation hits, URL citation is mandatory - add this first
-	if hasDocumentationHits {
+	// PRIORITY 3: Query type mismatch - example query without examples
+	if isExampleQuery(originalQuery) && facets["examples"].Files == 0 {
 		guidance.RuleReminders = append(guidance.RuleReminders,
-			"🔗 MANDATORY: Always include documentation URLs in your response - see documentation_urls",
-			"📍 REQUIRED: Cite specific sources with clickable links from the search results",
-			"✅ VERIFY: You must include at least one URL from documentation_urls in your response",
-		)
-	}
-
-	// No matches at all - strongest rule reminder
-	if !hasDocumentationHits {
-		guidance.RuleReminders = []string{
-			"⚠️  STOP: No documentation found - DO NOT provide code examples",
-			"❌ FORBIDDEN: Do not invent syntax that isn't documented",
-			"✅ REQUIRED: Say 'This feature is not documented' instead",
-			"✅ REQUIRED: Acknowledge the limitation explicitly",
-			"🔗 Always provide URLs to documentation when available - convert file paths to clickable links",
-			"🚨 MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
-			"🚨 ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
-			"🚨 VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
-		}
-		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].'"
+			"Example query found no examples",
+			"Use xmlui_examples for usage patterns")
+		guidance.SuggestedApproach = "Try xmlui_examples first, then xmlui_search_howto"
+		guidance.SearchToolPreference = "xmlui_examples"
 		return guidance
 	}
 
-	// High invention risk - provide very strong guidance
-	if hasInventionRisk {
-		guidance.RuleReminders = []string{
-			"⚠️  HIGH RISK: Multiple terms with limited documentation coverage",
-			"❌ FORBIDDEN: Do not combine features without explicit documented examples",
-			"🔒 EVIDENCE REQUIRED: Must cite specific line numbers for any code provided",
-			"🔒 EVIDENCE REQUIRED: Must show exact file path where syntax is documented",
-			"🔗 REQUIRED: Always provide URLs to documentation - see documentation_urls for available sources",
-			"🚨 MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
-			"🚨 ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
-			"🚨 VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
-		}
-		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' If you must provide code, FORMAT REQUIRED: 'According to [file:line], the syntax is...' Always cite URLs from documentation_urls."
+	// PRIORITY 4: Query type mismatch - how-to query without tutorials
+	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"How-to query found no tutorials",
+			"Use xmlui_search_howto for tutorial content")
+		guidance.SuggestedApproach = "Try xmlui_search_howto first, then xmlui_examples"
+		guidance.SearchToolPreference = "xmlui_search_howto"
 		return guidance
 	}
 
-	// Include coverage warnings in guidance
-	if len(coverageWarnings) > 0 {
-		guidance.RuleReminders = append(guidance.RuleReminders, "⚠️  "+coverageWarnings[0])
-	}
-
-	// Include search strategy warnings in guidance
-	if len(searchStrategyWarnings) > 0 {
-		guidance.RuleReminders = append(guidance.RuleReminders, searchStrategyWarnings...)
-	}
-
-	// Syntax queries - always provide strong guidance
-	if isSyntaxQuery(originalQuery) {
-		hasExamples := facets["examples"].Files > 0
-		hasHowtos := facets["howtos"].Files > 0
-		hasComponents := facets["components"].Files > 0
-
-		guidance.RuleReminders = append(guidance.RuleReminders, []string{
-			"❌ Do not invent syntax - only use documented constructs",
-			"📝 Always cite your sources when providing code examples",
-			"🔗 Provide specific URLs to documentation sources (see documentation_urls)",
-			"📍 Reference file paths and line numbers when available",
-			"⚠️ Preview and discuss limitations before providing code",
-		}...)
-
-		if !hasExamples && !hasHowtos {
-			guidance.SuggestedApproach = "No examples or tutorials found. Only provide syntax that you can cite from component documentation. Always provide URLs to documentation sources."
-		} else if hasComponents && (!hasExamples || !hasHowtos) {
-			guidance.SuggestedApproach = "Limited examples found. Cross-reference component documentation with any available examples. Always provide URLs to documentation sources."
-		} else {
-			guidance.SuggestedApproach = "Examples available but verify syntax against component documentation. Always provide URLs to documentation sources."
-		}
-		return guidance
-	}
-
-	// Low confidence with minimal coverage
+	// PRIORITY 5: Low confidence scenarios
 	if confidence == "low" {
-		// Start with mandatory URL citation if we have hits
-		baseReminders := []string{
-			"Do not invent XMLUI syntax - only use documented constructs",
-			"Preview and discuss limitations before providing code",
-			"Always cite your sources when providing code examples",
-			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
-			"Use the provided URL base to construct full documentation URLs",
-		}
-		guidance.RuleReminders = append(guidance.RuleReminders, baseReminders...)
-
-		if totalFiles <= 1 {
-			guidance.SuggestedApproach = "Limited documentation found. Verify feature exists before providing implementation details. Always provide URLs to any available sources."
-		} else {
-			guidance.SuggestedApproach = "Mixed signals in documentation. Cross-reference sources and acknowledge uncertainties. Always provide URLs to documentation sources."
-		}
-		return guidance
-	}
-
-	// "How to" queries - provide specific guidance
-	if isHowToQuery(originalQuery) {
-		if facets["howtos"].Files == 0 {
-			guidance.SuggestedApproach = "No how-to guides found. Search strategy: 1) Try xmlui_examples 2) Try xmlui_search_howto 3) Fall back to xmlui_search if needed"
-		} else {
-			guidance.SuggestedApproach = "How-to guides found. Search strategy: 1) Use xmlui_examples and xmlui_search_howto first 2) Fall back to xmlui_search if needed"
-		}
-		guidance.SearchToolPreference = "xmlui_search_howto"
-		return guidance
-	}
-
-	// Example queries - provide specific guidance
-	if isExampleQuery(originalQuery) {
-		if facets["examples"].Files == 0 {
-			guidance.SuggestedApproach = "No examples found. Search strategy: 1) Try xmlui_examples 2) Try xmlui_search_howto 3) Fall back to xmlui_search if needed"
-		} else {
-			guidance.SuggestedApproach = "Examples found. Search strategy: 1) Use xmlui_examples and xmlui_search_howto first 2) Fall back to xmlui_search if needed"
-		}
-		guidance.SearchToolPreference = "xmlui_examples"
-		return guidance
-	}
-
-	// Add URL-specific reminders if documentation URLs are available
-	if len(guidance.DocumentationURLs) > 0 {
 		guidance.RuleReminders = append(guidance.RuleReminders,
-			"🔗 Always provide URLs to documentation - see documentation_urls for available sources",
-			"📍 Cite specific documentation sources with URLs",
-			"✅ VERIFY: You must include at least one URL from documentation_urls in your response")
+			"Limited documentation found",
+			"Verify feature exists before providing implementation details")
+		guidance.SuggestedApproach = "Cross-reference multiple sources and acknowledge uncertainties"
+		return guidance
 	}
 
-	// Set search tool preference based on query type
-	if isHowToQuery(originalQuery) {
-		guidance.SearchToolPreference = "xmlui_search_howto"
-	} else if isExampleQuery(originalQuery) {
-		guidance.SearchToolPreference = "xmlui_examples"
-	} else {
-		guidance.SearchToolPreference = "xmlui_search"
+	// PRIORITY 6: High syntax invention risk
+	if detectSyntaxInventionRisk(queryTokens, facets) {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"HIGH RISK: Multiple terms with limited documentation coverage",
+			"EVIDENCE REQUIRED: Must cite specific line numbers for any code provided")
+		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' Always cite URLs from documentation_urls."
+		return guidance
 	}
 
+	// PRIORITY 7: Default guidance for successful searches
+	guidance.RuleReminders = append(guidance.RuleReminders,
+		"Always cite documentation sources",
+		"Provide URLs to documentation when available")
 	return guidance
 }
 
-// isProblematicQuery detects scenarios that warrant additional agent guidance beyond basic search strategy
-func isProblematicQuery(facets map[string]FacetCounts, query string) bool {
-	// Syntax queries without examples/howtos
-	if isSyntaxQuery(query) {
-		return facets["examples"].Files == 0 && facets["howtos"].Files == 0
-	}
-	// "How to" queries without howtos
-	if isHowToQuery(query) {
-		return facets["howtos"].Files == 0
-	}
-	// Example queries without examples
-	if isExampleQuery(query) {
-		return facets["examples"].Files == 0
-	}
-	// Queries asking for specific implementation without good coverage
-	if isImplementationQuery(query) {
-		return facets["examples"].Files == 0 && facets["howtos"].Files == 0
-	}
-	return false
-}
-
-// isImplementationQuery detects queries asking for specific implementation details
-func isImplementationQuery(query string) bool {
-	lq := strings.ToLower(query)
-	implPatterns := []string{
-		"implement", "create", "build", "make", "setup", "configure",
-		"customize", "modify", "change", "add", "remove", "update",
-		"styling", "theming", "layout", "design", "ui", "interface",
-		"workaround", "solution", "fix", "issue", "problem",
-	}
-	for _, pattern := range implPatterns {
-		if strings.Contains(lq, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-// isSyntaxQuery detects queries that are asking for specific syntax
-func isSyntaxQuery(query string) bool {
-	lq := strings.ToLower(query)
-	// Look for syntax-indicating patterns
-	syntaxPatterns := []string{
-		"<", ">", "=", "align", "style", "property", "attribute",
-		"bindto", "onclick", "textsize", "color", "width", "height",
-		"padding", "margin", "border", "background", "font", "text",
-		"horizontal", "vertical", "center", "left", "right", "top", "bottom",
-		"justify", "flex", "grid", "layout", "position", "display",
-		"theme", "variant", "size", "orientation", "direction",
-		"template", "component", "element", "tag", "markup",
-		"xmlui", "syntax", "code", "example", "usage",
-	}
-	for _, pattern := range syntaxPatterns {
-		if strings.Contains(lq, pattern) {
-			return true
-		}
-	}
-	return false
-}
 
 // isHowToQuery detects queries asking for how-to instructions
 func isHowToQuery(query string) bool {
@@ -997,16 +850,7 @@ func isExampleQuery(query string) bool {
 	return false
 }
 
-// constructURLBase provides the base URL for documentation links
-func constructURLBase(homeDir string) string {
-	// This is a placeholder - in a real implementation, you might:
-	// 1. Read from a config file
-	// 2. Use environment variables
-	// 3. Detect from the repository structure
-	// 4. Use a known documentation site URL
-
-	// For now, return a generic base that can be used to construct URLs
-	// The actual URL construction would happen in the client/agent
+func constructURLBase() string {
 	return "https://docs.xmlui.org"
 }
 
@@ -1084,4 +928,45 @@ func validateSearchStrategy(originalQuery string, facets map[string]FacetCounts)
 	}
 
 	return warnings
+}
+
+// generateFailureGuidance provides specific guidance when no results are found
+func generateFailureGuidance(originalQuery string, queryPlan []stageHit, kept []string) *AgentGuidance {
+	guidance := &AgentGuidance{
+		RuleReminders: []string{
+			"⚠️  STOP: No documentation found - DO NOT provide code examples",
+			"✅ REQUIRED: Say 'This feature is not documented' instead",
+			"✅ REQUIRED: Acknowledge the limitation explicitly",
+			"No results found - use the correct search tools:",
+		},
+	}
+
+	// Special cases that should redirect to specific tools
+	if isHowToQuery(originalQuery) {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"For 'how to' queries, use xmlui_list_howto first",
+			"Then try xmlui_search_howto with your specific terms")
+		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' How-to queries require specialized tools: xmlui_list_howto → xmlui_search_howto → xmlui_search (fallback)"
+		guidance.SearchToolPreference = "xmlui_list_howto"
+		return guidance
+	}
+
+	if isExampleQuery(originalQuery) {
+		guidance.RuleReminders = append(guidance.RuleReminders,
+			"For example queries, use xmlui_examples tool",
+			"Search for the component name without 'examples' modifier")
+		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' Example queries require xmlui_examples tool: remove 'examples' and search for core component"
+		guidance.SearchToolPreference = "xmlui_examples"
+		return guidance
+	}
+
+	// General guidance for other failed searches
+	guidance.RuleReminders = append(guidance.RuleReminders,
+		"Try simpler terms without modifiers",
+		"Use xmlui_examples for usage patterns",
+		"Use xmlui_search_howto for tutorials")
+
+	guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' Remove modifiers and search for core component or concept names"
+
+	return guidance
 }
