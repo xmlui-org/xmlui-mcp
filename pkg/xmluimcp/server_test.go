@@ -1,4 +1,4 @@
-package xmlui
+package xmluimcp
 
 import (
 	"testing"

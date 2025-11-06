@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"xmlui-mcp/pkg/xmlui"
+	"xmlui-mcp/pkg/xmluimcp"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	// Create server configuration
-	config := xmlui.ServerConfig{
+	config := xmluimcp.ServerConfig{
 		XMLUIDir:    xmluiDir,
 		ExampleRoot: exampleRoot,
 		ExampleDirs: exampleDirs,
@@ -53,7 +53,7 @@ func main() {
 	}
 
 	// Create and start the server
-	server, err := xmlui.NewServer(config)
+	server, err := xmluimcp.NewServer(config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating server: %v\n", err)
 		os.Exit(1)
