@@ -1,0 +1,8 @@
+[DEBUG] Initializing analytics with log file: /home/ez/code/work/xmlui-mcp/pkg/xmlui/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: [/tmp/test-examples/demo]
+Auto-injected xmlui_rules into default session
+[DEBUG] Initializing analytics with log file: /home/ez/code/work/xmlui-mcp/pkg/xmlui/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: []
+Auto-injected xmlui_rules into default session

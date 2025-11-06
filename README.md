@@ -1,20 +1,33 @@
 # xmlui-mcp: Model Context Protocol server for XMLUI
 
+This project provides both a standalone CLI tool and a Go library for integrating XMLUI MCP capabilities into other applications.
+
 This kit provides an MCP server that you can use with an MCP-aware tool, like Claude Desktop or Cursor, to empower those agents to help you build [XMLUI](https://xmlui.org) apps.
+
+## Features
+
+- **Standalone CLI**: Run as a command-line tool for MCP clients
+- **Go Library**: Import into other Go applications as a library
+- **Multiple Modes**: Support for stdio and HTTP server modes
+- **Session Management**: Track and manage multiple user sessions
+- **Analytics**: Built-in usage tracking and analytics
+- **Extensible**: Easy to extend with custom tools and prompts
 
 - [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Configure](#configure)
 - [Test](#test-the-server)
+- [Library Usage](#library-usage)
+- [API Reference](#api-reference)
 
 ## Prerequisites
 
 The MCP server needs the [XMLUI repo](https://github.com/xmlui-org/xmlui) to exist as `$HOME/xmlui` (or `%USERPROFILE%\xmlui` on Windows). Clone that repo and make sure you have:
 
-   - `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
-   - `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
-   - `$HOME/xmlui/docs/public/pages/howto` - HowTo docs with working playgrounds
-   - `$HOME/xmlui/xmlui/src/components/` - Source code (.tsx, .scss files)
+- `$HOME/xmlui/docs/content/components/` - Component documentation (.md files)
+- `$HOME/xmlui/docs/public/pages/` - General documentation and tutorials
+- `$HOME/xmlui/docs/public/pages/howto` - HowTo docs with working playgrounds
+- `$HOME/xmlui/xmlui/src/components/` - Source code (.tsx, .scss files)
 
 The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
 
@@ -75,7 +88,6 @@ I am also encouraging them to use the xmlui-mcp tools as we work on those projec
 
 <img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
-
 ## Tips for working with agents that use this server
 
 As agents use this server to search docs and examples, they receive strong guidance to prefer working examples, cite URLs when found, and admit ignorance when not found.
@@ -92,9 +104,128 @@ It helps to reinforce that guidance in their rules files.
 
 Despite all this guidance, agents can wrongly report solutions for which they did not find documented examples. You can minimize that risk by being explicit in every interaction.
 
-Instead of: *How can I right-align a Column in an XMLUI Table*
+Instead of: _How can I right-align a Column in an XMLUI Table_
 
-Say: *Show me a documented example of right-aligning a Column in an XMLUI Table*
+Say: _Show me a documented example of right-aligning a Column in an XMLUI Table_
+
+## Library Usage
+
+This project can be used as a Go library in other applications. The CLI is a thin wrapper around the library functionality.
+
+### Basic Usage
+
+```go
+import "xmlui-mcp/pkg/xmlui"
+
+func main() {
+    config := xmlui.ServerConfig{
+        XMLUIDir:    "/path/to/xmlui/source",
+        ExampleRoot: "/path/to/examples",
+        ExampleDirs: []string{"demo", "tutorial"},
+        HTTPMode:    false, // stdio mode
+        Port:        "8080",
+    }
+
+    server, err := xmlui.NewServer(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Print startup information
+    server.PrintStartupInfo()
+
+    // Start the server
+    if config.HTTPMode {
+        err = server.ServeHTTP()
+    } else {
+        err = server.ServeStdio()
+    }
+
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Integration Example
+
+```go
+// In your go.mod:
+// require xmlui-mcp v0.1.0
+
+// Then import and use:
+import "xmlui-mcp/pkg/xmlui"
+
+type MyApp struct {
+    mcpServer *xmlui.MCPServer
+}
+
+func NewMyApp(xmluiDir string) (*MyApp, error) {
+    config := xmlui.ServerConfig{
+        XMLUIDir: xmluiDir,
+        HTTPMode: true,
+        Port:     "8080",
+    }
+
+    server, err := xmlui.NewServer(config)
+    if err != nil {
+        return nil, err
+    }
+
+    return &MyApp{mcpServer: server}, nil
+}
+
+func (app *MyApp) Start() error {
+    app.mcpServer.PrintStartupInfo()
+    return app.mcpServer.ServeHTTP()
+}
+```
+
+### Available Methods
+
+- `NewServer(config ServerConfig) (*MCPServer, error)` - Create a new server instance
+- `ServeStdio() error` - Start server in stdio mode
+- `ServeHTTP() error` - Start server in HTTP mode
+- `GetTools() []mcp.Tool` - Get available tools
+- `GetPrompts() []mcp.Prompt` - Get available prompts
+- `GetSessionManager() *SessionManager` - Get session manager
+- `PrintStartupInfo()` - Print server information
+
+### Configuration
+
+The `ServerConfig` struct supports:
+
+- `XMLUIDir` (required): Path to XMLUI source directory
+- `ExampleRoot`: Root directory for examples
+- `ExampleDirs`: Subdirectories within example root
+- `HTTPMode`: Whether to run in HTTP mode
+- `Port`: Port for HTTP mode (default: "8080")
+- `AnalyticsFile`: Path to analytics file
+
+## API Reference
+
+### ServerConfig
+
+Configuration for the XMLUI MCP server.
+
+```go
+type ServerConfig struct {
+    XMLUIDir     string   // Path to XMLUI source directory
+    ExampleRoot  string   // Optional: root directory for examples
+    ExampleDirs  []string // Optional: subdirectories within example root
+    HTTPMode     bool     // Whether to run in HTTP mode
+    Port         string   // Port for HTTP mode (default: "8080")
+    AnalyticsFile string  // Path to analytics file (optional)
+}
+```
+
+### MCPServer
+
+Main server instance with methods for starting and managing the server.
+
+### SessionManager
+
+Manages multiple user sessions with injected prompts and context.
 
 ## Test the server
 
@@ -113,8 +244,36 @@ Arguments: /path/to/xmlui path/to/examples "folder1,folder2"
 
 Then click Connect.
 
+## Building from Source
+
+### Library Build
+
+To build just the library:
+
+```bash
+go build ./pkg/xmlui/...
+```
+
+### CLI Build
+
+To build the CLI executable:
+
+```bash
+go build -o xmlui-mcp ./cmd/xmlui-mcp
+```
+
+### Development
+
+The project structure is organized as:
+
+```
+xmlui-mcp/
+├── pkg/xmlui/          # Library package
+├── cmd/xmlui-mcp/      # CLI executable
+├── server/             # Tool implementations
+└── example/            # Library usage examples
+```
 
 ## Analytics
 
 The server saves logs to enable tracking agent usage patterns and optimizing the tools. Data is saved to `xmlui-mcp-analytics.json`. Use `./analytics-helper.sh` for overviews of what's been captured.
-
