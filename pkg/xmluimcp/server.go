@@ -40,9 +40,15 @@ type MCPServer struct {
 
 // NewServer creates a new XMLUI MCP server with the given configuration
 func NewServer(config ServerConfig) (*MCPServer, error) {
-	// Validate required configuration
+	// If XMLUIDir is not provided, automatically download and cache the repository
 	if config.XMLUIDir == "" {
-		return nil, fmt.Errorf("XMLUIDir is required")
+		mcpserver.WriteDebugLog("No XMLUI directory specified, using cached repository...\n")
+		cachedRepo, err := EnsureXMLUIRepo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to ensure XMLUI repository: %w (you can specify a local XMLUI directory as an argument)", err)
+		}
+		config.XMLUIDir = cachedRepo
+		mcpserver.WriteDebugLog("Using cached XMLUI repository at: %s\n", config.XMLUIDir)
 	}
 
 	// Set defaults

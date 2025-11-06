@@ -22,38 +22,23 @@ func main() {
 	// Get positional arguments after flags
 	args := flag.Args()
 
-	var xmluiDir string
-	var exampleRoot string
-	var exampleDirs []string
+	xmluiDir := ""
+	exampleRoot := ""
+	exampleDirs := []string{}
 
-	// If no xmluiDir argument is provided, use the cached repository
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "No XMLUI directory specified, using cached repository...")
-		cachedRepo, err := xmluimcp.EnsureXMLUIRepo()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error ensuring XMLUI repository: %v\n", err)
-			fmt.Fprintln(os.Stderr, "\nAlternatively, you can specify a local XMLUI directory:")
-			fmt.Fprintln(os.Stderr, "Usage: ./xmlui-mcp [--http] [--port PORT] <xmluiDir> [exampleRoot] [comma-separated-exampleDirs]")
-			fmt.Fprintln(os.Stderr, "  --http: Run in HTTP mode (default: stdio mode)")
-			fmt.Fprintln(os.Stderr, "  --port: Port to listen on in HTTP mode (default: 8080)")
-			os.Exit(1)
-		}
-		xmluiDir = cachedRepo
-		exampleRoot = ""
-		exampleDirs = []string{}
-	} else {
-		// Use provided arguments
+	// Optional arg 1: xmluiDir (if not provided, server will auto-download)
+	if len(args) >= 1 {
 		xmluiDir = args[0]
+	}
 
-		// Optional arg 2: example root
-		if len(args) >= 2 {
-			exampleRoot = args[1]
-		}
+	// Optional arg 2: example root
+	if len(args) >= 2 {
+		exampleRoot = args[1]
+	}
 
-		// Optional arg 3: comma-separated subdirs
-		if len(args) >= 3 {
-			exampleDirs = strings.Split(args[2], ",")
-		}
+	// Optional arg 3: comma-separated subdirs
+	if len(args) >= 3 {
+		exampleDirs = strings.Split(args[2], ",")
 	}
 
 	// Create server configuration

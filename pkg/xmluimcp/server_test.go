@@ -1,6 +1,7 @@
 package xmluimcp
 
 import (
+	"os"
 	"testing"
 )
 
@@ -42,18 +43,26 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestServerConfigValidation(t *testing.T) {
-	// Test that XMLUIDir is required
-	config := ServerConfig{
-		XMLUIDir: "",
-	}
+	// Test that empty XMLUIDir triggers auto-download (skip if network unavailable)
+	if os.Getenv("SKIP_NETWORK_TESTS") == "" {
+		config := ServerConfig{
+			XMLUIDir: "",
+		}
 
-	_, err := NewServer(config)
-	if err == nil {
-		t.Error("Should require XMLUIDir")
+		server, err := NewServer(config)
+		if err != nil {
+			t.Logf("Auto-download failed (may be expected): %v", err)
+		} else if server != nil {
+			// Verify that XMLUIDir was populated
+			if server.config.XMLUIDir == "" {
+				t.Error("XMLUIDir should be populated after auto-download")
+			}
+			t.Logf("Auto-download successful, using: %s", server.config.XMLUIDir)
+		}
 	}
 
 	// Test default port
-	config = ServerConfig{
+	config := ServerConfig{
 		XMLUIDir: "/tmp/test",
 		Port:     "",
 	}
@@ -108,5 +117,47 @@ func TestSessionManager(t *testing.T) {
 	sessions = sessionManager.ListSessions()
 	if len(sessions) != 0 {
 		t.Errorf("Expected 0 sessions after removal, got %d", len(sessions))
+	}
+}
+
+func TestNewServerAutoDownload(t *testing.T) {
+	// Skip if network tests are disabled
+	if os.Getenv("SKIP_NETWORK_TESTS") != "" {
+		t.Skip("Skipping network test")
+	}
+
+	// Test creating server with empty XMLUIDir (should trigger auto-download)
+	config := ServerConfig{
+		XMLUIDir: "",
+		HTTPMode: false,
+		Port:     "8080",
+	}
+
+	server, err := NewServer(config)
+	if err != nil {
+		t.Fatalf("Failed to create server with auto-download: %v", err)
+	}
+
+	if server == nil {
+		t.Fatal("Server should not be nil")
+	}
+
+	// Verify that XMLUIDir was populated
+	if server.config.XMLUIDir == "" {
+		t.Fatal("XMLUIDir should be populated after auto-download")
+	}
+
+	t.Logf("Auto-downloaded repository to: %s", server.config.XMLUIDir)
+
+	// Verify tools are loaded
+	tools := server.GetTools()
+	if len(tools) == 0 {
+		t.Error("Server should have tools initialized")
+	}
+
+	// Verify prompts are loaded
+	prompts := server.GetPrompts()
+	if len(prompts) == 0 {
+		t.Error("Server should have prompts initialized")
 	}
 }
