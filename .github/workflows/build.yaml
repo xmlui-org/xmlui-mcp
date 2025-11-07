@@ -56,7 +56,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o xmlui-mcp${{ matrix.server_ext }}
+          go build -o xmlui-mcp${{ matrix.server_ext }} ./cmd/xmlui-mcp
 
       - name: Prepare package contents
         run: |
