@@ -29,6 +29,9 @@ type MediatorConfig struct {
 	// Max human-readable hits (keeps your 50-cap).
 	MaxResults int // default 50
 
+	// Max snippet length in characters (default 200)
+	MaxSnippetLength int
+
 	// File extensions to scan.
 	FileExtensions []string // default: .mdx, .md, .tsx, .scss
 
@@ -92,6 +95,9 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = 50
 	}
+	if cfg.MaxSnippetLength <= 0 {
+		cfg.MaxSnippetLength = 200
+	}
 	if len(cfg.FileExtensions) == 0 {
 		cfg.FileExtensions = []string{".mdx", ".md", ".tsx", ".scss"}
 	}
@@ -139,7 +145,14 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 			return
 		}
 		seen[key] = struct{}{}
-		results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, line))
+
+		// Truncate snippet if too long
+		snippet := line
+		if len(snippet) > cfg.MaxSnippetLength {
+			snippet = snippet[:cfg.MaxSnippetLength] + "..."
+		}
+
+		results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, snippet))
 
 		section := cfg.Classifier(rel)
 		if _, ok := jsonOut.Sections[section]; !ok {
@@ -148,7 +161,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 			uniqueFiles[section] = make(map[string]struct{})
 		}
 		jsonOut.Sections[section] = append(jsonOut.Sections[section], resultItem{
-			Type: section, Path: rel, Line: lineNum, Snippet: line,
+			Type: section, Path: rel, Line: lineNum, Snippet: snippet,
 		})
 		// Track unique file for this section
 		uniqueFiles[section][rel] = struct{}{}
@@ -289,21 +302,34 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Human block
 	var out strings.Builder
 	if len(results) == 0 {
-		out.WriteString("No matches found.\n\n")
-		out.WriteString("SEARCH STRATEGY GUIDANCE:\n")
+		out.WriteString("No matches found.\n")
 
+		// Only show guidance section if there's actionable guidance
+		hasGuidance := false
 		if jsonOut.AgentGuidance != nil {
-			for _, reminder := range jsonOut.AgentGuidance.RuleReminders {
-				out.WriteString("• " + reminder + "\n")
+			if len(jsonOut.AgentGuidance.RuleReminders) > 0 ||
+				jsonOut.AgentGuidance.SuggestedApproach != "" ||
+				jsonOut.AgentGuidance.SearchToolPreference != "" {
+				hasGuidance = true
 			}
+		}
 
-			if jsonOut.AgentGuidance.SuggestedApproach != "" {
-				out.WriteString("\nRECOMMENDED APPROACH:\n")
-				out.WriteString(jsonOut.AgentGuidance.SuggestedApproach + "\n")
-			}
+		if hasGuidance {
+			out.WriteString("\n")
+			if jsonOut.AgentGuidance != nil {
+				if len(jsonOut.AgentGuidance.RuleReminders) > 0 {
+					for _, reminder := range jsonOut.AgentGuidance.RuleReminders {
+						out.WriteString("• " + reminder + "\n")
+					}
+				}
 
-			if jsonOut.AgentGuidance.SearchToolPreference != "" {
-				out.WriteString("\nPREFERRED TOOL: " + jsonOut.AgentGuidance.SearchToolPreference + "\n")
+				if jsonOut.AgentGuidance.SuggestedApproach != "" {
+					out.WriteString("\n" + jsonOut.AgentGuidance.SuggestedApproach + "\n")
+				}
+
+				if jsonOut.AgentGuidance.SearchToolPreference != "" {
+					out.WriteString("\nPREFERRED TOOL: " + jsonOut.AgentGuidance.SearchToolPreference + "\n")
+				}
 			}
 		}
 
@@ -330,11 +356,18 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 	out.WriteString("\n\n")
 
-	for i, line := range results {
-		if i >= cfg.MaxResults {
-			break
-		}
-		out.WriteString(line + "\n")
+	// Limit displayed results to a reasonable number (e.g., 20 for readability)
+	displayLimit := 20
+	if displayLimit > len(results) {
+		displayLimit = len(results)
+	}
+
+	for i := 0; i < displayLimit; i++ {
+		out.WriteString(results[i] + "\n")
+	}
+
+	if len(results) > displayLimit {
+		fmt.Fprintf(&out, "\n... %d more results omitted ...\n", len(results)-displayLimit)
 	}
 
 	blob, _ := json.MarshalIndent(jsonOut, "", "  ")
@@ -629,24 +662,12 @@ func detectSyntaxInventionRisk(queryTokens []string, facets map[string]FacetCoun
 }
 
 // generateAgentGuidance provides focused guidance prioritizing tool redirection
-// CRITICAL: Always includes mandatory warnings about evidence citing and syntax invention
+// Provides concise, actionable guidance without excessive repetition
 func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
-	// MANDATORY BASE WARNINGS - MUST APPEAR IN EVERY RESPONSE
-	baseWarnings := []string{
-		"CRITICAL: Do not provide code without documented working examples",
-		"FORBIDDEN: Do not invent syntax that isn't documented",
-		"REQUIRED: Always cite sources with file paths and line numbers",
-		"MANDATORY: Always provide URLs to documentation when available - convert file paths to clickable links",
-		"REQUIRED: Report exact file names and line numbers for all code examples",
-	}
-
-	// PRE-RESPONSE CHECKLIST ENFORCEMENT
-	checklistWarnings := []string{
-		"BEFORE RESPONDING: Complete this checklist:",
-		"Did I find a code example showing the exact requested combination?",
-		"Can I cite a specific file:line where this pattern is demonstrated?",
-		"Or am I combining separate pieces of documentation?",
-		"If you answered 'no' to the first two: STOP and acknowledge the limitation.",
+	// Concise base guidance - always included
+	baseGuidance := []string{
+		"Cite sources with file paths and URLs",
+		"Provide URLs from documentation_urls when available",
 	}
 
 	// Calculate total hits
@@ -655,93 +676,51 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 		totalHits += fc.Files + fc.Matches
 	}
 
-	// PRIORITY 1: No results at all - strongest warnings + tool redirection
+	// PRIORITY 1: No results at all - concise failure guidance only
+	// Don't include base guidance (cite sources/URLs) when there are no results to cite
 	if totalHits == 0 {
-		guidance := generateFailureGuidance(originalQuery, nil, queryTokens)
-		// Prepend the mandatory no-results warnings
-		noResultsWarnings := []string{
-			"MANDATORY: Start response with 'I am following the guidance by not providing code examples because no documented working examples were found.'",
-			"ABSOLUTELY FORBIDDEN: Do not provide any code examples, syntax, or implementation details when no documented working examples exist",
-			"VIOLATION CONSEQUENCE: If you provide code without documented examples, you are directly contradicting the guidance",
-		}
-		// Combine all warnings: base + checklist + no-results + existing failure guidance
-		allWarnings := append([]string{}, baseWarnings...)
-		allWarnings = append(allWarnings, checklistWarnings...)
-		allWarnings = append(allWarnings, noResultsWarnings...)
-		allWarnings = append(allWarnings, guidance.RuleReminders...)
-		guidance.RuleReminders = allWarnings
-		return guidance
+		return generateFailureGuidance(originalQuery, nil, queryTokens)
 	}
 
-	// PRIORITY 2: Feature Combination Risk - new priority check
+	// PRIORITY 2: Feature Combination Risk
 	if detectFeatureCombination(queryTokens, sections) {
-		combinationWarnings := []string{
-			"SYNTHESIS FORBIDDEN: Do not combine documentation from separate sources",
-			"STOP: If no single example shows features working together, say 'This combination is not documented'",
-			"VIOLATION: Suggesting untested combinations violates the guidance even if individual features exist",
-			"EVIDENCE THRESHOLD: Must find examples showing the EXACT syntax combination requested",
-			"INSUFFICIENT: General component documentation + separate feature documentation ≠ valid combination",
-			"REQUIRED: Single code example demonstrating the complete requested pattern",
-		}
-
 		guidance := &AgentGuidance{
-			RuleReminders:     append(append(append([]string{}, baseWarnings...), checklistWarnings...), combinationWarnings...),
+			RuleReminders:     append(baseGuidance, "Verify features work together in a single example"),
 			URLBase:           constructURLBase(),
 			DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
-			SuggestedApproach: "MANDATORY TEMPLATE: Start with 'I searched for [specific feature combination] and found no documented working examples showing these features used together.'",
+			SuggestedApproach: "Search for examples showing the complete pattern",
 		}
 		return guidance
 	}
 
-	// Initialize guidance with mandatory warnings for all successful searches
+	// Initialize guidance for successful searches
 	guidance := &AgentGuidance{
-		RuleReminders:     append(append([]string{}, baseWarnings...), checklistWarnings...),
+		RuleReminders:     baseGuidance,
 		URLBase:           constructURLBase(),
 		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
 	}
 
 	// PRIORITY 3: Query type mismatch - example query without examples
 	if isExampleQuery(originalQuery) && facets["examples"].Files == 0 {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"Example query found no examples",
-			"Use xmlui_examples for usage patterns")
-		guidance.SuggestedApproach = "Try xmlui_examples first, then xmlui_search_howto"
+		guidance.RuleReminders = append(guidance.RuleReminders, "Try xmlui_examples tool")
 		guidance.SearchToolPreference = "xmlui_examples"
 		return guidance
 	}
 
 	// PRIORITY 4: Query type mismatch - how-to query without tutorials
 	if isHowToQuery(originalQuery) && facets["howtos"].Files == 0 {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"How-to query found no tutorials",
-			"Use xmlui_search_howto for tutorial content")
-		guidance.SuggestedApproach = "Try xmlui_search_howto first, then xmlui_examples"
+		guidance.RuleReminders = append(guidance.RuleReminders, "Try xmlui_search_howto tool")
 		guidance.SearchToolPreference = "xmlui_search_howto"
 		return guidance
 	}
 
 	// PRIORITY 5: Low confidence scenarios
 	if confidence == "low" {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"Limited documentation found",
-			"Verify feature exists before providing implementation details")
-		guidance.SuggestedApproach = "Cross-reference multiple sources and acknowledge uncertainties"
+		guidance.SuggestedApproach = "Verify feature exists in documentation"
 		return guidance
 	}
 
-	// PRIORITY 6: High syntax invention risk
-	if detectSyntaxInventionRisk(queryTokens, facets) {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"HIGH RISK: Multiple terms with limited documentation coverage",
-			"EVIDENCE REQUIRED: Must cite specific line numbers for any code provided")
-		guidance.SuggestedApproach = "FORMAT REQUIRED: 'According to [file:line], the syntax is...' Always cite URLs from documentation_urls."
-		return guidance
-	}
-
-	// PRIORITY 7: Default guidance for successful searches
-	guidance.RuleReminders = append(guidance.RuleReminders,
-		"Always cite documentation sources",
-		"Provide URLs to documentation when available")
+	// Default: successful search with good results
 	return guidance
 }
 
@@ -845,40 +824,23 @@ func extractTitleFromPath(filePath string) string {
 // generateFailureGuidance provides specific guidance when no results are found
 func generateFailureGuidance(originalQuery string, queryPlan []stageHit, kept []string) *AgentGuidance {
 	guidance := &AgentGuidance{
-		RuleReminders: []string{
-			"STOP: No documentation found - DO NOT provide code examples",
-			"REQUIRED: Say 'This feature is not documented' instead",
-			"REQUIRED: Acknowledge the limitation explicitly",
-			"No results found - use the correct search tools:",
-		},
+		RuleReminders: []string{"No documentation found for this query"},
 	}
 
 	// Special cases that should redirect to specific tools
 	if isHowToQuery(originalQuery) {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"For 'how to' queries, use xmlui_list_howto first",
-			"Then try xmlui_search_howto with your specific terms")
-		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' How-to queries require specialized tools: xmlui_list_howto → xmlui_search_howto → xmlui_search (fallback)"
+		guidance.SuggestedApproach = "Try xmlui_list_howto or xmlui_search_howto"
 		guidance.SearchToolPreference = "xmlui_list_howto"
 		return guidance
 	}
 
 	if isExampleQuery(originalQuery) {
-		guidance.RuleReminders = append(guidance.RuleReminders,
-			"For example queries, use xmlui_examples tool",
-			"Search for the component name without 'examples' modifier")
-		guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' Example queries require xmlui_examples tool: remove 'examples' and search for core component"
+		guidance.SuggestedApproach = "Try xmlui_examples with simpler terms"
 		guidance.SearchToolPreference = "xmlui_examples"
 		return guidance
 	}
 
 	// General guidance for other failed searches
-	guidance.RuleReminders = append(guidance.RuleReminders,
-		"Try simpler terms without modifiers",
-		"Use xmlui_examples for usage patterns",
-		"Use xmlui_search_howto for tutorials")
-
-	guidance.SuggestedApproach = "MANDATORY: Use this exact template: 'I searched for [specific feature] and found no documented working examples. The guidance requires me to not provide code examples without documented evidence. Available documentation covers: [list what was actually found].' Remove modifiers and search for core component or concept names"
-
+	guidance.SuggestedApproach = "Try simpler search terms or use xmlui_examples/xmlui_search_howto"
 	return guidance
 }
