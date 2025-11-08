@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/xmlui-org/mcp/xmluimcp"
-	"github.com/xmlui-org/mcp/xmluimcp/common"
+	"github.com/xmlui-org/mcpsvr/xmluimcp"
+	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
 )
 
 func main() {

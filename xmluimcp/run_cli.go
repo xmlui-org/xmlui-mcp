@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xmlui-org/mcp/xmluimcp/common"
+	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
 )
 
 // RunCLI is the CLI entry point for the XMLUI MCP server.

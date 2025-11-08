@@ -2,9 +2,9 @@ module xmlui-mcp
 
 go 1.25.3
 
-replace github.com/xmlui-org/mcp/xmluimcp => ../xmluimcp
+replace github.com/xmlui-org/mcpsvr/xmluimcp => ../xmluimcp
 
-require github.com/xmlui-org/mcp/xmluimcp v0.0.0-00010101000000-000000000000
+require github.com/xmlui-org/mcpsvr/xmluimcp v0.0.0-00010101000000-000000000000
 
 require (
 	github.com/google/uuid v1.6.0 // indirect

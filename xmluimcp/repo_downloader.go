@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xmlui-org/mcp/xmluimcp/mcpsvr"
+	"github.com/xmlui-org/mcpsvr/xmluimcp/mcpsvr"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/xmlui-org/mcp/xmluimcp/common"
+	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
 )
 
 // TestEnsureXMLUIRepoIntegration tests the full integration of automatic repo download

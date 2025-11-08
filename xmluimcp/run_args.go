@@ -1,7 +1,7 @@
 package xmluimcp
 
 import (
-	"github.com/xmlui-org/mcp/xmluimcp/common"
+	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
 )
 
 // RunArgs contains all the configuration and dependencies needed to run the MCP server.
