@@ -20,11 +20,7 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 - [Library Usage](#library-usage)
 - [API Reference](#api-reference)
 
-## Prerequisites
-
-### Automatic Mode (Recommended)
-
-**No prerequisites needed!** The server will automatically download the latest XMLUI repository from GitHub if no directory is specified. The repository is cached in:
+In order to be able to search XMLUI documentation and source code, the server will automatically download the latest XMLUI repository from GitHub. The repository is cached in:
 
 - **Linux**: `$XDG_CACHE_HOME/xmlui/xmlui-mcp` or `~/.cache/xmlui/xmlui-mcp`
 - **macOS**: `~/Library/Caches/xmlui/xmlui-mcp`
@@ -32,28 +28,13 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 
 The download happens once and is reused on subsequent runs. The server will fetch the latest `xmlui@<version>` release from GitHub.
 
-### Manual Mode (Optional)
-
-If you prefer to use a local XMLUI repository, clone the [XMLUI repo](https://github.com/xmlui-org/xmlui) and make sure you have:
-
-- `docs/content/components/` - Component documentation (.md files)
-- `docs/public/pages/` - General documentation and tutorials
-- `docs/public/pages/howto` - HowTo docs with working playgrounds
-- `xmlui/src/components/` - Source code (.tsx, .scss files)
-
-The MCP server will search these directories for component documentation, source code, and examples to help with XMLUI development.
-
 ## Install
 
-To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases), unzip, and cd into xmlui-mcp.
-
-On Mac or Linux, run `prepare-binary.sh` to handle permissions.
+To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases) and unzip into a known locaton like ~/xmlui-mcp. On Mac, run `prepare-binary.sh` to handle permissions.
 
 ## Configure
 
-### Automatic Configuration (Recommended)
-
-The simplest configuration uses automatic repository download:
+The simplest configuration just names the location of the binary. The server will search the cached repo.
 
 ```json
 {
@@ -65,35 +46,14 @@ The simplest configuration uses automatic repository download:
 }
 ```
 
-On first run, the server will download the latest XMLUI repository from GitHub and cache it. No additional arguments needed!
-
-### Manual Configuration (Optional)
-
-If you want to use a local XMLUI directory or include custom examples:
-
-```
-Usage: ./xmlui-mcp [--http] [--port PORT] [xmluiDir] [exampleRoot] [comma-separated-exampleDirs]
-  --http: Run in HTTP mode (default: stdio mode)
-  --port: Port to listen on in HTTP mode (default: 8080)
-```
-
-- **./xmlui-mcp** The server binary
-
-- **xmluiDir** (optional) The directory containing XMLUI source and docs. If omitted, the latest version is downloaded automatically.
-
-- **exampleRoot** An optional directory to search for examples
-
-- **comma-separated-exampleDirs** Subdirectories under exampleRoot
-
-Example configuration with custom paths:
+If you want to have the server also search one or more XMLUI projects, add two optional arguments: a root folder, and a list of project folders within it.
 
 ```json
 {
   "mcpServers": {
     "xmlui": {
-      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp",
+      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp"
       "args": [
-        "/Users/jonudell/xmlui",
         "/Users/jonudell",
         "xmlui-invoice,xmlui-mastodon"
       ]
@@ -101,6 +61,19 @@ Example configuration with custom paths:
   }
 }
 ```
+
+```
+Usage: ./xmlui-mcp [--http] [--port PORT] [exampleRoot] [comma-separated-exampleDirs]
+  --http: Run in HTTP mode (default: stdio mode)
+  --port: Port to listen on in HTTP mode (default: 8080)
+```
+
+- **./xmlui-mcp** The server binary
+
+- **exampleRoot** An optional directory to search for examples
+
+- **comma-separated-exampleDirs** Subdirectories under exampleRoot
+
 
 The paths for these config files on a Mac are:
 
@@ -148,49 +121,8 @@ This project can be used as a Go library in other applications. The CLI is a thi
 import "xmlui-mcp/pkg/xmluimcp"
 
 func main() {
-    // Ensure XMLUI repository is available (downloads if needed)
-    xmluiDir, err := xmluimcp.EnsureXMLUIRepo()
-    if err != nil {
-        log.Fatal(err)
-    }
-
+    // XMLUI repository is automatically downloaded and cached by NewServer
     config := xmluimcp.ServerConfig{
-        XMLUIDir:    xmluiDir,
-        ExampleRoot: "/path/to/examples",
-        ExampleDirs: []string{"demo", "tutorial"},
-        HTTPMode:    false, // stdio mode
-        Port:        "8080",
-    }
-
-    server, err := xmluimcp.NewServer(config)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Print startup information
-    server.PrintStartupInfo()
-
-    // Start the server
-    if config.HTTPMode {
-        err = server.ServeHTTP()
-    } else {
-        err = server.ServeStdio()
-    }
-
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-```
-
-### Manual Path Configuration
-
-```go
-import "xmlui-mcp/pkg/xmluimcp"
-
-func main() {
-    config := xmluimcp.ServerConfig{
-        XMLUIDir:    "/path/to/xmlui/source",
         ExampleRoot: "/path/to/examples",
         ExampleDirs: []string{"demo", "tutorial"},
         HTTPMode:    false, // stdio mode
@@ -232,14 +164,8 @@ type MyApp struct {
 }
 
 func NewMyApp() (*MyApp, error) {
-    // Automatically download and cache XMLUI repository
-    xmluiDir, err := xmluimcp.EnsureXMLUIRepo()
-    if err != nil {
-        return nil, err
-    }
-
+    // XMLUI repository is automatically downloaded and cached by NewServer
     config := xmluimcp.ServerConfig{
-        XMLUIDir: xmluiDir,
         HTTPMode: true,
         Port:     "8080",
     }
@@ -275,12 +201,13 @@ func (app *MyApp) Start() error {
 
 The `ServerConfig` struct supports:
 
-- `XMLUIDir` (required): Path to XMLUI source directory
-- `ExampleRoot`: Root directory for examples
-- `ExampleDirs`: Subdirectories within example root
+- `ExampleRoot`: Root directory for examples (optional)
+- `ExampleDirs`: Subdirectories within example root (optional)
 - `HTTPMode`: Whether to run in HTTP mode
 - `Port`: Port for HTTP mode (default: "8080")
-- `AnalyticsFile`: Path to analytics file
+- `AnalyticsFile`: Path to analytics file (optional)
+
+Note: The XMLUI repository is automatically downloaded and cached on first use. No manual path configuration is needed.
 
 ## API Reference
 
@@ -290,7 +217,6 @@ Configuration for the XMLUI MCP server.
 
 ```go
 type ServerConfig struct {
-    XMLUIDir     string   // Path to XMLUI source directory
     ExampleRoot  string   // Optional: root directory for examples
     ExampleDirs  []string // Optional: subdirectories within example root
     HTTPMode     bool     // Whether to run in HTTP mode
@@ -298,6 +224,8 @@ type ServerConfig struct {
     AnalyticsFile string  // Path to analytics file (optional)
 }
 ```
+
+Note: The XMLUI repository path is automatically managed by the server and does not need to be specified in the config.
 
 ### MCPServer
 
@@ -320,7 +248,7 @@ If a browser does not auto-launch, copy/paste that URL. In the inspector, fill i
 
 Command: /path/to/xmlui-mcp
 
-Arguments: /path/to/xmlui path/to/examples "folder1,folder2"
+Arguments: path/to/examples "folder1,folder2"
 
 Then click Connect.
 

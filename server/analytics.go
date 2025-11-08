@@ -283,6 +283,12 @@ var globalAnalytics *Analytics
 // Global debug log path for server.log; set alongside analytics file
 var debugLogPath string
 
+// SetDebugLogPath sets the path for the debug log file
+// This should be called early, before any logging happens
+func SetDebugLogPath(path string) {
+	debugLogPath = path
+}
+
 func InitializeAnalytics(logFile string) {
 	// Initialize analytics storage
 	globalAnalytics = NewAnalytics(logFile)

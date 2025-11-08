@@ -20,44 +20,61 @@ import (
 
 // ServerConfig holds configuration for the XMLUI MCP server
 type ServerConfig struct {
-	XMLUIDir     string   // Path to XMLUI source directory
-	ExampleRoot  string   // Optional: root directory for examples
-	ExampleDirs  []string // Optional: subdirectories within example root
-	HTTPMode     bool     // Whether to run in HTTP mode
-	Port         string   // Port for HTTP mode (default: "8080")
-	AnalyticsFile string  // Path to analytics file (optional)
+	ExampleRoot   string   // Optional: root directory for examples
+	ExampleDirs   []string // Optional: subdirectories within example root
+	HTTPMode      bool     // Whether to run in HTTP mode
+	Port          string   // Port for HTTP mode (default: "8080")
+	AnalyticsFile string   // Path to analytics file (optional)
 }
 
 // MCPServer represents an XMLUI MCP server instance
 type MCPServer struct {
-	config        ServerConfig
-	mcpServer     *server.MCPServer
+	config         ServerConfig
+	xmluiDir       string // Path to cached XMLUI repository (set automatically)
+	mcpServer      *server.MCPServer
 	sessionManager *SessionManager
-	prompts       []mcp.Prompt
-	tools         []mcp.Tool
+	prompts        []mcp.Prompt
+	tools          []mcp.Tool
 	promptHandlers map[string]PromptHandler
 }
 
 // NewServer creates a new XMLUI MCP server with the given configuration
 func NewServer(config ServerConfig) (*MCPServer, error) {
-	// If XMLUIDir is not provided, automatically download and cache the repository
-	if config.XMLUIDir == "" {
-		mcpserver.WriteDebugLog("No XMLUI directory specified, using cached repository...\n")
-		cachedRepo, err := EnsureXMLUIRepo()
+	// Set up analytics file path first (needed for debug log path)
+	if config.AnalyticsFile == "" {
+		// Put analytics file in cache directory for consistency
+		cacheDir, err := GetCacheDir()
 		if err != nil {
-			return nil, fmt.Errorf("failed to ensure XMLUI repository: %w (you can specify a local XMLUI directory as an argument)", err)
+			fmt.Fprintf(os.Stderr, "WARNING: Failed to get cache directory for analytics file: %v\n", err)
+			// Fallback to current directory if cache directory unavailable
+			config.AnalyticsFile = filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
+		} else {
+			config.AnalyticsFile = filepath.Join(cacheDir, "xmlui-mcp-analytics.json")
 		}
-		config.XMLUIDir = cachedRepo
-		mcpserver.WriteDebugLog("Using cached XMLUI repository at: %s\n", config.XMLUIDir)
 	}
+
+	// Set debug log path early, before any logging happens
+	// This ensures all logs go to the cache directory, not the current working directory
+	logPath := filepath.Join(filepath.Dir(config.AnalyticsFile), "server.log")
+	mcpserver.SetDebugLogPath(logPath)
+
+	// Always download and cache the repository
+	mcpserver.WriteDebugLog("Ensuring cached XMLUI repository is available...\n")
+	fmt.Fprintf(os.Stderr, "Ensuring cached XMLUI repository is available...\n")
+	cachedRepo, err := EnsureXMLUIRepo()
+	if err != nil {
+		mcpserver.WriteDebugLog("ERROR: Failed to ensure XMLUI repository: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to ensure XMLUI repository: %v\n", err)
+		return nil, fmt.Errorf("failed to ensure XMLUI repository: %w", err)
+	}
+	mcpserver.WriteDebugLog("Using cached XMLUI repository at: %s\n", cachedRepo)
+	fmt.Fprintf(os.Stderr, "Using cached XMLUI repository at: %s\n", cachedRepo)
 
 	// Set defaults
 	if config.Port == "" {
 		config.Port = "8080"
 	}
-	if config.AnalyticsFile == "" {
-		config.AnalyticsFile = filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
-	}
+	// AnalyticsFile is already set above
 
 	// Create MCP server
 	mcpServer := server.NewMCPServer("XMLUI", "0.1.0",
@@ -74,11 +91,12 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 
 	// Create XMLUI server instance
 	xmluiServer := &MCPServer{
-		config:        config,
-		mcpServer:     mcpServer,
+		config:         config,
+		xmluiDir:       cachedRepo,
+		mcpServer:      mcpServer,
 		sessionManager: sessionManager,
-		prompts:       []mcp.Prompt{},
-		tools:         []mcp.Tool{},
+		prompts:        []mcp.Prompt{},
+		tools:          []mcp.Tool{},
 		promptHandlers: make(map[string]PromptHandler),
 	}
 
@@ -92,7 +110,7 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 	}
 
 	// Auto-inject XMLUI rules into default session
-	_, err := sessionManager.InjectPrompt("default", "xmlui_rules", xmluiServer.promptHandlers)
+	_, err = sessionManager.InjectPrompt("default", "xmlui_rules", xmluiServer.promptHandlers)
 	if err != nil {
 		mcpserver.WriteDebugLog("Failed to auto-inject xmlui_rules: %v\n", err)
 	} else {
@@ -116,22 +134,22 @@ func (s *MCPServer) setupTools() error {
 	}
 
 	// List components tool
-	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(s.config.XMLUIDir)
+	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(s.xmluiDir)
 	s.mcpServer.AddTool(listComponentsTool, mcpserver.WithAnalytics("xmlui_list_components", listComponentsHandler))
 	s.tools = append(s.tools, listComponentsTool)
 
 	// Component docs tool
-	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(s.config.XMLUIDir)
+	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(s.xmluiDir)
 	s.mcpServer.AddTool(componentDocsTool, mcpserver.WithAnalytics("xmlui_component_docs", componentDocsHandler))
 	s.tools = append(s.tools, componentDocsTool)
 
 	// Search docs tool
-	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.config.XMLUIDir)
+	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.xmluiDir)
 	s.mcpServer.AddTool(searchDocsTool, mcpserver.WithSearchAnalytics("xmlui_search", searchDocsHandler))
 	s.tools = append(s.tools, searchDocsTool)
 
 	// Read file tool
-	readFileTool, readFileHandler := mcpserver.NewReadFileTool(s.config.XMLUIDir)
+	readFileTool, readFileHandler := mcpserver.NewReadFileTool(s.xmluiDir)
 	s.mcpServer.AddTool(readFileTool, mcpserver.WithAnalytics("xmlui_read_file", readFileHandler))
 	s.tools = append(s.tools, readFileTool)
 
@@ -141,12 +159,12 @@ func (s *MCPServer) setupTools() error {
 	s.tools = append(s.tools, examplesTool)
 
 	// List howto tool
-	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(s.config.XMLUIDir)
+	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(s.xmluiDir)
 	s.mcpServer.AddTool(listHowtoTool, mcpserver.WithAnalytics("xmlui_list_howto", listHowtoHandler))
 	s.tools = append(s.tools, listHowtoTool)
 
 	// Search howto tool
-	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(s.config.XMLUIDir)
+	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(s.xmluiDir)
 	s.mcpServer.AddTool(searchHowtoTool, mcpserver.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	s.tools = append(s.tools, searchHowtoTool)
 

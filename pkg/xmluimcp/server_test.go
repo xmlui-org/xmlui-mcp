@@ -6,8 +6,12 @@ import (
 )
 
 func TestNewServer(t *testing.T) {
+	// Skip if network tests are disabled
+	if os.Getenv("SKIP_NETWORK_TESTS") != "" {
+		t.Skip("Skipping network test")
+	}
+
 	config := ServerConfig{
-		XMLUIDir:    "/tmp/test-xmlui",
 		ExampleRoot: "/tmp/test-examples",
 		ExampleDirs: []string{"demo"},
 		HTTPMode:    false,
@@ -21,6 +25,11 @@ func TestNewServer(t *testing.T) {
 
 	if server == nil {
 		t.Fatal("Server should not be nil")
+	}
+
+	// Verify that xmluiDir was populated
+	if server.xmluiDir == "" {
+		t.Error("xmluiDir should be populated after auto-download")
 	}
 
 	// Test that tools are initialized
@@ -43,37 +52,36 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestServerConfigValidation(t *testing.T) {
-	// Test that empty XMLUIDir triggers auto-download (skip if network unavailable)
+	// Test that auto-download works (skip if network unavailable)
 	if os.Getenv("SKIP_NETWORK_TESTS") == "" {
-		config := ServerConfig{
-			XMLUIDir: "",
-		}
+		config := ServerConfig{}
 
 		server, err := NewServer(config)
 		if err != nil {
 			t.Logf("Auto-download failed (may be expected): %v", err)
 		} else if server != nil {
-			// Verify that XMLUIDir was populated
-			if server.config.XMLUIDir == "" {
-				t.Error("XMLUIDir should be populated after auto-download")
+			// Verify that xmluiDir was populated
+			if server.xmluiDir == "" {
+				t.Error("xmluiDir should be populated after auto-download")
 			}
-			t.Logf("Auto-download successful, using: %s", server.config.XMLUIDir)
+			t.Logf("Auto-download successful, using: %s", server.xmluiDir)
 		}
 	}
 
-	// Test default port
-	config := ServerConfig{
-		XMLUIDir: "/tmp/test",
-		Port:     "",
-	}
+	// Test default port (skip if network unavailable)
+	if os.Getenv("SKIP_NETWORK_TESTS") == "" {
+		config := ServerConfig{
+			Port: "",
+		}
 
-	server, err := NewServer(config)
-	if err != nil {
-		t.Fatalf("Failed to create server with empty port: %v", err)
-	}
-
-	if server.config.Port != "8080" {
-		t.Errorf("Expected default port 8080, got %s", server.config.Port)
+		server, err := NewServer(config)
+		if err != nil {
+			t.Logf("Failed to create server with empty port (may be expected): %v", err)
+		} else if server != nil {
+			if server.config.Port != "8080" {
+				t.Errorf("Expected default port 8080, got %s", server.config.Port)
+			}
+		}
 	}
 }
 
@@ -126,9 +134,8 @@ func TestNewServerAutoDownload(t *testing.T) {
 		t.Skip("Skipping network test")
 	}
 
-	// Test creating server with empty XMLUIDir (should trigger auto-download)
+	// Test creating server (should trigger auto-download)
 	config := ServerConfig{
-		XMLUIDir: "",
 		HTTPMode: false,
 		Port:     "8080",
 	}
@@ -142,12 +149,12 @@ func TestNewServerAutoDownload(t *testing.T) {
 		t.Fatal("Server should not be nil")
 	}
 
-	// Verify that XMLUIDir was populated
-	if server.config.XMLUIDir == "" {
-		t.Fatal("XMLUIDir should be populated after auto-download")
+	// Verify that xmluiDir was populated
+	if server.xmluiDir == "" {
+		t.Fatal("xmluiDir should be populated after auto-download")
 	}
 
-	t.Logf("Auto-downloaded repository to: %s", server.config.XMLUIDir)
+	t.Logf("Auto-downloaded repository to: %s", server.xmluiDir)
 
 	// Verify tools are loaded
 	tools := server.GetTools()

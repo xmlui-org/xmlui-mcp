@@ -83,15 +83,8 @@ func TestServerWithAutoDownload(t *testing.T) {
 		t.Skip("Skipping network test")
 	}
 
-	// Ensure repo is downloaded
-	xmluiDir, err := EnsureXMLUIRepo()
-	if err != nil {
-		t.Fatalf("Failed to ensure XMLUI repo: %v", err)
-	}
-
-	// Create server config
+	// Create server config (repo will be auto-downloaded)
 	config := ServerConfig{
-		XMLUIDir: xmluiDir,
 		HTTPMode: false,
 		Port:     "8080",
 	}

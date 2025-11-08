@@ -152,3 +152,51 @@ Using cached XMLUI repository at: /home/ez/.cache/xmlui/xmlui-mcp/repo
 [DEBUG] Analytics initialized, globalAnalytics is nil: false
 Example roots configured: []
 Auto-injected xmlui_rules into default session
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Ensuring cached XMLUI repository is available...
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Using cached XMLUI repository at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+[DEBUG] Initializing analytics with log file: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: []
+Auto-injected xmlui_rules into default session
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Ensuring cached XMLUI repository is available...
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Using cached XMLUI repository at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+[DEBUG] Initializing analytics with log file: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: [/tmp/test-examples/demo]
+Auto-injected xmlui_rules into default session
+Ensuring cached XMLUI repository is available...
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Using cached XMLUI repository at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+[DEBUG] Initializing analytics with log file: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: []
+Auto-injected xmlui_rules into default session
+Ensuring cached XMLUI repository is available...
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Using cached XMLUI repository at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+[DEBUG] Initializing analytics with log file: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: []
+Auto-injected xmlui_rules into default session
+Ensuring cached XMLUI repository is available...
+XMLUI repo already cached at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+Cached version: xmlui@0.11.4
+Using cached XMLUI repository at: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/repo
+[DEBUG] Initializing analytics with log file: /Users/jonudell/Library/Caches/xmlui/xmlui-mcp/xmlui-mcp-analytics.json
+[DEBUG] Analytics initialized, globalAnalytics is nil: false
+Example roots configured: []
+Auto-injected xmlui_rules into default session

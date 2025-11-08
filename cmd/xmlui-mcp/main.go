@@ -22,28 +22,22 @@ func main() {
 	// Get positional arguments after flags
 	args := flag.Args()
 
-	xmluiDir := ""
 	exampleRoot := ""
 	exampleDirs := []string{}
 
-	// Optional arg 1: xmluiDir (if not provided, server will auto-download)
+	// Optional arg 1: example root
 	if len(args) >= 1 {
-		xmluiDir = args[0]
+		exampleRoot = args[0]
 	}
 
-	// Optional arg 2: example root
+	// Optional arg 2: comma-separated subdirs
 	if len(args) >= 2 {
-		exampleRoot = args[1]
-	}
-
-	// Optional arg 3: comma-separated subdirs
-	if len(args) >= 3 {
-		exampleDirs = strings.Split(args[2], ",")
+		exampleDirs = strings.Split(args[1], ",")
 	}
 
 	// Create server configuration
+	// The XMLUI repository will be automatically downloaded and cached by NewServer
 	config := xmluimcp.ServerConfig{
-		XMLUIDir:    xmluiDir,
 		ExampleRoot: exampleRoot,
 		ExampleDirs: exampleDirs,
 		HTTPMode:    *httpMode,

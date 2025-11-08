@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	mcpserver "xmlui-mcp/server"
@@ -20,6 +21,9 @@ const (
 	fallbackZipURL   = "https://github.com/xmlui-org/xmlui/archive/refs/tags/xmlui@0.11.4.zip"
 	versionMarkerFile = ".xmlui-version"
 )
+
+// downloadMutex prevents concurrent downloads within the same process
+var downloadMutex sync.Mutex
 
 // GitHubRelease represents a release from the GitHub API
 type GitHubRelease struct {
@@ -206,15 +210,60 @@ func EnsureXMLUIRepo() (string, error) {
 		return "", fmt.Errorf("failed to get repo directory: %w", err)
 	}
 
-	// Check if repo is already valid
+	// Check if repo is already valid (do this before acquiring lock)
 	if isRepoValid(repoDir) {
+		// Clean up any stale lock file
+		lockFile := repoDir + ".lock"
+		os.Remove(lockFile) // Ignore errors, it's just cleanup
+
 		mcpserver.WriteDebugLog("XMLUI repo already cached at: %s\n", repoDir)
+		fmt.Fprintf(os.Stderr, "XMLUI repo already cached at: %s\n", repoDir)
 		version, _ := readVersionMarker(repoDir)
 		mcpserver.WriteDebugLog("Cached version: %s\n", version)
+		fmt.Fprintf(os.Stderr, "Cached version: %s\n", version)
+		return repoDir, nil
+	}
+
+	// Acquire file-based lock to prevent concurrent downloads across processes
+	lockFile := repoDir + ".lock"
+	mcpserver.WriteDebugLog("Acquiring file-based download lock: %s\n", lockFile)
+	fmt.Fprintf(os.Stderr, "Acquiring file-based download lock...\n")
+
+	// Open or create lock file
+	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to create lock file: %w", err)
+	}
+	defer lock.Close()
+
+	// Acquire exclusive lock (platform-specific implementation)
+	unlock, err := acquireFileLock(lock)
+	if err != nil {
+		// Clean up lock file on error
+		os.Remove(lockFile)
+		return "", fmt.Errorf("failed to acquire file lock: %w", err)
+	}
+	defer func() {
+		unlock()
+		// Clean up lock file after releasing lock
+		os.Remove(lockFile)
+	}()
+
+	mcpserver.WriteDebugLog("File-based download lock acquired\n")
+	fmt.Fprintf(os.Stderr, "File-based download lock acquired\n")
+
+	// Check again after acquiring lock (another process might have downloaded it)
+	if isRepoValid(repoDir) {
+		mcpserver.WriteDebugLog("XMLUI repo was cached by another process while waiting for lock\n")
+		fmt.Fprintf(os.Stderr, "XMLUI repo was cached by another process while waiting for lock\n")
+		version, _ := readVersionMarker(repoDir)
+		mcpserver.WriteDebugLog("Cached version: %s\n", version)
+		fmt.Fprintf(os.Stderr, "Cached version: %s\n", version)
 		return repoDir, nil
 	}
 
 	mcpserver.WriteDebugLog("XMLUI repo not found or invalid, downloading...\n")
+	fmt.Fprintf(os.Stderr, "XMLUI repo not found or invalid, downloading...\n")
 
 	// Try to get the latest version from GitHub
 	version, zipURL, err := getLatestXMLUITag()
