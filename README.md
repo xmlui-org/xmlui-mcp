@@ -145,7 +145,7 @@ This project can be used as a Go library in other applications. The CLI is a thi
 ### Basic Usage with Automatic Download
 
 ```go
-import "xmlui-mcp/pkg/xmluimcp"
+import"github.com/xmlui-org/mcp"
 
 func main() {
     // Ensure XMLUI repository is available (downloads if needed)
@@ -186,7 +186,7 @@ func main() {
 ### Manual Path Configuration
 
 ```go
-import "xmlui-mcp/pkg/xmluimcp"
+import	"github.com/xmlui-org/mcp"
 
 func main() {
     config := xmluimcp.ServerConfig{
@@ -225,7 +225,7 @@ func main() {
 // require xmlui-mcp v0.1.0
 
 // Then import and use:
-import "xmlui-mcp/pkg/xmluimcp"
+import 	"github.com/xmlui-org/mcp"
 
 type MyApp struct {
     mcpServer *xmluimcp.MCPServer
@@ -331,7 +331,7 @@ Then click Connect.
 To build just the library:
 
 ```bash
-go build ./pkg/xmluimcp/...
+go build ./xmluimcp/...
 ```
 
 ### CLI Build
@@ -339,7 +339,7 @@ go build ./pkg/xmluimcp/...
 To build the CLI executable:
 
 ```bash
-go build -o xmlui-mcp ./cmd/xmlui-mcp
+go build -o bin/xmlui-mcp ./cmd/xmlui-mcp
 ```
 
 ### Running Tests
