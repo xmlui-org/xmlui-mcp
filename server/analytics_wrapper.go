@@ -208,6 +208,7 @@ func getSearchPaths(toolName string) []string {
 			"docs/public/pages",
 			"docs/src/components",
 			"xmlui/src/components",
+			"blog",
 		}
 	case "xmlui_examples":
 		return []string{"example_roots"} // This would be populated from actual example roots
