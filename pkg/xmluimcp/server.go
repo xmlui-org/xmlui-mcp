@@ -144,7 +144,7 @@ func (s *MCPServer) setupTools() error {
 	s.tools = append(s.tools, componentDocsTool)
 
 	// Search docs tool
-	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.xmluiDir)
+	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.xmluiDir, exampleRoots)
 	s.mcpServer.AddTool(searchDocsTool, mcpserver.WithSearchAnalytics("xmlui_search", searchDocsHandler))
 	s.tools = append(s.tools, searchDocsTool)
 
