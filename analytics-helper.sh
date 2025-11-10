@@ -3,11 +3,40 @@
 # XMLUI-MCP Analytics Helper Script
 # This script helps you view and analyze agent usage data from JSONL format
 
-ANALYTICS_FILE="xmlui-mcp-analytics.json"
+# Determine cache directory based on OS
+get_cache_dir() {
+    local os=$(uname -s)
+    local home_dir="$HOME"
+
+    case "$os" in
+        Darwin)
+            # macOS: ~/Library/Caches/xmlui/xmlui-mcp
+            echo "$home_dir/Library/Caches/xmlui/xmlui-mcp"
+            ;;
+        Linux)
+            # Linux: $XDG_CACHE_HOME/xmlui/xmlui-mcp or ~/.cache/xmlui/xmlui-mcp
+            local xdg_cache="${XDG_CACHE_HOME:-}"
+            if [ -n "$xdg_cache" ]; then
+                echo "$xdg_cache/xmlui/xmlui-mcp"
+            else
+                echo "$home_dir/.cache/xmlui/xmlui-mcp"
+            fi
+            ;;
+        *)
+            echo "Error: Unsupported OS: $os" >&2
+            echo "This script currently supports macOS and Linux only." >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Get the analytics file path
+CACHE_DIR=$(get_cache_dir)
+ANALYTICS_FILE="$CACHE_DIR/xmlui-mcp-analytics.json"
 
 # Check if analytics file exists
 if [ ! -f "$ANALYTICS_FILE" ]; then
-    echo "No analytics file found at $ANALYTICS_FILE in current directory"
+    echo "No analytics file found at $ANALYTICS_FILE"
     echo "Analytics data will be created after agents start using the MCP server."
     exit 1
 fi
@@ -307,7 +336,7 @@ show_xmlui_search_fail() {
 show_xmlui_search_success() {
     echo "=== Successful XMLUI Search Terms ==="
     echo
-    
+
     if check_jq; then
         echo "All successful search queries (alphabetical):"
         echo "============================================="
@@ -318,7 +347,7 @@ show_xmlui_search_success() {
             .[] |
             "• " + .
         '
-        
+
         echo
         echo "Successful queries by frequency:"
         echo "==============================="
@@ -329,14 +358,14 @@ show_xmlui_search_success() {
             .[] |
             .query + " (" + (.count | tostring) + "x)"
         '
-        
+
         echo
         echo "Summary:"
         jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
             "Total successful searches: " + (length | tostring),
             "Unique successful search terms: " + (map(.query) | unique | length | tostring)
         '
-        
+
     else
         echo "Raw successful xmlui_search data:"
         jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE"
