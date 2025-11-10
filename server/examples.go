@@ -60,8 +60,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 }
 
 // ExamplesClassifier returns a classifier that puts everything in "examples" section.
-func ExamplesClassifier() func(rel string) string {
-	return func(rel string) string {
+func ExamplesClassifier() func(rel string, absPath string) string {
+	return func(rel string, absPath string) string {
 		return "examples"
 	}
 }

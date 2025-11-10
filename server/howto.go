@@ -99,8 +99,8 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 }
 
 // HowtoClassifier returns a classifier that identifies howto content.
-func HowtoClassifier(homeDir string) func(rel string) string {
-	return func(rel string) string {
+func HowtoClassifier(homeDir string) func(rel string, absPath string) string {
+	return func(rel string, absPath string) string {
 		return "howtos" // everything in howto search is howto content
 	}
 }

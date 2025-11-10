@@ -41,8 +41,9 @@ type MediatorConfig struct {
 	// Optional: synonyms expansion (token → []alternatives or phrases).
 	Synonyms map[string][]string
 
-	// Optional: per-hit classifier (relpath -> section key). If nil, SimpleClassifier() is used.
-	Classifier func(rel string) string
+	// Optional: per-hit classifier (relpath, absPath -> section key). If nil, SimpleClassifier() is used.
+	// rel is relative to homeDir, absPath is the absolute file path.
+	Classifier func(rel string, absPath string) string
 
 	// Optional: enable filename matches (per your legacy behavior). Default true.
 	EnableFilenameMatches bool
@@ -102,7 +103,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		cfg.FileExtensions = []string{".mdx", ".md", ".tsx", ".scss"}
 	}
 	if cfg.Classifier == nil {
-		cfg.Classifier = SimpleClassifier(homeDir)
+		cfg.Classifier = SimpleClassifier(homeDir, []string{})
 	}
 	if cfg.EnableFilenameMatches == false {
 		// leave as-is; default is true below
@@ -136,7 +137,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 	// -------- helpers --------
 
-	addHit := func(rel string, lineNum int, line string) {
+	addHit := func(rel string, absPath string, lineNum int, line string) {
 		if len(results) >= cfg.MaxResults {
 			return
 		}
@@ -154,7 +155,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 		results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, snippet))
 
-		section := cfg.Classifier(rel)
+		section := cfg.Classifier(rel, absPath)
 		if _, ok := jsonOut.Sections[section]; !ok {
 			// unknown section -> create on the fly so we don't lose hits
 			jsonOut.Sections[section] = []resultItem{}
@@ -206,7 +207,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 				if cfg.EnableFilenameMatches && matchFunc(d.Name(), lq) {
 					rel, _ := filepath.Rel(homeDir, path)
-					addHit(rel, 0, "[filename match]")
+					addHit(rel, path, 0, "[filename match]")
 					hits++
 					if len(results) >= cfg.MaxResults {
 						return nil
@@ -225,7 +226,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 					line := sc.Text()
 					if matchFunc(line, lq) {
 						rel, _ := filepath.Rel(homeDir, path)
-						addHit(rel, ln, line)
+						addHit(rel, path, ln, line)
 						hits++
 						if len(results) >= cfg.MaxResults {
 							return nil
@@ -418,11 +419,11 @@ func partialMatch(text, query string, minWords int) bool {
 func calculateMinWords(totalWords int) int {
 	switch {
 	case totalWords <= 2:
-		return totalWords     // 100% for 1-2 words
+		return totalWords // 100% for 1-2 words
 	case totalWords <= 4:
-		return 2              // 50% for 3-4 words
+		return 2 // 50% for 3-4 words
 	case totalWords >= 5:
-		return 2              // Just 2 words for 5+ word queries
+		return 2 // Just 2 words for 5+ word queries
 	default:
 		return 1
 	}
@@ -470,7 +471,6 @@ func normalizeTokens(q string, stop map[string]struct{}) (kept []string, removed
 	}
 	return
 }
-
 
 // looksLikeConcept: simple heuristic — any token looks "identifier-ish"
 func looksLikeConcept(tokens []string) bool {
@@ -575,10 +575,18 @@ func max(a, b int) int {
 //
 
 // SimpleClassifier returns a default path-based section classifier.
-func SimpleClassifier(homeDir string) func(rel string) string {
+// exampleRoots are optional paths outside homeDir that should be classified as "examples".
+func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, absPath string) string {
 	home := filepath.Clean(homeDir)
-	return func(rel string) string {
-		// Expect rel paths already relative to homeDir.
+	// Normalize example roots for comparison
+	normalizedExampleRoots := make([]string, len(exampleRoots))
+	for i, root := range exampleRoots {
+		normalizedExampleRoots[i] = filepath.Clean(root)
+	}
+
+	return func(rel string, absPath string) string {
+		// First check relative path patterns (for paths within homeDir)
+		// This must come before example root check to catch blog/ paths correctly
 		r := strings.ReplaceAll(rel, "\\", "/")
 		switch {
 		case strings.HasPrefix(r, "docs/content/components/"):
@@ -591,10 +599,26 @@ func SimpleClassifier(homeDir string) func(rel string) string {
 			return "examples"
 		case strings.HasPrefix(r, "xmlui/src/components/"):
 			return "source"
-		default:
-			_ = home // unused safeguard
-			return "source"
+		case strings.HasPrefix(r, "blog/"):
+			return "blog"
 		}
+
+		// If not matched above, check if the absolute path is within any example root
+		// (for paths outside homeDir)
+		if absPath != "" {
+			absPathClean := filepath.Clean(absPath)
+			for _, exampleRoot := range normalizedExampleRoots {
+				relToExample, err := filepath.Rel(exampleRoot, absPathClean)
+				if err == nil && !strings.HasPrefix(relToExample, "..") {
+					// Path is within this example root
+					return "examples"
+				}
+			}
+		}
+
+		// If we get here, we didn't match any pattern
+		_ = home // unused safeguard
+		return "unknown"
 	}
 }
 
@@ -723,7 +747,6 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	// Default: successful search with good results
 	return guidance
 }
-
 
 // isHowToQuery detects queries asking for how-to instructions
 func isHowToQuery(query string) bool {
