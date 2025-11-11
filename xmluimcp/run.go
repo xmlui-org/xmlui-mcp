@@ -15,7 +15,7 @@ import (
 //
 // Returns an error if server creation or execution fails.
 // This function blocks until the server terminates or encounters an error.
-func Run(ctx context.Context, args *RunArgs) error {
+func Run(_ context.Context, args *RunArgs) error {
 	// Create server
 	server, err := NewServer(*args.Config.Server)
 	if err != nil {

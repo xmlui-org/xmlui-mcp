@@ -19,7 +19,7 @@ func ParseOptions(cfgOpts *mcpcfg.Options) (opts *common.Options, err error) {
 	var exampleDirs []dt.DirPath
 	var analyticsFile dt.Filepath
 
-	cliOpts, err = cliutil.NewOptions(cliutil.OptionsArgs{
+	cliOpts, err = cliutil.NewGlobsalOptions(cliutil.GlobalOptionsArgs{
 		Quiet:     &cfgOpts.Quiet,
 		Verbosity: &cfgOpts.Verbosity,
 	})

@@ -2,12 +2,13 @@ package mcpsvr
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-dt/dtx"
 )
 
 // Global debug log file handle and mutex for thread-safe writing
@@ -33,19 +34,19 @@ func WriteDebugLog(format string, args ...interface{}) {
 		debugLogFile, err = os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			// Last resort: write to stderr
-			fmt.Fprintf(os.Stderr, "Failed to open debug log file %s: %v\n", targetPath, err)
+			cliutil.Stderrf("Failed to open debug log file %s: %v\n", targetPath, err)
 			return
 		}
 	}
 
 	// Write the message
-	fmt.Fprintf(debugLogFile, format, args...)
+	cliutil.Stdiof(debugLogFile, format, args...)
 
 	// Flush immediately to ensure it's written
-	debugLogFile.Sync()
+	dtx.LogOnError(debugLogFile.Sync())
 }
 
-// Wrapper function to add analytics to any tool handler
+// WithAnalytics is a wrapper function to add analytics to any tool handler
 func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// DEBUG: Log entry into withAnalytics wrapper
@@ -112,7 +113,7 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 	}
 }
 
-// Special wrapper for search tools to capture additional search-specific metrics
+// WithSearchAnalytics is a special wrapper for search tools to capture additional search-specific metrics
 func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract search query

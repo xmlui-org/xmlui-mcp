@@ -104,11 +104,6 @@ func HowtoClassifier(homeDir string) func(rel string) string {
 	}
 }
 
-// Helper functions for backwards compatibility
-func readFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
 func readAllHowtoFiles(howtoDir string) ([]string, error) {
 	files, err := os.ReadDir(howtoDir)
 	if err != nil {
