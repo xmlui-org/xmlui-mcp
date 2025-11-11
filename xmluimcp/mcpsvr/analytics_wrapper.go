@@ -8,7 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mikeschinkel/go-cliutil"
-	"github.com/mikeschinkel/go-dt/dtx"
+	"github.com/mikeschinkel/go-dt"
 )
 
 // Global debug log file handle and mutex for thread-safe writing
@@ -43,7 +43,7 @@ func WriteDebugLog(format string, args ...interface{}) {
 	cliutil.Stdiof(debugLogFile, format, args...)
 
 	// Flush immediately to ensure it's written
-	dtx.LogOnError(debugLogFile.Sync())
+	dt.LogOnError(debugLogFile.Sync())
 }
 
 // WithAnalytics is a wrapper function to add analytics to any tool handler
