@@ -46,3 +46,4 @@ dist/**
 # Don't commit log or analytics files
 *.log
 *analytics.json
+.DS_Store

@@ -1,8 +1,25 @@
 package common
 
-type Config = ServerConfig
+import (
+	"log/slog"
 
-// ServerConfig holds configuration for the XMLUI MCP server
+	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-dt/appinfo"
+)
+
+// Config holds typed runtime configuration for the XMLUI MCP server
+type Config struct {
+	Server  *ServerConfig
+	Options *Options
+	AppInfo appinfo.AppInfo
+	Logger  *slog.Logger
+	Writer  cliutil.Writer
+}
+
+func (c *Config) Config() {}
+
+// ServerConfig holds runtime server settings for the MCP server.
+// It uses string paths (not typed) because the underlying MCP server expects strings.
 type ServerConfig struct {
 	XMLUIDir      string   // Path to XMLUI source directory
 	ExampleRoot   string   // Optional: root directory for examples
@@ -12,5 +29,20 @@ type ServerConfig struct {
 	AnalyticsFile string   // Path to analytics file (optional)
 }
 
-// Config implements cliutil.Config interface
-func (sc ServerConfig) Config() {}
+type ConfigArgs struct {
+	Server  *ServerConfig
+	Options *Options
+	AppInfo appinfo.AppInfo
+	Logger  *slog.Logger
+	Writer  cliutil.Writer
+}
+
+func NewConfig(args ConfigArgs) *Config {
+	return &Config{
+		Server:  args.Server,
+		Options: args.Options,
+		AppInfo: args.AppInfo,
+		Logger:  args.Logger,
+		Writer:  args.Writer,
+	}
+}

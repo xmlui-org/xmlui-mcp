@@ -184,13 +184,11 @@ func (s *MCPServer) setupTools() error {
 		promptName := "xmlui_rules" // default
 		sessionID := "default"      // default
 
-		if request.Params.Arguments != nil {
-			if name, ok := request.Params.Arguments["prompt_name"].(string); ok && name != "" {
-				promptName = name
-			}
-			if id, ok := request.Params.Arguments["session_id"].(string); ok && id != "" {
-				sessionID = id
-			}
+		if name := mcpsvr.RequestArgument(request, "prompt_name"); name != "" {
+			promptName = name
+		}
+		if id := mcpsvr.RequestArgument(request, "session_id"); id != "" {
+			sessionID = id
 		}
 
 		// Use the session manager to inject
@@ -247,12 +245,7 @@ func (s *MCPServer) setupTools() error {
 
 	getPromptHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract prompt name
-		promptName := ""
-		if request.Params.Arguments != nil {
-			if name, ok := request.Params.Arguments["prompt_name"].(string); ok {
-				promptName = name
-			}
-		}
+		promptName := mcpsvr.RequestArgument(request, "prompt_name")
 
 		if promptName == "" {
 			return mcp.NewToolResultError("prompt_name parameter is required"), nil
@@ -327,10 +320,8 @@ func (s *MCPServer) setupTools() error {
 	getSessionContextHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract session ID
 		sessionID := "default" // default
-		if request.Params.Arguments != nil {
-			if id, ok := request.Params.Arguments["session_id"].(string); ok && id != "" {
-				sessionID = id
-			}
+		if id := mcpsvr.RequestArgument(request, "session_id"); id != "" {
+			sessionID = id
 		}
 
 		session := s.sessionManager.GetOrCreateSession(sessionID)

@@ -17,7 +17,7 @@ import (
 // This function blocks until the server terminates or encounters an error.
 func Run(ctx context.Context, args *RunArgs) error {
 	// Create server
-	server, err := NewServer(args.Config)
+	server, err := NewServer(*args.Config.Server)
 	if err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func Run(ctx context.Context, args *RunArgs) error {
 	server.PrintStartupInfo()
 
 	// Start server based on mode
-	if args.Config.HTTPMode {
+	if args.Config.Server.HTTPMode {
 		return server.ServeHTTP()
 	}
 	return server.ServeStdio()

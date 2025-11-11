@@ -20,15 +20,15 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
-		ReadOnlyHint:    true,
-		DestructiveHint: false,
-		IdempotentHint:  true,
-		OpenWorldHint:   false,
+		ReadOnlyHint:    BoolPtr(true),
+		DestructiveHint: BoolPtr(false),
+		IdempotentHint:  BoolPtr(true),
+		OpenWorldHint:   BoolPtr(false),
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		componentName, ok := req.Params.Arguments["component"].(string)
-		if !ok || componentName == "" {
+		componentName := RequestArgument(req, "component")
+		if componentName == "" {
 			return mcp.NewToolResultError("Missing or invalid 'component' parameter"), nil
 		}
 

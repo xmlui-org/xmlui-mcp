@@ -1,19 +1,19 @@
 package common
 
-//import "github.com/mikeschinkel/go-cliutil"
+import (
+	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-dt"
+)
 
 // Options implements the Options() interface method
 var _ interface{ Options() } = (*Options)(nil)
 
-// Options contains runtime options for the MCP server
+// Options contains parsed, strongly-typed runtime options for the MCP server.
+// It embeds *cliutil.GlobalOptions to inherit standard CLI behaviors like Quiet() and Verbosity().
 type Options struct {
-	XMLUIDir      string   // Path to XMLUI source directory (empty = auto-download)
-	ExampleRoot   string   // Root directory for examples (optional)
-	ExampleDirs   []string // Subdirectories within example root (optional)
-	AnalyticsFile string   // Path to analytics file (optional)
-	//Verbosity     cliutil.Verbosity // Output verbosity level
-	//Quiet         bool              // Suppress non-error output
+	*cliutil.GlobalOptions
+	XMLUIDir      dt.DirPath   // Path to XMLUI source directory (empty = auto-download)
+	ExampleRoot   dt.DirPath   // Root directory for examples (optional)
+	ExampleDirs   []dt.DirPath // Subdirectories within example root (optional)
+	AnalyticsFile dt.Filepath  // Path to analytics file (optional)
 }
-
-// Options implements the Options() marker interface
-func (Options) Options() {}

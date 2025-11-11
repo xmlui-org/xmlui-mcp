@@ -20,8 +20,8 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 	)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		relPath, ok := req.Params.Arguments["path"].(string)
-		if !ok || relPath == "" {
+		relPath := RequestArgument(req, "path")
+		if relPath == "" {
 			return mcp.NewToolResultError("Missing or invalid 'path' parameter"), nil
 		}
 

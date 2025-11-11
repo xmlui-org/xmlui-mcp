@@ -18,10 +18,10 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
-		ReadOnlyHint:    true,
-		DestructiveHint: false,
-		IdempotentHint:  true,
-		OpenWorldHint:   false,
+		ReadOnlyHint:    BoolPtr(true),
+		DestructiveHint: BoolPtr(false),
+		IdempotentHint:  BoolPtr(true),
+		OpenWorldHint:   BoolPtr(false),
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

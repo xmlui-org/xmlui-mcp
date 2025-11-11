@@ -2,7 +2,6 @@ package mcpsvr
 
 import (
 	"context"
-	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -17,18 +16,17 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
-		ReadOnlyHint:    true,
-		DestructiveHint: false,
-		IdempotentHint:  true,
-		OpenWorldHint:   false,
+		ReadOnlyHint:    BoolPtr(true),
+		DestructiveHint: BoolPtr(false),
+		IdempotentHint:  BoolPtr(true),
+		OpenWorldHint:   BoolPtr(false),
 	}
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		raw, ok := req.Params.Arguments["query"].(string)
-		if !ok || strings.TrimSpace(raw) == "" {
+		query := RequestArgument(req, "query")
+		if query == "" {
 			return mcp.NewToolResultError("Missing or invalid 'query' parameter"), nil
 		}
-		query := strings.TrimSpace(raw)
 
 		// If no example roots configured, fall back to simple message
 		if len(exampleRoots) == 0 {

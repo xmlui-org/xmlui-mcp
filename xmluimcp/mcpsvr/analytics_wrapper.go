@@ -102,7 +102,7 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
 
 		// Log the invocation
-		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
+		LogTool(toolName, RequestArguments(req), success, resultSize, errorMsg)
 
 		// DEBUG: Log after calling LogTool
 		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
@@ -116,12 +116,7 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract search query
-		query := ""
-		if req.Params.Arguments != nil {
-			if q, ok := req.Params.Arguments["query"].(string); ok {
-				query = q
-			}
-		}
+		query := RequestArgument(req, "query")
 
 		// Call the original handler
 		result, err := handler(ctx, req)
@@ -161,7 +156,7 @@ func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		searchSuccess := toolSuccess && resultCount > 0
 
 		// Log both general tool usage and specific search metrics
-		LogTool(toolName, req.Params.Arguments, toolSuccess, resultSize, errorMsg)
+		LogTool(toolName, RequestArguments(req), toolSuccess, resultSize, errorMsg)
 
 		// Log search-specific data with search-specific success metric
 		searchPaths := getSearchPaths(toolName)
