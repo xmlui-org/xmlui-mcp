@@ -6,16 +6,16 @@ import (
 )
 
 var appInfo = appinfo.New(appinfo.Args{
-	AppName:    common.AppName,
-	AppDescr:   common.AppDescr,
-	AppSlug:    common.AppSlug,
-	ConfigSlug: common.ConfigSlug,
-	ConfigFile: common.ConfigFile,
-	AppVer:     common.AppVer,
-	InfoURL:    common.InfoURL,
-	ExeName:    common.ExeName,
-	LogFile:    common.LogFile,
-	ExtraInfo:  common.ExtraInfo,
+	Name:        common.AppName,
+	Description: common.AppDescr,
+	Version:     common.AppVer,
+	AppSlug:     common.AppSlug,
+	ConfigSlug:  common.ConfigSlug,
+	ConfigFile:  common.ConfigFile,
+	InfoURL:     common.InfoURL,
+	ExeName:     common.ExeName,
+	LogFile:     common.LogFile,
+	ExtraInfo:   common.ExtraInfo,
 })
 
 func AppInfo() appinfo.AppInfo {
