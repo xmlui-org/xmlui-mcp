@@ -22,6 +22,12 @@ type RootConfigV1 struct {
 	rootConfigV1Base `json:",inline"`
 }
 
+func (c *RootConfigV1) Merge(rc cfgstore.RootConfig) cfgstore.RootConfig {
+	// Nothing to do, yet. Note that this is returning `rc` instead of `c` which
+	// means it is return CLI Config and not Project Config
+	return rc
+}
+
 func (c *RootConfigV1) RootConfig() {}
 
 // Base struct with all fields
