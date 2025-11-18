@@ -30,7 +30,7 @@ The download happens once and is reused on subsequent runs. The server will fetc
 
 ## Install
 
-To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases) and unzip into a known locaton like ~/xmlui-mcp. On Mac, run `prepare-binary.sh` to handle permissions.
+To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases) and unzip into a known location like ~/xmlui-mcp. On Mac, run `prepare-binary.sh` to handle permissions.
 
 ## Configure
 
@@ -61,6 +61,19 @@ If you want to have the server also search one or more XMLUI projects, add two o
   }
 }
 ```
+
+Note: The syntax can (annoyingly) vary by coding assistant. With Codex, for example, it is `.toml` not `.json` and looks like this:
+
+```toml
+[mcp_servers.xmlui]
+command = "/Users/jonudell/xmlui-mcp/xmlui-mcp"
+args = [
+  "/Users/jonudell",
+  "xmlui-invoice,xmlui-mastodon,xmlui-codefence-runner"
+]
+```
+
+## Usage
 
 ```
 Usage: ./xmlui-mcp [--http] [--port PORT] [exampleRoot] [comma-separated-exampleDirs]
