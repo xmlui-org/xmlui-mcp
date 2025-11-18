@@ -5,7 +5,6 @@ import (
 	jsonv2 "encoding/json/v2"
 
 	"github.com/mikeschinkel/go-cfgstore"
-	"github.com/mikeschinkel/go-dt"
 	"github.com/mikeschinkel/go-dt/appinfo"
 	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
 )
@@ -48,7 +47,7 @@ func NewRootConfigV1() (c *RootConfigV1) {
 
 func (c *RootConfigV1) Config() {}
 
-func (c *RootConfigV1) Normalize(dt.Filepath, cfgstore.Options) (err error) {
+func (c *RootConfigV1) Normalize(cfgstore.NormalizeArgs) (err error) {
 	c.Schema = RootConfigV1Schema
 	c.Version = RootConfigV1Version
 	return err
@@ -73,7 +72,6 @@ type LoadRootConfigV1Args struct {
 }
 
 func LoadRootConfigV1(args LoadRootConfigV1Args) (_ *RootConfigV1, err error) {
-	var rc RootConfigV1
 
 	configStores := cfgstore.NewConfigStores(cfgstore.ConfigStoresArgs{
 		ConfigStoreArgs: cfgstore.ConfigStoreArgs{
@@ -82,12 +80,9 @@ func LoadRootConfigV1(args LoadRootConfigV1Args) (_ *RootConfigV1, err error) {
 		},
 	})
 
-	rc = RootConfigV1{}
-
-	err = configStores.LoadRootConfig(&rc, cfgstore.RootConfigArgs{
+	return cfgstore.LoadRootConfig[RootConfigV1, *RootConfigV1](configStores, cfgstore.RootConfigArgs{
 		DirTypes: args.DirTypes,
 		Options:  args.Options,
 	})
 
-	return &rc, err
 }

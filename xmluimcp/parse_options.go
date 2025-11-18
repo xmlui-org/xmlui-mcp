@@ -13,13 +13,13 @@ import (
 // validated common.Options with embedded cliutil.GlobalOptions.
 func ParseOptions(cfgOpts *mcpcfg.Options) (opts *common.Options, err error) {
 	var errs []error
-	var cliOpts *cliutil.GlobalOptions
+	var cliOpts *cliutil.CLIOptions
 	var xmluiDir dt.DirPath
 	var exampleRoot dt.DirPath
 	var exampleDirs []dt.DirPath
 	var analyticsFile dt.Filepath
 
-	cliOpts, err = cliutil.NewGlobsalOptions(cliutil.GlobalOptionsArgs{
+	cliOpts, err = cliutil.NewCLIOptions(cliutil.CLIOptionsArgs{
 		Quiet:     &cfgOpts.Quiet,
 		Verbosity: &cfgOpts.Verbosity,
 	})
@@ -38,7 +38,7 @@ func ParseOptions(cfgOpts *mcpcfg.Options) (opts *common.Options, err error) {
 	errs = AppendErr(errs, err)
 
 	opts = &common.Options{
-		GlobalOptions: cliOpts,
+		CLIOptions:    cliOpts,
 		XMLUIDir:      xmluiDir,
 		ExampleRoot:   exampleRoot,
 		ExampleDirs:   exampleDirs,

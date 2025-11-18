@@ -43,11 +43,12 @@ func main() {
 
 	// Create server configuration
 	config := common.ServerConfig{
-		XMLUIDir:    xmluiDir,
-		ExampleRoot: exampleRoot,
-		ExampleDirs: exampleDirs,
-		HTTPMode:    *httpMode,
-		Port:        *port,
+		XMLUIDir:      xmluiDir,
+		ExampleRoot:   exampleRoot,
+		ExampleDirs:   exampleDirs,
+		HTTPMode:      *httpMode,
+		Port:          *port,
+		AnalyticsFile: "",
 	}
 
 	// Create and start the server

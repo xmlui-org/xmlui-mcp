@@ -26,9 +26,16 @@ require (
 )
 
 replace (
+	github.com/mikeschinkel/go-cfgstore => ../../../go-pkgs/go-cfgstore
 	github.com/mikeschinkel/go-cliutil => ../../../go-pkgs/go-cliutil
+	github.com/mikeschinkel/go-doterr => ../../../go-pkgs/go-doterr
 	github.com/mikeschinkel/go-dt => ../../../go-pkgs/go-dt
 	github.com/mikeschinkel/go-dt/appinfo => ../../../go-pkgs/go-dt/appinfo
 	github.com/mikeschinkel/go-dt/de => ../../../go-pkgs/go-dt/de
 	github.com/mikeschinkel/go-dt/dtx => ../../../go-pkgs/go-dt/dtx
+	github.com/mikeschinkel/go-fsfix => ../../../go-pkgs/go-fsfix
+	github.com/mikeschinkel/go-jsontest => ../../../go-pkgs/go-jsontest
+	github.com/mikeschinkel/go-jsonxtractr => ../../../go-pkgs/go-jsonxtractr
+	github.com/mikeschinkel/go-rfc9457 => ../../../go-pkgs/go-rfc9457
+	github.com/mikeschinkel/go-testutil => ../../../go-pkgs/go-testutil
 )
