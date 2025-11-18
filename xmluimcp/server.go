@@ -686,7 +686,7 @@ func (s *MCPServer) GetPrompts() []mcp.Prompt {
 
 // PrintStartupInfo prints server startup information as JSON to stderr
 func (s *MCPServer) PrintStartupInfo() {
-	printStartupInfo(s.prompts, s.tools, s.promptHandlers["xmlui_rules"])
+	//printStartupInfo(s.prompts, s.tools, s.promptHandlers["xmlui_rules"])
 }
 
 // GetSessionManager returns the session manager
