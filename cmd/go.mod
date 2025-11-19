@@ -2,7 +2,7 @@ module xmlui-mcp
 
 go 1.25.3
 
-require github.com/xmlui-org/mcpsvr/xmluimcp v0.1.0
+require github.com/xmlui-org/xmlui-mcp/xmluimcp v0.1.0
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -23,4 +23,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/xmlui-org/mcpsvr/xmluimcp => ../xmluimcp
+replace github.com/xmlui-org/xmlui-mcp/xmluimcp => ../xmluimcp

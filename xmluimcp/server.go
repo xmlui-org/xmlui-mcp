@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
-	"github.com/xmlui-org/mcpsvr/xmluimcp/mcpsvr"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"

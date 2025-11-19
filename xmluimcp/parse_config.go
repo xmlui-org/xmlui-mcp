@@ -1,8 +1,8 @@
 package xmluimcp
 
 import (
-	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
-	"github.com/xmlui-org/mcpsvr/xmluimcp/mcpcfg"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
 )
 
 type ParseConfigArgs = common.ConfigArgs

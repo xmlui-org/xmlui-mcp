@@ -145,7 +145,7 @@ This project can be used as a Go library in other applications. The CLI is a thi
 ### Basic Usage with Automatic Download
 
 ```go
-import"github.com/xmlui-org/mcpsvr"
+import"github.com/xmlui-org/xmlui-mcp"
 
 func main() {
     // Ensure XMLUI repository is available (downloads if needed)
@@ -186,7 +186,7 @@ func main() {
 ### Manual Path Configuration
 
 ```go
-import	"github.com/xmlui-org/mcpsvr"
+import	"github.com/xmlui-org/xmlui-mcp"
 
 func main() {
     config := xmluimcp.ServerConfig{
@@ -225,7 +225,7 @@ func main() {
 // require xmlui-mcp v0.1.0
 
 // Then import and use:
-import 	"github.com/xmlui-org/mcpsvr"
+import 	"github.com/xmlui-org/xmlui-mcp"
 
 type MyApp struct {
     mcpServer *xmluimcp.MCPServer

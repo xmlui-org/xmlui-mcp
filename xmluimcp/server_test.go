@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 )
 
 func TestNewServer(t *testing.T) {

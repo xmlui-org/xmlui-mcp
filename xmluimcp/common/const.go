@@ -29,7 +29,7 @@ const (
 	ExeName dt.Filename = "xmlui-mcp"
 
 	// GitHubRepoURL provides the GitHub repo for this project for use in error messages
-	// TODO: Can we change this Github URL to be "https://github.com/xmlui-org/mcpsvr"?
+	// TODO: Can we change this Github URL to be "https://github.com/xmlui-org/xmlui-mcp"?
 	GitHubRepoURL dt.URL = "https://github.com/xmlui-org/mcp"
 )
 

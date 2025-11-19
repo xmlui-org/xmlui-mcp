@@ -6,7 +6,7 @@ import (
 
 	"github.com/mikeschinkel/go-cfgstore"
 	"github.com/mikeschinkel/go-dt/appinfo"
-	"github.com/xmlui-org/mcpsvr/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 )
 
 const (

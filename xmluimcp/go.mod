@@ -1,4 +1,4 @@
-module github.com/xmlui-org/mcpsvr/xmluimcp
+module github.com/xmlui-org/xmlui-mcp/xmluimcp
 
 go 1.25.3
 
