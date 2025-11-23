@@ -2,7 +2,6 @@ package xmluimcp
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -30,12 +29,6 @@ type SessionContext struct {
 	InjectedPrompts []string            `json:"injected_prompts"`
 	LastActivity    time.Time           `json:"last_activity"`
 	Context         []mcp.PromptMessage `json:"context"`
-}
-
-// SessionManager manages multiple sessions
-type SessionManager struct {
-	sessions map[string]*SessionContext
-	mutex    sync.RWMutex
 }
 
 // InjectPromptRequest represents a request to inject a prompt

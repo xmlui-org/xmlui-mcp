@@ -1,10 +1,13 @@
-package xmluimcp
+package xmluimcp_test
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/mikeschinkel/go-testutil"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 )
 
@@ -16,7 +19,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 
 	// Get the repo directory
-	repoDir, err := EnsureXMLUIRepo()
+	repoDir, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
 	if err != nil {
 		t.Fatalf("EnsureXMLUIRepo() failed: %v", err)
 	}
@@ -55,7 +58,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 
 	// Verify version marker exists
-	version, err := readVersionMarker(repoDir)
+	version, err := xmluimcp.ReadVersionMarker(repoDir)
 	if err != nil {
 		t.Fatalf("Version marker not found: %v", err)
 	}
@@ -68,7 +71,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 
 	// Test that subsequent calls use the cached version (should be fast)
-	repoDir2, err := EnsureXMLUIRepo()
+	repoDir2, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
 	if err != nil {
 		t.Fatalf("Second EnsureXMLUIRepo() call failed: %v", err)
 	}
@@ -86,20 +89,17 @@ func TestServerWithAutoDownload(t *testing.T) {
 	}
 
 	// Ensure repo is downloaded
-	xmluiDir, err := EnsureXMLUIRepo()
+	xmluiDir, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
 	if err != nil {
 		t.Fatalf("Failed to ensure XMLUI repo: %v", err)
 	}
 
-	// Create server config
-	config := common.ServerConfig{
+	// Create server
+	server, err := getNewMCPServer(&common.ServerConfig{
 		XMLUIDir: xmluiDir,
 		HTTPMode: false,
 		Port:     "8080",
-	}
-
-	// Create server
-	server, err := NewServer(config)
+	})
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -139,23 +139,23 @@ func TestCachePersistence(t *testing.T) {
 	}
 
 	// First call - may download
-	dir1, err := EnsureXMLUIRepo()
+	dir1, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
 	if err != nil {
 		t.Fatalf("First call failed: %v", err)
 	}
 
-	version1, err := readVersionMarker(dir1)
+	version1, err := xmluimcp.ReadVersionMarker(dir1)
 	if err != nil {
 		t.Fatalf("Failed to read version marker: %v", err)
 	}
 
 	// Second call - should use cache
-	dir2, err := EnsureXMLUIRepo()
+	dir2, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
 	if err != nil {
 		t.Fatalf("Second call failed: %v", err)
 	}
 
-	version2, err := readVersionMarker(dir2)
+	version2, err := xmluimcp.ReadVersionMarker(dir2)
 	if err != nil {
 		t.Fatalf("Failed to read version marker on second call: %v", err)
 	}

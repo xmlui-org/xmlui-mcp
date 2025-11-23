@@ -2,6 +2,7 @@ package mcpsvr
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,24 +27,28 @@ func titleToAnchor(title string) string {
 }
 
 // NewListHowtoTool returns the MCP tool and handler for listing howto titles
-func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewListHowtoTool(xmluiDir string, logger *slog.Logger) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_list_howto",
 		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		howtoLogger := logger.With("context", "xmlui_list_howto")
 		// Read all howto files from the howto directory
 		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
-		WriteDebugLog("xmlui_list_howto: xmluiDir=%s, howtoDir=%s\n", xmluiDir, howtoDir)
+		howtoLogger.LogAttrs(context.Background(), slog.LevelInfo, "",
+			slog.String("xmluiDir", xmluiDir),
+			slog.String("howtoDir", howtoDir),
+		)
 		var docs []string
 		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
 			docs = append(docs, moreDocs...)
-			WriteDebugLog("xmlui_list_howto: found %d docs\n", len(docs))
+			howtoLogger.Info("Found docs", "doc_count", len(docs))
 		} else {
-			WriteDebugLog("xmlui_list_howto: error reading howto files: %v\n", err)
+			howtoLogger.Error("Error reading howto files", "error", err)
 		}
 		_, titles := parseHowtoSectionsMulti(docs)
-		WriteDebugLog("xmlui_list_howto: found %d titles\n", len(titles))
+		howtoLogger.Info("Found titles", "title_count", len(titles))
 		return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
 	}
 	return tool, handler

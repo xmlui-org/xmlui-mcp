@@ -86,6 +86,7 @@ func TestGetRepoDir(t *testing.T) {
 }
 
 func TestIsRepoValid(t *testing.T) {
+	var err error
 	// Test with non-existent directory
 	if isRepoValid("/nonexistent/path/to/repo") {
 		t.Error("isRepoValid() should return false for non-existent directory")
@@ -100,14 +101,17 @@ func TestIsRepoValid(t *testing.T) {
 	}
 
 	// Create version marker but no content
-	writeVersionMarker(tempDir, "xmlui@0.11.4")
+	err = writeVersionMarker(tempDir, "xmlui@0.11.4")
+	if err != nil {
+		t.Errorf("writeVersionMarker() failed; %v", err)
+	}
 	if isRepoValid(tempDir) {
 		t.Error("isRepoValid() should return false when essential directories are missing")
 	}
 
 	// Create essential directories
-	os.MkdirAll(filepath.Join(tempDir, "docs"), 0755)
-	os.MkdirAll(filepath.Join(tempDir, "xmlui"), 0755)
+	mkdirAll(t, tempDir, "docs", 0755)
+	mkdirAll(t, tempDir, "xmlui", 0755)
 
 	// Now it should be valid
 	if !isRepoValid(tempDir) {
@@ -178,4 +182,12 @@ func TestGetLatestXMLUITag(t *testing.T) {
 
 	t.Logf("Latest version: %s", version)
 	t.Logf("Download URL: %s", zipURL)
+}
+
+func mkdirAll(t *testing.T, dir, fp string, mode os.FileMode) {
+	t.Helper()
+	err := os.MkdirAll(filepath.Join(dir, fp), mode)
+	if err != nil {
+		t.Errorf("mkdirAll() failed for %s [Mode=%d]: %v", fp, mode, err)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,141 +22,168 @@ import (
 
 // MCPServer represents an XMLUI MCP server instance
 type MCPServer struct {
-	config         common.ServerConfig
+	config         *common.ServerConfig
 	mcpServer      *server.MCPServer
 	sessionManager *SessionManager
 	prompts        []mcp.Prompt
 	tools          []mcp.Tool
 	promptHandlers map[string]PromptHandler
+	logger         *slog.Logger
+}
+
+func (svr *MCPServer) Config() *common.ServerConfig {
+	return svr.config
 }
 
 // sendJSONResponse sends a JSON-encoded response to the HTTP client.
 // If encoding fails, it logs the error and returns HTTP 500 to the client.
-func sendJSONResponse(w http.ResponseWriter, data interface{}) {
+func (svr *MCPServer) sendJSONResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		mcpsvr.WriteDebugLog("Failed to marshal JSON: %v\n", err)
+		svr.logger.Debug("Failed to marshal JSON", "error", err)
 		http.Error(w, `{"error":"Internal server error"}`, http.StatusInternalServerError)
 		return
 	}
 	if _, err := w.Write(jsonBytes); err != nil {
-		mcpsvr.WriteDebugLog("Failed to write response: %v\n", err)
+		svr.logger.Debug("Failed to write response", "error", err)
 	}
 }
 
 // NewServer creates a new XMLUI MCP server with the given configuration
-func NewServer(config common.ServerConfig) (*MCPServer, error) {
-	// If XMLUIDir is not provided, automatically download and cache the repository
-	if config.XMLUIDir == "" {
-		mcpsvr.WriteDebugLog("No XMLUI directory specified, using cached repository...\n")
-		cachedRepo, err := EnsureXMLUIRepo()
-		if err != nil {
-			return nil, fmt.Errorf("failed to ensure XMLUI repository: %w (you can specify a local XMLUI directory as an argument)", err)
-		}
-		config.XMLUIDir = cachedRepo
-		mcpsvr.WriteDebugLog("Using cached XMLUI repository at: %s\n", config.XMLUIDir)
-	}
-
+func NewServer(config *common.Config) (svr *MCPServer) {
+	svrCfg := config.Server
 	// Set defaults
-	if config.Port == "" {
-		config.Port = "8080"
-	}
-	if config.AnalyticsFile == "" {
-		config.AnalyticsFile = filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
+	if svrCfg.Port == "" {
+		svrCfg.Port = "8080"
 	}
 
-	// Create MCP server
+	// Create MCP svrCfg
 	mcpServer := server.NewMCPServer("XMLUI", "0.1.0",
 		server.WithPromptCapabilities(true),
 	)
 
-	// Initialize analytics
-	mcpsvr.InitializeAnalytics(config.AnalyticsFile)
-
-	// Create session manager
-	sessionManager := &SessionManager{
-		sessions: make(map[string]*SessionContext),
-	}
-
-	// Create XMLUI server instance
-	xmluiServer := &MCPServer{
-		config:         config,
+	// Create XMLUI svrCfg instance
+	return &MCPServer{
+		config:         svrCfg,
 		mcpServer:      mcpServer,
-		sessionManager: sessionManager,
+		sessionManager: NewSessionManager(),
 		prompts:        []mcp.Prompt{},
 		tools:          []mcp.Tool{},
 		promptHandlers: make(map[string]PromptHandler),
+		logger:         config.Logger,
 	}
+}
+
+// Initialize performs initialization of an XMLUI MCP server that can generate errors
+func (svr *MCPServer) Initialize() (err error) {
+	svrCfg := svr.config
+	logger := svr.logger
+
+	// If XMLUIDir is not provided, automatically download and cache the repository
+	if svrCfg.XMLUIDir == "" {
+		logger.Debug("No XMLUI directory specified, using cached repository.")
+		cachedRepo, err := EnsureXMLUIRepo(svr.logger)
+		if err != nil {
+			err = fmt.Errorf("failed to ensure XMLUI repository: %w (you can specify a local XMLUI directory as an argument)", err)
+			goto end
+		}
+		svrCfg.XMLUIDir = cachedRepo
+		logger.Debug("Using cached XMLUI repository", "cache_dir", svrCfg.XMLUIDir)
+	}
+
+	if svrCfg.AnalyticsFile == "" {
+		var dir string
+		dir, err = os.Getwd()
+		if err != nil {
+			err = fmt.Errorf(
+				"cannot determine current working directory "+
+					"(it may have been deleted, moved, or become "+
+					" inaccessible; try running `pwd` and `ls -ld .` "+
+					"in your shell): %w",
+				err,
+			)
+			goto end
+		}
+
+		svrCfg.AnalyticsFile = filepath.Join(dir, "xmlui-mcp-analytics.json")
+	}
+
+	// Initialize analytics
+	err = mcpsvr.InitializeAnalytics(svr.logger)
 
 	// Setup all tools and prompts
-	if err := xmluiServer.setupTools(); err != nil {
-		return nil, fmt.Errorf("failed to setup tools: %w", err)
+	if err := svr.setupTools(); err != nil {
+		err = fmt.Errorf("failed to setup tools: %w", err)
+		goto end
 	}
 
-	if err := xmluiServer.setupPrompts(); err != nil {
-		return nil, fmt.Errorf("failed to setup prompts: %w", err)
+	if err := svr.setupPrompts(); err != nil {
+		err = fmt.Errorf("failed to setup prompts: %w", err)
+		goto end
 	}
 
 	// Auto-inject XMLUI rules into default session
-	_, err := sessionManager.InjectPrompt("default", "xmlui_rules", xmluiServer.promptHandlers)
+	_, err = svr.sessionManager.InjectPrompt("default", "xmlui_rules", svr.promptHandlers)
 	if err != nil {
-		mcpsvr.WriteDebugLog("Failed to auto-inject xmlui_rules: %v\n", err)
-	} else {
-		mcpsvr.WriteDebugLog("Auto-injected xmlui_rules into default session\n")
+		logger.Debug("Failed to auto-inject xmlui_rules", "error", err)
+		goto end
 	}
 
-	return xmluiServer, nil
+	logger.Info("Auto-injected xmlui_rules into default session")
+
+end:
+	return err
 }
 
 // setupTools registers all XMLUI tools with the MCP server
-func (s *MCPServer) setupTools() error {
+func (svr *MCPServer) setupTools() error {
 	// Build example roots from configuration
-	dirCount := len(s.config.ExampleDirs)
+	dirCount := len(svr.config.ExampleDirs)
 	exampleRoots := make([]string, 0, dirCount)
-	if s.config.ExampleRoot != "" && dirCount > 0 {
-		for _, d := range s.config.ExampleDirs {
+	if svr.config.ExampleRoot != "" && dirCount > 0 {
+		for _, d := range svr.config.ExampleDirs {
 			trimmed := strings.TrimSpace(d)
 			if trimmed != "" {
-				exampleRoots = append(exampleRoots, filepath.Join(s.config.ExampleRoot, trimmed))
+				exampleRoots = append(exampleRoots, filepath.Join(svr.config.ExampleRoot, trimmed))
 			}
 		}
 	}
 
 	// List components tool
-	listComponentsTool, listComponentsHandler := mcpsvr.NewListComponentsTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(listComponentsTool, mcpsvr.WithAnalytics("xmlui_list_components", listComponentsHandler))
-	s.tools = append(s.tools, listComponentsTool)
+	listComponentsTool, listComponentsHandler := mcpsvr.NewListComponentsTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(listComponentsTool, mcpsvr.WithAnalytics("xmlui_list_components", listComponentsHandler, svr.logger))
+	svr.tools = append(svr.tools, listComponentsTool)
 
 	// Component docs tool
-	componentDocsTool, componentDocsHandler := mcpsvr.NewComponentDocsTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(componentDocsTool, mcpsvr.WithAnalytics("xmlui_component_docs", componentDocsHandler))
-	s.tools = append(s.tools, componentDocsTool)
+	componentDocsTool, componentDocsHandler := mcpsvr.NewComponentDocsTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(componentDocsTool, mcpsvr.WithAnalytics("xmlui_component_docs", componentDocsHandler, svr.logger))
+	svr.tools = append(svr.tools, componentDocsTool)
 
 	// Search docs tool
-	searchDocsTool, searchDocsHandler := mcpsvr.NewSearchTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(searchDocsTool, mcpsvr.WithSearchAnalytics("xmlui_search", searchDocsHandler))
-	s.tools = append(s.tools, searchDocsTool)
+	searchDocsTool, searchDocsHandler := mcpsvr.NewSearchTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(searchDocsTool, mcpsvr.WithSearchAnalytics("xmlui_search", searchDocsHandler, svr.logger))
+	svr.tools = append(svr.tools, searchDocsTool)
 
 	// Read file tool
-	readFileTool, readFileHandler := mcpsvr.NewReadFileTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(readFileTool, mcpsvr.WithAnalytics("xmlui_read_file", readFileHandler))
-	s.tools = append(s.tools, readFileTool)
+	readFileTool, readFileHandler := mcpsvr.NewReadFileTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(readFileTool, mcpsvr.WithAnalytics("xmlui_read_file", readFileHandler, svr.logger))
+	svr.tools = append(svr.tools, readFileTool)
 
 	// Examples tool
-	examplesTool, examplesHandler := mcpsvr.NewExamplesTool(exampleRoots)
-	s.mcpServer.AddTool(examplesTool, mcpsvr.WithSearchAnalytics("xmlui_examples", examplesHandler))
-	s.tools = append(s.tools, examplesTool)
+	examplesTool, examplesHandler := mcpsvr.NewExamplesTool(exampleRoots, svr.logger)
+	svr.mcpServer.AddTool(examplesTool, mcpsvr.WithSearchAnalytics("xmlui_examples", examplesHandler, svr.logger))
+	svr.tools = append(svr.tools, examplesTool)
 
 	// List howto tool
-	listHowtoTool, listHowtoHandler := mcpsvr.NewListHowtoTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(listHowtoTool, mcpsvr.WithAnalytics("xmlui_list_howto", listHowtoHandler))
-	s.tools = append(s.tools, listHowtoTool)
+	listHowtoTool, listHowtoHandler := mcpsvr.NewListHowtoTool(svr.config.XMLUIDir, svr.logger)
+	svr.mcpServer.AddTool(listHowtoTool, mcpsvr.WithAnalytics("xmlui_list_howto", listHowtoHandler, svr.logger))
+	svr.tools = append(svr.tools, listHowtoTool)
 
 	// Search howto tool
-	searchHowtoTool, searchHowtoHandler := mcpsvr.NewSearchHowtoTool(s.config.XMLUIDir)
-	s.mcpServer.AddTool(searchHowtoTool, mcpsvr.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
-	s.tools = append(s.tools, searchHowtoTool)
+	searchHowtoTool, searchHowtoHandler := mcpsvr.NewSearchHowtoTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(searchHowtoTool, mcpsvr.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler, svr.logger))
+	svr.tools = append(svr.tools, searchHowtoTool)
 
 	// Add prompt injection tool
 	injectPromptTool := mcp.NewTool("xmlui_inject_prompt",
@@ -192,7 +220,7 @@ func (s *MCPServer) setupTools() error {
 		}
 
 		// Use the session manager to inject
-		response, err := s.sessionManager.InjectPrompt(sessionID, promptName, s.promptHandlers)
+		response, err := svr.sessionManager.InjectPrompt(sessionID, promptName, svr.promptHandlers)
 		if err != nil {
 			return mcp.NewToolResultError("Error injecting prompt: " + err.Error()), nil
 		}
@@ -204,8 +232,8 @@ func (s *MCPServer) setupTools() error {
 		return mcp.NewToolResultError("❌ Failed to inject prompt: " + response.Message), nil
 	}
 
-	s.mcpServer.AddTool(injectPromptTool, mcpsvr.WithAnalytics("xmlui_inject_prompt", injectPromptHandler))
-	s.tools = append(s.tools, injectPromptTool)
+	svr.mcpServer.AddTool(injectPromptTool, mcpsvr.WithAnalytics("xmlui_inject_prompt", injectPromptHandler, svr.logger))
+	svr.tools = append(svr.tools, injectPromptTool)
 
 	// Add prompt listing tool
 	listPromptsTool := mcp.NewTool("xmlui_list_prompts",
@@ -216,7 +244,7 @@ func (s *MCPServer) setupTools() error {
 		var out strings.Builder
 		out.WriteString("Available prompts:\n\n")
 
-		for _, prompt := range s.prompts {
+		for _, prompt := range svr.prompts {
 			out.WriteString(fmt.Sprintf("- **%s**: %s\n", prompt.Name, prompt.Description))
 		}
 
@@ -224,8 +252,8 @@ func (s *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.mcpServer.AddTool(listPromptsTool, mcpsvr.WithAnalytics("xmlui_list_prompts", listPromptsHandler))
-	s.tools = append(s.tools, listPromptsTool)
+	svr.mcpServer.AddTool(listPromptsTool, mcpsvr.WithAnalytics("xmlui_list_prompts", listPromptsHandler, svr.logger))
+	svr.tools = append(svr.tools, listPromptsTool)
 
 	// Add prompt content retrieval tool
 	getPromptTool := mcp.NewTool("xmlui_get_prompt",
@@ -253,7 +281,7 @@ func (s *MCPServer) setupTools() error {
 
 		// Find the prompt
 		var foundPrompt *mcp.Prompt
-		for _, prompt := range s.prompts {
+		for _, prompt := range svr.prompts {
 			if prompt.Name == promptName {
 				foundPrompt = &prompt
 				break
@@ -265,7 +293,7 @@ func (s *MCPServer) setupTools() error {
 		}
 
 		// Get the prompt handler
-		handler, exists := s.promptHandlers[promptName]
+		handler, exists := svr.promptHandlers[promptName]
 		if !exists {
 			return mcp.NewToolResultError("Prompt handler not found"), nil
 		}
@@ -297,8 +325,8 @@ func (s *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.mcpServer.AddTool(getPromptTool, mcpsvr.WithAnalytics("xmlui_get_prompt", getPromptHandler))
-	s.tools = append(s.tools, getPromptTool)
+	svr.mcpServer.AddTool(getPromptTool, mcpsvr.WithAnalytics("xmlui_get_prompt", getPromptHandler, svr.logger))
+	svr.tools = append(svr.tools, getPromptTool)
 
 	// Add session context retrieval tool
 	getSessionContextTool := mcp.NewTool("xmlui_get_session_context",
@@ -324,7 +352,7 @@ func (s *MCPServer) setupTools() error {
 			sessionID = id
 		}
 
-		session := s.sessionManager.GetOrCreateSession(sessionID)
+		session := svr.sessionManager.GetOrCreateSession(sessionID)
 
 		// Format the output
 		var out strings.Builder
@@ -352,14 +380,14 @@ func (s *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	s.mcpServer.AddTool(getSessionContextTool, mcpsvr.WithAnalytics("xmlui_get_session_context", getSessionContextHandler))
-	s.tools = append(s.tools, getSessionContextTool)
+	svr.mcpServer.AddTool(getSessionContextTool, mcpsvr.WithAnalytics("xmlui_get_session_context", getSessionContextHandler, svr.logger))
+	svr.tools = append(svr.tools, getSessionContextTool)
 
 	return nil
 }
 
 // setupPrompts registers all XMLUI prompts with the MCP server
-func (s *MCPServer) setupPrompts() error {
+func (svr *MCPServer) setupPrompts() error {
 	// Define the xmlui_rules prompt handler
 	xmluiRulesHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return mcp.NewGetPromptResult(
@@ -406,17 +434,17 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 		mcp.WithPromptDescription("Essential rules and guidelines for XMLUI development"))
 
 	// Store in our lists for API access
-	s.prompts = append(s.prompts, xmluiRulesPrompt)
-	s.promptHandlers["xmlui_rules"] = xmluiRulesHandler
+	svr.prompts = append(svr.prompts, xmluiRulesPrompt)
+	svr.promptHandlers["xmlui_rules"] = xmluiRulesHandler
 
 	// Register with MCP server
-	s.mcpServer.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
+	svr.mcpServer.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
 
 	return nil
 }
 
 // ServeStdio starts the server in stdio mode with graceful shutdown
-func (s *MCPServer) ServeStdio() error {
+func (svr *MCPServer) ServeStdio() error {
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -424,7 +452,7 @@ func (s *MCPServer) ServeStdio() error {
 	// Start server in a goroutine
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- server.ServeStdio(s.mcpServer)
+		serverDone <- server.ServeStdio(svr.mcpServer)
 	}()
 
 	// Wait for either server error or signal
@@ -432,33 +460,33 @@ func (s *MCPServer) ServeStdio() error {
 	case err := <-serverDone:
 		// Server finished (normally or with error)
 		if err != nil {
-			mcpsvr.WriteDebugLog("Server error: %v\n", err)
+			svr.logger.Error("Server error", "error", err)
 			return err
 		}
 		return nil
 	case <-sigChan:
-		mcpsvr.WriteDebugLog("Received shutdown signal, initiating graceful shutdown\n")
+		svr.logger.Info("Received shutdown signal, initiating graceful shutdown")
 
 		// Wait for server to shutdown gracefully with timeout
 		select {
 		case err := <-serverDone:
 			if err != nil {
-				mcpsvr.WriteDebugLog("Server shutdown with error: %v\n", err)
+				svr.logger.Error("Server shutdown with error", "error", err)
 				return err
 			}
-			mcpsvr.WriteDebugLog("Server shutdown complete\n")
+			svr.logger.Info("Server shutdown complete")
 			return nil
 
 		case <-time.After(5 * time.Second):
-			mcpsvr.WriteDebugLog("Server shutdown timeout, forcing exit\n")
+			svr.logger.Warn("Server shutdown timeout, forcing exit")
 			return fmt.Errorf("server shutdown timeout")
 		}
 	}
 }
 
 // ServeHTTP starts the server in HTTP mode
-func (s *MCPServer) ServeHTTP() error {
-	sseServer := server.NewSSEServer(s.mcpServer)
+func (svr *MCPServer) ServeHTTP() error {
+	sseServer := server.NewSSEServer(svr.mcpServer)
 
 	// Create a custom mux to add the /tools endpoint
 	mux := http.NewServeMux()
@@ -481,14 +509,14 @@ func (s *MCPServer) ServeHTTP() error {
 
 		// Convert to the format VS Code expects
 		var toolList []map[string]string
-		for _, tool := range s.tools {
+		for _, tool := range svr.tools {
 			toolList = append(toolList, map[string]string{
 				"name":        tool.Name,
 				"description": tool.Description,
 			})
 		}
 
-		sendJSONResponse(w, toolList)
+		svr.sendJSONResponse(w, toolList)
 	})
 
 	// Add the /prompts endpoint to list all prompts
@@ -505,14 +533,14 @@ func (s *MCPServer) ServeHTTP() error {
 
 		// Convert to API format
 		var promptInfoList []PromptInfo
-		for _, prompt := range s.prompts {
+		for _, prompt := range svr.prompts {
 			promptInfoList = append(promptInfoList, PromptInfo{
 				Name:        prompt.Name,
 				Description: prompt.Description,
 			})
 		}
 
-		sendJSONResponse(w, promptInfoList)
+		svr.sendJSONResponse(w, promptInfoList)
 	})
 
 	// Add the /prompts/{name} endpoint to retrieve specific prompt
@@ -536,7 +564,7 @@ func (s *MCPServer) ServeHTTP() error {
 
 		// Find the prompt
 		var foundPrompt *mcp.Prompt
-		for _, prompt := range s.prompts {
+		for _, prompt := range svr.prompts {
 			if prompt.Name == promptName {
 				foundPrompt = &prompt
 				break
@@ -549,7 +577,7 @@ func (s *MCPServer) ServeHTTP() error {
 		}
 
 		// Get the prompt handler
-		handler, exists := s.promptHandlers[promptName]
+		handler, exists := svr.promptHandlers[promptName]
 		if !exists {
 			http.Error(w, "Prompt handler not found", http.StatusInternalServerError)
 			return
@@ -572,7 +600,7 @@ func (s *MCPServer) ServeHTTP() error {
 			Messages:    result.Messages,
 		}
 
-		sendJSONResponse(w, promptContent)
+		svr.sendJSONResponse(w, promptContent)
 	})
 
 	// GET /session/{id} - Get session context
@@ -594,8 +622,8 @@ func (s *MCPServer) ServeHTTP() error {
 			return
 		}
 
-		session := s.sessionManager.GetOrCreateSession(sessionID)
-		sendJSONResponse(w, session)
+		session := svr.sessionManager.GetOrCreateSession(sessionID)
+		svr.sendJSONResponse(w, session)
 	})
 
 	// POST /session/context - Inject prompt into session
@@ -630,13 +658,13 @@ func (s *MCPServer) ServeHTTP() error {
 			return
 		}
 
-		response, err := s.sessionManager.InjectPrompt(req.SessionID, req.PromptName, s.promptHandlers)
+		response, err := svr.sessionManager.InjectPrompt(req.SessionID, req.PromptName, svr.promptHandlers)
 		if err != nil {
 			http.Error(w, "Server error", http.StatusInternalServerError)
 			return
 		}
 
-		sendJSONResponse(w, response)
+		svr.sendJSONResponse(w, response)
 	})
 
 	// Add analytics endpoints
@@ -652,22 +680,25 @@ func (s *MCPServer) ServeHTTP() error {
 		}
 
 		summary := mcpsvr.GetAnalyticsSummary()
-		sendJSONResponse(w, summary)
+		svr.sendJSONResponse(w, summary)
 	})
-
-	addr := ":" + s.config.Port
-	mcpsvr.WriteDebugLog("Starting HTTP mcpsvr on port %s\n", s.config.Port)
-	mcpsvr.WriteDebugLog("SSE endpoint: http://localhost%s/sse\n", addr)
-	mcpsvr.WriteDebugLog("Message endpoint: http://localhost%s/message\n", addr)
-	mcpsvr.WriteDebugLog("Tools endpoint: http://localhost%s/tools\n", addr)
-	mcpsvr.WriteDebugLog("Prompts list endpoint: http://localhost%s/prompts\n", addr)
-	mcpsvr.WriteDebugLog("Specific prompt endpoint: http://localhost%s/prompts/{name}\n", addr)
-	mcpsvr.WriteDebugLog("Session context endpoint: http://localhost%s/session/{id}\n", addr)
-	mcpsvr.WriteDebugLog("Inject prompt endpoint: http://localhost%s/session/context\n", addr)
-	mcpsvr.WriteDebugLog("Analytics summary endpoint: http://localhost%s/analytics/summary\n", addr)
+	addr := ":" + svr.config.Port
+	endpoint := func(path string) string {
+		return fmt.Sprintf("http://localhost:%s/%s\n", addr, path)
+	}
+	logger := svr.logger
+	logger.Info("Starting HTTP mcpsvr", "http_port", svr.config.Port)
+	logger.Info("SSE endpoint", "endpoint", endpoint("sse"))
+	logger.Info("Message endpoint", "endpoint", endpoint("message"))
+	logger.Info("Tools endpoint", "endpoint", endpoint("tools"))
+	logger.Info("Prompts list endpoint", "endpoint", endpoint("prompts"))
+	logger.Info("Specific prompt endpoint", "endpoint", endpoint("prompts/{name}"))
+	logger.Info("Session context endpoint", "endpoint", endpoint("session/{id}"))
+	logger.Info("Inject prompt endpoint", "endpoint", endpoint("session/context"))
+	logger.Info("Analytics summary endpoint", "endpoint", endpoint("analytics/summary"))
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		mcpsvr.WriteDebugLog("HTTP mcpsvr error: %v\n", err)
+		logger.Info("HTTP MCP Server error", "error", err)
 		return err
 	}
 
@@ -675,21 +706,21 @@ func (s *MCPServer) ServeHTTP() error {
 }
 
 // GetTools returns the list of available tools
-func (s *MCPServer) GetTools() []mcp.Tool {
-	return s.tools
+func (svr *MCPServer) GetTools() []mcp.Tool {
+	return svr.tools
 }
 
 // GetPrompts returns the list of available prompts
-func (s *MCPServer) GetPrompts() []mcp.Prompt {
-	return s.prompts
+func (svr *MCPServer) GetPrompts() []mcp.Prompt {
+	return svr.prompts
 }
 
 // PrintStartupInfo prints server startup information as JSON to stderr
-func (s *MCPServer) PrintStartupInfo() {
-	//printStartupInfo(s.prompts, s.tools, s.promptHandlers["xmlui_rules"])
+func (svr *MCPServer) PrintStartupInfo() {
+	printStartupInfo(svr.prompts, svr.tools, svr.promptHandlers["xmlui_rules"], svr.logger)
 }
 
 // GetSessionManager returns the session manager
-func (s *MCPServer) GetSessionManager() *SessionManager {
-	return s.sessionManager
+func (svr *MCPServer) GetSessionManager() *SessionManager {
+	return svr.sessionManager
 }

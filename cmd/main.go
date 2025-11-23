@@ -5,11 +5,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mikeschinkel/go-cliutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/xmluihelpers"
 )
 
 func main() {
+	var xmluiDir string
+	var exampleRoot string
+	var exampleDirs = make([]string, 0)
+
 	// Define command-line flags
 	var (
 		httpMode = flag.Bool("http", false, "Run in HTTP mode instead of stdio")
@@ -21,10 +27,6 @@ func main() {
 
 	// Get positional arguments after flags
 	args := flag.Args()
-
-	xmluiDir := ""
-	exampleRoot := ""
-	exampleDirs := make([]string, 0)
 
 	// Optional arg 1: xmluiDir (if not provided, server will auto-download)
 	if len(args) >= 1 {
@@ -40,29 +42,46 @@ func main() {
 	if len(args) >= 3 {
 		exampleDirs = strings.Split(args[2], ",")
 	}
+	wr, err := xmluihelpers.CreateWriterLogger(&xmluihelpers.WriterLoggerArgs{
+		Quiet:      false,
+		Verbosity:  1,
+		ConfigSlug: common.ConfigSlug,
+		LogFile:    common.LogFile,
+	})
+	if err != nil {
+		fprintf(os.Stderr, "Error creating logger: %v\n", err)
+		os.Exit(cliutil.ExitLoggerSetupError)
+	}
 
 	// Create server configuration
-	config := common.ServerConfig{
-		XMLUIDir:      xmluiDir,
-		ExampleRoot:   exampleRoot,
-		ExampleDirs:   exampleDirs,
-		HTTPMode:      *httpMode,
-		Port:          *port,
-		AnalyticsFile: "",
+	config := &common.Config{
+		Server: &common.ServerConfig{
+			XMLUIDir:      xmluiDir,
+			ExampleRoot:   exampleRoot,
+			ExampleDirs:   exampleDirs,
+			HTTPMode:      *httpMode,
+			Port:          *port,
+			AnalyticsFile: "",
+		},
+		Options: nil, // TODO Implement this better
+		AppInfo: xmluimcp.AppInfo(),
+		Logger:  wr.Logger,
+		Writer:  wr.Writer,
 	}
 
 	// Create and start the server
-	server, err := xmluimcp.NewServer(config)
+	server := xmluimcp.NewServer(config)
+	err = server.Initialize()
 	if err != nil {
 		fprintf(os.Stderr, "Error creating server: %v\n", err)
-		os.Exit(1)
+		os.Exit(cliutil.ExitConfigLoadError)
 	}
 
 	// Print startup information
 	server.PrintStartupInfo()
 
 	// Start server based on mode
-	if config.HTTPMode {
+	if config.Server.HTTPMode {
 		err = server.ServeHTTP()
 	} else {
 		err = server.ServeStdio()
@@ -70,6 +89,6 @@ func main() {
 
 	if err != nil {
 		fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
+		os.Exit(cliutil.ExitUnknownRuntimeError)
 	}
 }

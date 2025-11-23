@@ -2,13 +2,14 @@ package mcpsvr
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // NewExamplesTool wires xmlui_examples to the shared search mediator.
-func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
-	WriteDebugLog("Example roots configured: %v\n", exampleRoots)
+func NewExamplesTool(exampleRoots []string, logger *slog.Logger) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+	logger.Info("Example roots configured", "example_roots", exampleRoots)
 
 	tool := mcp.NewTool("xmlui_examples",
 		mcp.WithDescription("Searches local sample apps for usage examples of XMLUI components using a staged search mediator. Returns human-readable matches plus a JSON summary."),

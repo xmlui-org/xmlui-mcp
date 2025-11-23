@@ -3,25 +3,16 @@ package xmluimcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"os"
 
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
-
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-dt"
 )
 
-// getCurrentDir returns the current working directory
-func getCurrentDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return dir
-}
-
 // printStartupInfo prints server startup information as JSON to stderr
-func printStartupInfo(prompts []mcp.Prompt, tools []mcp.Tool, xmluiRulesHandler PromptHandler) {
+func printStartupInfo(prompts []mcp.Prompt, tools []mcp.Tool, xmluiRulesHandler PromptHandler, logger *slog.Logger) {
 	// Convert prompts to API format
 	var promptInfoList []PromptInfo
 	for _, prompt := range prompts {
@@ -70,11 +61,28 @@ func printStartupInfo(prompts []mcp.Prompt, tools []mcp.Tool, xmluiRulesHandler 
 	// Print as JSON to stderr
 	jsonBytes, err := json.MarshalIndent(startupInfo, "", "  ")
 	if err != nil {
-		mcpsvr.WriteDebugLog("Error marshaling startup info: %v\n", err)
+		logger.Error("Error marshaling startup info", "error", err)
+		return
+	}
+	{
+		var tmpFile *os.File
+		tmpFile, err = dt.CreateTemp(dt.TempDir(), "xmlui-mcp-startupinfo-*.json")
+		if err != nil {
+			logger.Warn("Error creating temp file to write XMLUI MCP Startup info", "error", err)
+			return
+		}
+		defer closeOrLog(tmpFile, logger)
+		_, err = tmpFile.Write(jsonBytes)
+		if err != nil {
+			logOnError(err, logger)
+			cliutil.Stderrf("ERROR: Failed to write XMLUI MCP Startup info to %s; %v", tmpFile.Name(), err)
+			goto end
+		}
+		cliutil.Stderrf("XMLUI MCP Startup info written to %s\n\n", tmpFile.Name())
+	end:
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%s\n", string(jsonBytes))
 }
 
 // getToolInfo creates ToolInfo from mcp.Tool

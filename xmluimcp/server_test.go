@@ -1,22 +1,36 @@
-package xmluimcp
+package xmluimcp_test
 
 import (
+	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-testutil"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 )
 
+func getNewMCPServer(svrCfg *common.ServerConfig) (svr *xmluimcp.MCPServer, err error) {
+	svr = xmluimcp.NewServer(&common.Config{
+		Options: nil, // TODO: Set this, maybe?
+		AppInfo: xmluimcp.AppInfo(),
+		Logger:  slog.New(testutil.NewBufferedLogHandler()),
+		Writer:  cliutil.NewBufferedWriter(),
+		Server:  svrCfg,
+	})
+	err = svr.Initialize()
+	return svr, err
+}
 func TestNewServer(t *testing.T) {
-	config := common.ServerConfig{
-		XMLUIDir:    "/tmp/test-xmlui",
+	server, err := getNewMCPServer(&common.ServerConfig{
+		XMLUIDir:    filepath.Join(os.TempDir(), "test-xmlui"),
 		ExampleRoot: "/tmp/test-examples",
 		ExampleDirs: []string{"demo"},
 		HTTPMode:    false,
 		Port:        "8080",
-	}
-
-	server, err := NewServer(config)
+	})
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -47,41 +61,37 @@ func TestNewServer(t *testing.T) {
 func TestServerConfigValidation(t *testing.T) {
 	// Test that empty XMLUIDir triggers auto-download (skip if network unavailable)
 	if os.Getenv("SKIP_NETWORK_TESTS") == "" {
-		config := common.ServerConfig{
+		server, err := getNewMCPServer(&common.ServerConfig{
 			XMLUIDir: "",
-		}
-
-		server, err := NewServer(config)
+		})
 		if err != nil {
 			t.Logf("Auto-download failed (may be expected): %v", err)
 		} else if server != nil {
 			// Verify that XMLUIDir was populated
-			if server.config.XMLUIDir == "" {
+			if server.Config().XMLUIDir == "" {
 				t.Error("XMLUIDir should be populated after auto-download")
 			}
-			t.Logf("Auto-download successful, using: %s", server.config.XMLUIDir)
+			t.Logf("Auto-download successful, using: %s", server.Config().XMLUIDir)
 		}
 	}
 
 	// Test default port
-	config := common.ServerConfig{
-		XMLUIDir: "/tmp/test",
+	server, err := getNewMCPServer(&common.ServerConfig{
+		XMLUIDir: filepath.Join(os.TempDir(), "test"),
 		Port:     "",
-	}
-
-	server, err := NewServer(config)
+	})
 	if err != nil {
 		t.Fatalf("Failed to create server with empty port: %v", err)
 	}
 
-	if server.config.Port != "8080" {
-		t.Errorf("Expected default port 8080, got %s", server.config.Port)
+	if server.Config().Port != "8080" {
+		t.Errorf("Expected default port 8080, got %s", server.Config().Port)
 	}
 }
 
 func TestSessionManager(t *testing.T) {
 	sessionManager := &SessionManager{
-		sessions: make(map[string]*SessionContext),
+		sessions: make(map[string]*xmluimcp.SessionContext),
 	}
 
 	// Test creating a new session
@@ -129,13 +139,11 @@ func TestNewServerAutoDownload(t *testing.T) {
 	}
 
 	// Test creating server with empty XMLUIDir (should trigger auto-download)
-	config := common.ServerConfig{
+	server, err := getNewMCPServer(&common.ServerConfig{
 		XMLUIDir: "",
 		HTTPMode: false,
 		Port:     "8080",
-	}
-
-	server, err := NewServer(config)
+	})
 	if err != nil {
 		t.Fatalf("Failed to create server with auto-download: %v", err)
 	}
@@ -145,11 +153,11 @@ func TestNewServerAutoDownload(t *testing.T) {
 	}
 
 	// Verify that XMLUIDir was populated
-	if server.config.XMLUIDir == "" {
+	if server.Config().XMLUIDir == "" {
 		t.Fatal("XMLUIDir should be populated after auto-download")
 	}
 
-	t.Logf("Auto-downloaded repository to: %s", server.config.XMLUIDir)
+	t.Logf("Auto-downloaded repository to: %s", server.Config().XMLUIDir)
 
 	// Verify tools are loaded
 	tools := server.GetTools()

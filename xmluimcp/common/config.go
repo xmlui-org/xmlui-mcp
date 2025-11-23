@@ -18,8 +18,12 @@ type Config struct {
 
 func (c *Config) Config() {}
 
-// ServerConfig holds runtime server settings for the MCP server.
-// It uses string paths (not typed) because the underlying MCP server expects strings.
+// ServerConfig holds runtime server settings for the MCP server. It uses string
+// paths (not typed) because the underlying MCP server expects strings.
+// TODO: I would like to use dt.DirPath and dt.Filepath instead of string where
+//
+//	applicable applicable but will hold off until we get a single fork of the
+//	MCP server.
 type ServerConfig struct {
 	XMLUIDir      string   // Path to XMLUI source directory
 	ExampleRoot   string   // Optional: root directory for examples

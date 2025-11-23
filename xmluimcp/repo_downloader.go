@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 const (
@@ -30,7 +29,7 @@ type GitHubRelease struct {
 }
 
 // getLatestXMLUITag queries GitHub API for the latest xmlui@* release
-func getLatestXMLUITag() (string, string, error) {
+func getLatestXMLUITag(logger *slog.Logger) (string, string, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -47,7 +46,12 @@ func getLatestXMLUITag() (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("failed to fetch releases from GitHub: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			logger.Error("Failed to close HTTP response body", "url_requested", githubAPIURL)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -71,7 +75,7 @@ func getLatestXMLUITag() (string, string, error) {
 }
 
 // downloadFile downloads a file from the given URL to the destination path
-func downloadFile(url, destPath string) error {
+func downloadFile(url, destPath string, logger *slog.Logger) error {
 	client := &http.Client{
 		Timeout: 5 * time.Minute,
 	}
@@ -80,7 +84,7 @@ func downloadFile(url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeOrLog(resp.Body, logger)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
@@ -91,7 +95,7 @@ func downloadFile(url, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer out.Close()
+	defer closeOrLog(out, logger)
 
 	// Copy the response body to the file
 	_, err = io.Copy(out, resp.Body)
@@ -103,12 +107,12 @@ func downloadFile(url, destPath string) error {
 }
 
 // unzipFile extracts a zip file to the destination directory
-func unzipFile(zipPath, destDir string) error {
+func unzipFile(zipPath, destDir string, logger *slog.Logger) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return fmt.Errorf("failed to open zip file: %w", err)
 	}
-	defer r.Close()
+	defer closeOrLog(r, logger)
 
 	// Extract all files
 	for _, f := range r.File {
@@ -121,12 +125,17 @@ func unzipFile(zipPath, destDir string) error {
 
 		if f.FileInfo().IsDir() {
 			// Create directory
-			os.MkdirAll(fpath, os.ModePerm)
+			err = os.MkdirAll(fpath, os.ModePerm)
+			if err != nil {
+				logger.Error("Failed to make directory for %s; %v", fpath, err)
+				return err
+			}
 			continue
 		}
 
 		// Create parent directory if needed
 		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			logger.Error("Failed to make directory for %s; %v", fpath, err)
 			return err
 		}
 
@@ -138,13 +147,13 @@ func unzipFile(zipPath, destDir string) error {
 
 		rc, err := f.Open()
 		if err != nil {
-			outFile.Close()
+			closeOrLog(outFile, logger)
 			return err
 		}
 
 		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
+		closeOrLog(outFile, logger)
+		closeOrLog(rc, logger)
 
 		if err != nil {
 			return err
@@ -160,8 +169,8 @@ func writeVersionMarker(repoDir, version string) error {
 	return os.WriteFile(markerPath, []byte(version), 0644)
 }
 
-// readVersionMarker reads the version marker file
-func readVersionMarker(repoDir string) (string, error) {
+// ReadVersionMarker reads the version marker file
+func ReadVersionMarker(repoDir string) (string, error) {
 	markerPath := filepath.Join(repoDir, versionMarkerFile)
 	data, err := os.ReadFile(markerPath)
 	if err != nil {
@@ -179,7 +188,7 @@ func isRepoValid(repoDir string) bool {
 	}
 
 	// Check if version marker exists
-	version, err := readVersionMarker(repoDir)
+	version, err := ReadVersionMarker(repoDir)
 	if err != nil || version == "" {
 		return false
 	}
@@ -200,7 +209,7 @@ func isRepoValid(repoDir string) bool {
 
 // EnsureXMLUIRepo ensures the XMLUI repository is available in the cache
 // Returns the path to the cached repository
-func EnsureXMLUIRepo() (string, error) {
+func EnsureXMLUIRepo(logger *slog.Logger) (string, error) {
 	repoDir, err := GetRepoDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get repo directory: %w", err)
@@ -208,23 +217,23 @@ func EnsureXMLUIRepo() (string, error) {
 
 	// Check if repo is already valid
 	if isRepoValid(repoDir) {
-		mcpsvr.WriteDebugLog("XMLUI repo already cached at: %s\n", repoDir)
-		version, _ := readVersionMarker(repoDir)
-		mcpsvr.WriteDebugLog("Cached version: %s\n", version)
+		logger.Info("XMLUI repo already cached at: %s\n", repoDir)
+		version, _ := ReadVersionMarker(repoDir)
+		logger.Info("Cached version: %s\n", version)
 		return repoDir, nil
 	}
 
-	mcpsvr.WriteDebugLog("XMLUI repo not found or invalid, downloading...\n")
+	logger.Error("XMLUI repo not found or invalid, downloading...\n")
 
 	// Try to get the latest version from GitHub
-	version, zipURL, err := getLatestXMLUITag()
+	version, zipURL, err := getLatestXMLUITag(logger)
 	if err != nil {
-		mcpsvr.WriteDebugLog("Failed to get latest tag from GitHub: %v\n", err)
-		mcpsvr.WriteDebugLog("Falling back to version: %s\n", fallbackVersion)
+		logger.Info("Failed to get latest tag from GitHub: %v\n", err)
+		logger.Info("Falling back to version: %s\n", fallbackVersion)
 		version = fallbackVersion
 		zipURL = fallbackZipURL
 	} else {
-		mcpsvr.WriteDebugLog("Latest version from GitHub: %s\n", version)
+		logger.Info("Latest version from GitHub: %s\n", version)
 	}
 
 	// Use a temporary directory for atomic download
@@ -232,47 +241,53 @@ func EnsureXMLUIRepo() (string, error) {
 
 	// Clean up any previous failed download attempts
 	if err := os.RemoveAll(tempDir); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to clean up temporary directory: %w", err)
+		return "", fmt.Errorf("failed to clean up temporary directory %s: %w", tempDir, err)
 	}
 
 	// Create temporary directory
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create temporary directory: %w", err)
+		return "", fmt.Errorf("failed to create temporary directory %s: %w", tempDir, err)
 	}
 
 	// Ensure cleanup on failure
 	success := false
 	defer func() {
 		if !success {
-			os.RemoveAll(tempDir)
+			err = os.RemoveAll(tempDir)
+			if err != nil {
+				logger.Error("Failed to clean up temp dir",
+					slog.String("temp_dir", tempDir),
+					slog.String("error", err.Error()),
+				)
+			}
 		}
 	}()
 
 	// Download the zip file
 	zipPath := filepath.Join(tempDir, "xmlui.zip")
-	mcpsvr.WriteDebugLog("Downloading from: %s\n", zipURL)
-	if err := downloadFile(zipURL, zipPath); err != nil {
-		return "", fmt.Errorf("failed to download XMLUI repository: %w", err)
+	logger.Info("Downloading", "from_url", zipURL)
+	if err := downloadFile(zipURL, zipPath, logger); err != nil {
+		return "", fmt.Errorf("failed to download XMLUI repository from %s to %s: %w", zipURL, zipPath, err)
 	}
-	mcpsvr.WriteDebugLog("Download complete\n")
+	logger.Info("Download complete")
 
 	// Extract the zip file
 	extractDir := filepath.Join(tempDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create extraction directory: %w", err)
+		return "", fmt.Errorf("failed to create extraction directory %s: %w", extractDir, err)
 	}
 
-	mcpsvr.WriteDebugLog("Extracting archive...\n")
-	if err := unzipFile(zipPath, extractDir); err != nil {
-		return "", fmt.Errorf("failed to extract XMLUI repository: %w", err)
+	logger.Info("Extracting archive")
+	if err := unzipFile(zipPath, extractDir, logger); err != nil {
+		return "", fmt.Errorf("failed to extract XMLUI repository downloaded to %s into %s: %w", zipPath, extractDir, err)
 	}
-	mcpsvr.WriteDebugLog("Extraction complete\n")
+	logger.Info("Extraction complete")
 
 	// GitHub zip files contain a single top-level directory
 	// Find it and move its contents to the final location
 	entries, err := os.ReadDir(extractDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to read extracted directory: %w", err)
+		return "", fmt.Errorf("failed to read extracted directory %s: %w", extractDir, err)
 	}
 
 	if len(entries) == 0 {
@@ -295,46 +310,68 @@ func EnsureXMLUIRepo() (string, error) {
 	// Create the final repo directory
 	finalDir := filepath.Join(tempDir, "final")
 	if err := os.MkdirAll(finalDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create final directory: %w", err)
+		return "", fmt.Errorf("failed to create final directory %s: %w", finalDir, err)
 	}
 
 	// Move contents from top-level dir to final dir
 	topEntries, err := os.ReadDir(topLevelDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to read top-level directory: %w", err)
+		return "", fmt.Errorf("failed to read top-level directory %s: %w", topLevelDir, err)
 	}
 
 	for _, entry := range topEntries {
 		srcPath := filepath.Join(topLevelDir, entry.Name())
 		destPath := filepath.Join(finalDir, entry.Name())
 		if err := os.Rename(srcPath, destPath); err != nil {
-			return "", fmt.Errorf("failed to move %s: %w", entry.Name(), err)
+			return "", fmt.Errorf("failed to move %s from %s to %s: %w", entry.Name(), topLevelDir, finalDir, err)
 		}
 	}
 
 	// Write version marker
 	if err := writeVersionMarker(finalDir, version); err != nil {
-		return "", fmt.Errorf("failed to write version marker: %w", err)
+		return "", fmt.Errorf("failed to write version marker to %s: %w", finalDir, err)
 	}
 
 	// Remove old repo directory if it exists
 	if err := os.RemoveAll(repoDir); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to remove old repository: %w", err)
+		return "", fmt.Errorf("failed to remove old repository at %s: %w", repoDir, err)
 	}
 
 	// Atomically move the final directory to the repo directory
 	if err := os.Rename(finalDir, repoDir); err != nil {
-		return "", fmt.Errorf("failed to move repository to final location: %w", err)
+		return "", fmt.Errorf("failed to move repository from %s to %s: %w", repoDir, finalDir, err)
 	}
 
 	// Mark success so cleanup doesn't remove our work
 	success = true
 
 	// Clean up temp directory
-	os.RemoveAll(tempDir)
+	removeAllOrLog(tempDir, logger)
 
-	mcpsvr.WriteDebugLog("XMLUI repo successfully cached at: %s\n", repoDir)
-	mcpsvr.WriteDebugLog("Version: %s\n", version)
+	logger.Info("XMLUI repo successfully cached at: %s\n", repoDir)
+	logger.Info("Version: %s\n", version)
 
 	return repoDir, nil
+}
+
+func removeAllOrLog(dir string, logger *slog.Logger) {
+	err := os.RemoveAll(dir)
+	if err != nil {
+		logger.Error("Failed to remove dir",
+			slog.String("directory", dir),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func closeOrLog(c io.Closer, logger *slog.Logger) {
+	err := c.Close()
+	if err != nil {
+		logger.Error("Failed to close", "error", err)
+	}
+}
+func logOnError(err error, logger *slog.Logger) {
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }

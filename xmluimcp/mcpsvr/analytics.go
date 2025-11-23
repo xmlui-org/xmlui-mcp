@@ -1,17 +1,29 @@
 package mcpsvr
 
 import (
+	"bufio"
 	"encoding/json"
+	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mikeschinkel/go-dt"
+	"github.com/mikeschinkel/go-logutil"
+)
+
+type LogEntryType string
+
+const (
+	ToolInvocationType LogEntryType = "tool_invocation"
+	SearchQueryType    LogEntryType = "search_query"
 )
 
 // Analytics structures for tracking agent usage
+
 type ToolInvocation struct {
-	Type       string                 `json:"type"`
+	EntryType  LogEntryType           `json:"entry_type"`
 	Timestamp  time.Time              `json:"timestamp"`
 	ToolName   string                 `json:"tool_name"`
 	Arguments  map[string]interface{} `json:"arguments"`
@@ -21,14 +33,14 @@ type ToolInvocation struct {
 }
 
 type SearchQuery struct {
-	Type        string    `json:"type"`
-	Timestamp   time.Time `json:"timestamp"`
-	ToolName    string    `json:"tool_name"`
-	Query       string    `json:"query"`
-	ResultCount int       `json:"result_count"`
-	Success     bool      `json:"success"`
-	SearchPaths []string  `json:"search_paths,omitempty"`
-	FoundURLs   []string  `json:"found_urls,omitempty"`
+	EntryType   LogEntryType `json:"entry_type"`
+	Timestamp   time.Time    `json:"timestamp"`
+	ToolName    string       `json:"tool_name"`
+	Query       string       `json:"query"`
+	ResultCount int          `json:"result_count"`
+	Success     bool         `json:"success"`
+	SearchPaths []string     `json:"search_paths,omitempty"`
+	FoundURLs   []string     `json:"found_urls,omitempty"`
 }
 
 type AnalyticsData struct {
@@ -37,134 +49,136 @@ type AnalyticsData struct {
 }
 
 type Analytics struct {
-	mu      sync.RWMutex
-	data    AnalyticsData
-	logFile string
+	mu     sync.RWMutex
+	data   AnalyticsData
+	logger *slog.Logger
 }
 
-func NewAnalytics(logFile string) *Analytics {
-	a := &Analytics{
+func NewAnalytics(logger *slog.Logger) *Analytics {
+	return &Analytics{
 		data: AnalyticsData{
 			ToolInvocations: make([]ToolInvocation, 0),
 			SearchQueries:   make([]SearchQuery, 0),
 		},
-		logFile: logFile,
+		logger: logger,
 	}
-
-	// Load existing data if available
-	a.loadData()
-
-	return a
 }
 
-func (a *Analytics) loadData() {
-	if _, err := os.Stat(a.logFile); os.IsNotExist(err) {
-		return
+func (a *Analytics) Initialize() (err error) {
+
+	// Load existing data if available
+	err = a.loadData()
+
+	return err
+}
+
+func (a *Analytics) loadData() (err error) {
+	const maxLineSize = 1024 * 1024
+	var file, data *os.File
+	var dataFile dt.Filepath
+	var scanner *bufio.Scanner
+	var buf []byte
+
+	logFile := logutil.GetJSONFilepath(a.logger)
+
+	file, err = dt.CreateTemp(dt.TempDir(), "xmlui-analytics-*")
+	if err != nil {
+		a.logger.Debug("Failed to create temp file")
+		goto end
+	}
+	defer dt.CloseOrLog(file)
+
+	dataFile = dt.Filepath(file.Name())
+	err = logFile.CopyTo(dataFile, nil)
+	if err != nil {
+		a.logger.Debug("Failed to copy log file",
+			"log_file", logFile,
+			"working_file", dataFile,
+			"err", err,
+		)
+		goto end
 	}
 
-	content, err := os.ReadFile(a.logFile)
+	data, err = dataFile.Open()
 	if err != nil {
-		WriteDebugLog("Failed to load analytics data: %v\n", err)
-		return
+		a.logger.Debug("Failed to open data file",
+			"data_file", dataFile,
+			"err", err,
+		)
+		goto end
 	}
+	scanner = bufio.NewScanner(data)
+	buf = make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, maxLineSize)
 
 	// Parse JSONL format - one JSON object per line
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-
-		// First, try to determine the type from the JSON
-		var typeCheck struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal([]byte(line), &typeCheck); err != nil {
-			WriteDebugLog("Failed to parse type from analytics line: %s\n", line)
-			continue
-		}
-
-		// Parse based on type
-		switch typeCheck.Type {
-		case "tool_invocation":
-			var invocation ToolInvocation
-			if err := json.Unmarshal([]byte(line), &invocation); err == nil {
-				a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
-			} else {
-				WriteDebugLog("Failed to parse tool_invocation: %s\n", line)
-			}
-		case "search_query":
-			var searchQuery SearchQuery
-			if err := json.Unmarshal([]byte(line), &searchQuery); err == nil {
-				a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
-			} else {
-				WriteDebugLog("Failed to parse search_query: %s\n", line)
-			}
-		default:
-			// Skip session_activity records
-			continue
-		}
+		// Do whatever you need with each line:
+		a.parseJSONLine(line)
 	}
+
+	err = scanner.Err()
+
+end:
+	if err != nil {
+		a.logger.Debug("Failed while loading analytics data", "error", err)
+	}
+	return
 }
 
-func (a *Analytics) writeLine(data interface{}) {
-	WriteDebugLog("[DEBUG] writeLine ENTRY: file=%s\n", a.logFile)
+func (a *Analytics) parseJSONLine(line string) {
 
-	// Marshal the data to JSON
-	jsonData, err := json.Marshal(data)
+	// First, try to determine the type from the JSON
+	var typeCheck struct {
+		EntryType LogEntryType `json:"entry_type"`
+	}
+
+	err := json.Unmarshal([]byte(line), &typeCheck)
 	if err != nil {
-		WriteDebugLog("[DEBUG] writeLine FAILED_MARSHAL: %v\n", err)
-		return
+		a.logger.Debug("Failed to parse type from analytics line: %s\n", line)
+		goto end
 	}
 
-	WriteDebugLog("[DEBUG] writeLine MARSHALED: %s\n", string(jsonData))
+	// Parse based on type
+	switch typeCheck.EntryType {
+	case ToolInvocationType:
+		var invocation ToolInvocation
+		err := json.Unmarshal([]byte(line), &invocation)
+		if err != nil {
+			a.logger.Debug("Failed to parse tool_invocation", "line", line, "error", err)
+			goto end
+		}
+		a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
 
-	// Open file for appending
-	file, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		WriteDebugLog("[DEBUG] writeLine FAILED_OPEN: %v\n", err)
-		return
+	case SearchQueryType:
+		var searchQuery SearchQuery
+		err := json.Unmarshal([]byte(line), &searchQuery)
+		if err != nil {
+			a.logger.Debug("Failed to parse search_query", "line", line, "error", err)
+			goto end
+		}
+		a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
+	default:
+		// Skip session_activity records
 	}
-	defer file.Close()
-
-	WriteDebugLog("[DEBUG] writeLine FILE_OPENED: %s\n", a.logFile)
-
-	// Write the JSON line
-	bytesWritten, err := file.Write(jsonData)
-	if err != nil {
-		WriteDebugLog("[DEBUG] writeLine FAILED_WRITE: %v\n", err)
-		return
-	}
-
-	WriteDebugLog("[DEBUG] writeLine WROTE_JSON: %d bytes\n", bytesWritten)
-
-	// Write newline
-	newlineBytes, err := file.Write([]byte("\n"))
-	if err != nil {
-		WriteDebugLog("[DEBUG] writeLine FAILED_NEWLINE: %v\n", err)
-		return
-	}
-
-	WriteDebugLog("[DEBUG] writeLine WROTE_NEWLINE: %d bytes\n", newlineBytes)
-
-	// Sync to ensure it's written immediately
-	if err := file.Sync(); err != nil {
-		WriteDebugLog("[DEBUG] writeLine FAILED_SYNC: %v\n", err)
-		return
-	}
-
-	WriteDebugLog("[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
+end:
+	return
 }
 
 func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
-	WriteDebugLog("[DEBUG] LogToolInvocation ENTRY: tool=%s\n", toolName)
+	a.logger.Debug("LogToolInvocation ENTRY",
+		slog.String("tool", toolName),
+	)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	invocation := ToolInvocation{
-		Type:       "tool_invocation",
+		EntryType:  "tool_invocation",
 		Timestamp:  time.Now(),
 		ToolName:   toolName,
 		Arguments:  args,
@@ -173,20 +187,27 @@ func (a *Analytics) LogToolInvocation(toolName string, args map[string]interface
 		ErrorMsg:   errorMsg,
 	}
 
-	WriteDebugLog("[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
+	a.logger.Debug("LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
 
 	a.data.ToolInvocations = append(a.data.ToolInvocations, invocation)
 
-	WriteDebugLog("[DEBUG] LogToolInvocation AFTER_APPEND: tool=%s, new_count=%d\n", toolName, len(a.data.ToolInvocations))
+	a.logger.Debug("LogToolInvocation AFTER_APPEND",
+		slog.String("tool", toolName),
+		slog.Bool("success", success),
+		slog.Int("new_count", len(a.data.ToolInvocations)),
+	)
 
 	// Write debug info to server.log file
-	WriteDebugLog("[DEBUG] LogToolInvocation: tool=%s, success=%v, resultSize=%d\n",
-		toolName, success, resultSize)
+	a.logger.Debug("LogToolInvocation",
+		slog.String("tool", toolName),
+		slog.Bool("success", success),
+		slog.Int("resultSize", resultSize),
+	)
 
 	// Save immediately for stdio mode (each call is a separate process)
-	WriteDebugLog("[DEBUG] LogToolInvocation BEFORE_WRITELINE: calling writeLine\n")
-	a.writeLine(invocation)
-	WriteDebugLog("[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
+	a.logger.Debug("LogToolInvocation BEFORE_WRITELINE")
+	a.logger.Debug("LogToolInvocation", logutil.LogArgs(invocation)...)
+	a.logger.Debug("LogToolInvocation AFTER_WRITELINE")
 }
 
 func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
@@ -194,10 +215,13 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 	defer a.mu.Unlock()
 
 	// Debug to server.log instead of analytics file
-	WriteDebugLog("[DEBUG] LogSearchQuery ENTRY: tool=%s, query=%s\n", toolName, query)
+	a.logger.Debug("LogSearchQuery ENTRY",
+		slog.String("tool", toolName),
+		slog.String("query", query),
+	)
 
 	searchQuery := SearchQuery{
-		Type:        "search_query",
+		EntryType:   ToolInvocationType,
 		Timestamp:   time.Now(),
 		ToolName:    toolName,
 		Query:       query,
@@ -210,16 +234,14 @@ func (a *Analytics) LogSearchQuery(toolName string, query string, resultCount in
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
 
 	// Debug before writeLine
-	WriteDebugLog("[DEBUG] LogSearchQuery BEFORE_WRITELINE: calling writeLine\n")
-
+	a.logger.Debug("LogSearchQuery BEFORE_WRITELINE")
 	// Save immediately for stdio mode
-	a.writeLine(searchQuery)
-
+	a.logger.Debug("LogToolInvocation", logutil.LogArgs(searchQuery)...)
 	// Debug after writeLine
-	WriteDebugLog("[DEBUG] LogSearchQuery AFTER_WRITELINE: writeLine completed\n")
+	a.logger.Debug("LogSearchQuery AFTER_WRITELINE")
 }
 
-func (a *Analytics) GetSummary() map[string]interface{} {
+func (a *Analytics) GetSummary() map[string]any {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -283,33 +305,54 @@ var globalAnalytics *Analytics
 // Global debug log path for server.log; set alongside analytics file
 var debugLogPath string
 
-func InitializeAnalytics(logFile string) {
+func InitializeAnalytics(logger *slog.Logger) (err error) {
+	var logFile dt.Filepath
+	var attr slog.Attr
+
 	// Initialize analytics storage
-	globalAnalytics = NewAnalytics(logFile)
+	globalAnalytics = NewAnalytics(logger)
+	err = globalAnalytics.Initialize()
+	if err != nil {
+		logger.Debug("globalAnalytics failed to initialize", "error", err)
+		goto end
+	}
 	// Ensure server.log is written next to analytics file
-	debugLogPath = filepath.Join(filepath.Dir(logFile), "server.log")
-	WriteDebugLog("[DEBUG] Initializing analytics with log file: %s\n", logFile)
-	WriteDebugLog("[DEBUG] Analytics initialized, globalAnalytics is nil: %v\n", globalAnalytics == nil)
+	logFile = logutil.GetJSONFilepath(logger)
+	if logFile != "" {
+		attr = slog.String("log_file", string(logFile))
+	}
+	logger.Debug("Initializing analytics", attr)
+end:
+	return err
 }
 
-func LogTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
-	WriteDebugLog("[DEBUG] LogTool ENTRY: tool=%s, globalAnalytics_nil=%v\n", toolName, globalAnalytics == nil)
+func LogTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string, logger *slog.Logger) {
+	toolLogger := logger.With("tool", toolName)
+	toolLogger.Debug("LogTool ENTRY",
+		slog.Bool("globalAnalytics_nil=%", globalAnalytics == nil),
+	)
 
-	if globalAnalytics != nil {
-		WriteDebugLog("[DEBUG] LogTool CALLING_LogToolInvocation: tool=%s\n", toolName)
-		globalAnalytics.LogToolInvocation(toolName, args, success, resultSize, errorMsg)
-		WriteDebugLog("[DEBUG] LogTool AFTER_LogToolInvocation: tool=%s\n", toolName)
-	} else {
-		WriteDebugLog("[DEBUG] LogTool SKIPPED: globalAnalytics is nil for tool=%s\n", toolName)
+	if globalAnalytics == nil {
+		toolLogger.Debug("LogTool SKIPPED: globalAnalytics is nil")
+		goto end
 	}
+	toolLogger.Debug("LogTool CALLING_LogToolInvocation")
+	globalAnalytics.LogToolInvocation(toolName, args, success, resultSize, errorMsg)
+	toolLogger.Debug("LogTool AFTER_LogToolInvocation")
+end:
+	return
 }
 
-func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
-	if globalAnalytics != nil {
-		WriteDebugLog("[DEBUG] LogSearch ENTRY: tool=%s, query=%s\n", toolName, query)
-		globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths, foundURLs)
-		WriteDebugLog("[DEBUG] LogSearch AFTER_LogSearchQuery: tool=%s\n", toolName)
+func LogSearch(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string, logger *slog.Logger) {
+	toolLogger := logger.With("tool", toolName)
+	if globalAnalytics == nil {
+		goto end
 	}
+	toolLogger.Debug("LogSearch ENTRY", slog.String("query", query))
+	globalAnalytics.LogSearchQuery(toolName, query, resultCount, success, searchPaths, foundURLs)
+	toolLogger.Debug("LogSearch AFTER_LogSearchQuery")
+end:
+	return
 }
 
 func GetAnalyticsSummary() map[string]interface{} {

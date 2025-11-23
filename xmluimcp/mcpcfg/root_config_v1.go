@@ -72,14 +72,15 @@ func (c *RootConfigV1) Bytes() []byte {
 }
 
 type LoadRootConfigV1Args struct {
-	AppInfo  appinfo.AppInfo
-	Options  cfgstore.Options
-	DirTypes []cfgstore.DirType
+	AppInfo appinfo.AppInfo
+	Options cfgstore.Options
 }
 
 func LoadRootConfigV1(args LoadRootConfigV1Args) (_ *RootConfigV1, err error) {
+	var dirTypes = []cfgstore.DirType{cfgstore.CLIConfigDirType}
 
 	configStores := cfgstore.NewConfigStores(cfgstore.ConfigStoresArgs{
+		DirTypes: dirTypes,
 		ConfigStoreArgs: cfgstore.ConfigStoreArgs{
 			ConfigSlug:  common.ConfigSlug,
 			RelFilepath: common.ConfigFile,
@@ -87,7 +88,7 @@ func LoadRootConfigV1(args LoadRootConfigV1Args) (_ *RootConfigV1, err error) {
 	})
 
 	return cfgstore.LoadRootConfig[RootConfigV1, *RootConfigV1](configStores, cfgstore.RootConfigArgs{
-		DirTypes: args.DirTypes,
+		DirTypes: dirTypes,
 		Options:  args.Options,
 	})
 

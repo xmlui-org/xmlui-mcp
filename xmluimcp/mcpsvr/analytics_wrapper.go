@@ -2,13 +2,12 @@ package mcpsvr
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mikeschinkel/go-cliutil"
-	"github.com/mikeschinkel/go-dt"
 )
 
 // Global debug log file handle and mutex for thread-safe writing
@@ -17,54 +16,32 @@ var (
 	debugLogMutex sync.Mutex
 )
 
-// WriteDebugLog writes debug messages to server.log in a thread-safe way
-func WriteDebugLog(format string, args ...interface{}) {
-	debugLogMutex.Lock()
-	defer debugLogMutex.Unlock()
-
-	// Resolve target path for server.log
-	targetPath := "server.log"
-	if debugLogPath != "" {
-		targetPath = debugLogPath
-	}
-
-	// Open file if not already open
-	if debugLogFile == nil {
-		var err error
-		debugLogFile, err = os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			// Last resort: write to stderr
-			cliutil.Stderrf("Failed to open debug log file %s: %v\n", targetPath, err)
-			return
-		}
-	}
-
-	// Write the message
-	cliutil.Stdiof(debugLogFile, format, args...)
-
-	// Flush immediately to ensure it's written
-	dt.LogOnError(debugLogFile.Sync())
-}
+type ToolHandler = func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
 
 // WithAnalytics is a wrapper function to add analytics to any tool handler
-func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func WithAnalytics(toolName string, handler ToolHandler, logger *slog.Logger) ToolHandler {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// DEBUG: Log entry into withAnalytics wrapper
-		WriteDebugLog("[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
+		logger.Debug("WithAnalytics ENTRY", slog.String("tool", toolName))
 
 		// Write to server.log
-		WriteDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s\n", time.Now().Format("15:04:05.000"), toolName)
+		logger.Debug("WithAnalytics ENTRY",
+			slog.String("timestamp", time.Now().Format("15:04:05.000")),
+			slog.String("tool", toolName),
+		)
 
 		// DEBUG: Log before calling original handler
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
+		logger.Debug("WithAnalytics BEFORE_HANDLER", slog.String("tool", toolName))
 
 		// Call the original handler
 		result, err := handler(ctx, req)
 
 		// DEBUG: Log after calling original handler
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
+		logger.Debug("WithAnalytics AFTER_HANDLER",
+			slog.String("tool", toolName),
+			slog.String("error", err.Error()),
+			slog.Bool("result_nil", result == nil),
+		)
 
 		// Calculate metrics
 		success := err == nil && result != nil
@@ -99,22 +76,24 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		}
 
 		// DEBUG: Log before calling LogTool
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
+		logger.Debug("WithAnalytics BEFORE_LOGGING",
+			slog.String("tool", toolName),
+			slog.Bool("success", success),
+			slog.Int("resultSize", resultSize),
+		)
 
 		// Log the invocation
-		LogTool(toolName, RequestArguments(req), success, resultSize, errorMsg)
+		LogTool(toolName, RequestArguments(req), success, resultSize, errorMsg, logger)
 
 		// DEBUG: Log after calling LogTool
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
+		logger.Debug("WithAnalytics AFTER_LOGGING", slog.String("tool", toolName))
 
 		return result, err
 	}
 }
 
 // WithSearchAnalytics is a special wrapper for search tools to capture additional search-specific metrics
-func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func WithSearchAnalytics(toolName string, handler ToolHandler, logger *slog.Logger) ToolHandler {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract search query
 		query := RequestArgument(req, "query")
@@ -157,12 +136,12 @@ func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		searchSuccess := toolSuccess && resultCount > 0
 
 		// Log both general tool usage and specific search metrics
-		LogTool(toolName, RequestArguments(req), toolSuccess, resultSize, errorMsg)
+		LogTool(toolName, RequestArguments(req), toolSuccess, resultSize, errorMsg, logger)
 
 		// Log search-specific data with search-specific success metric
 		searchPaths := getSearchPaths(toolName)
 		foundURLs := extractFoundURLs(result)
-		LogSearch(toolName, query, resultCount, searchSuccess, searchPaths, foundURLs)
+		LogSearch(toolName, query, resultCount, searchSuccess, searchPaths, foundURLs, logger)
 
 		return result, err
 	}
@@ -171,10 +150,10 @@ func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 // Helper function to split text into lines for counting results
 func splitLines(text string) []string {
 	if text == "" {
-		return []string{}
+		return make([]string, 0)
 	}
 
-	lines := []string{}
+	lines := make([]string, 0)
 	current := ""
 
 	for _, char := range text {
@@ -216,12 +195,12 @@ func getSearchPaths(toolName string) []string {
 
 // extractFoundURLs parses the text result and returns a unique list of file-like URLs/paths
 func extractFoundURLs(result *mcp.CallToolResult) []string {
+	lines := make([]string, 0)
 	if result == nil {
-		return []string{}
+		return lines
 	}
 
 	// Collect lines from text content
-	lines := []string{}
 	for _, content := range result.Content {
 		switch c := content.(type) {
 		case *mcp.TextContent:
@@ -233,7 +212,7 @@ func extractFoundURLs(result *mcp.CallToolResult) []string {
 
 	// Extract before ':' as path for lines like "path:line: text" or "path: [filename match]"
 	seen := map[string]struct{}{}
-	out := []string{}
+	out := make([]string, 0)
 	for _, line := range lines {
 		// Skip obvious non-matches
 		if line == "" || line == "No matches found." || line == "No examples found." {

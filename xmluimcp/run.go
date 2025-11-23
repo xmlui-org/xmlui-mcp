@@ -17,9 +17,10 @@ import (
 // This function blocks until the server terminates or encounters an error.
 func Run(_ context.Context, args *RunArgs) error {
 	// Create server
-	server, err := NewServer(*args.Config.Server)
+	server := NewServer(args.Config)
+	err := server.Initialize()
 	if err != nil {
-		return err
+		goto end
 	}
 
 	// Print startup information
@@ -27,7 +28,12 @@ func Run(_ context.Context, args *RunArgs) error {
 
 	// Start server based on mode
 	if args.Config.Server.HTTPMode {
-		return server.ServeHTTP()
+		err = server.ServeHTTP()
+		goto end
 	}
-	return server.ServeStdio()
+
+	err = server.ServeStdio()
+
+end:
+	return err
 }

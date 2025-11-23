@@ -2,12 +2,12 @@ package xmluimcp
 
 import (
 	"context"
-	"log/slog"
 	"os"
 
 	"github.com/mikeschinkel/go-cliutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/xmluihelpers"
 )
 
 // RunCLI is the CLI entry point for the XMLUI MCP server.
@@ -22,11 +22,11 @@ import (
 //   - 5: Unknown runtime error
 func RunCLI() {
 	var err error
-	var logger *slog.Logger
 	var mcpCfg *mcpcfg.RootConfigV1
 	var cfgOpts *mcpcfg.Options
 	var options *common.Options
 	var config *common.Config
+	var wr cliutil.WriterLogger
 
 	// Parse command-line flags
 	cfgOpts, err = mcpcfg.GetOptions()
@@ -42,33 +42,37 @@ func RunCLI() {
 		os.Exit(cliutil.ExitOptionsParseError)
 	}
 
-	writer := cliutil.NewWriter(&cliutil.WriterArgs{
-		Quiet:     options.Quiet(),
-		Verbosity: options.Verbosity(),
+	appInfo = AppInfo()
+	wr, err = xmluihelpers.CreateWriterLogger(&xmluihelpers.WriterLoggerArgs{
+		Quiet:      options.Quiet(),
+		Verbosity:  options.Verbosity(),
+		ConfigSlug: appInfo.ConfigSlug(),
+		LogFile:    common.LogFile,
 	})
-
-	// TODO: Create logger (currently nil, add logging support later)
-	logger = nil
+	if err != nil {
+		cliutil.Stderrf("Failed to run: %v\n", err)
+		os.Exit(cliutil.ExitLoggerSetupError)
+	}
 
 	// Load root configuration
 	mcpCfg, err = mcpcfg.LoadRootConfigV1(mcpcfg.LoadRootConfigV1Args{
-		AppInfo: AppInfo(),
+		AppInfo: appInfo,
 		Options: cfgOpts,
 	})
 	if err != nil {
-		writer.Errorf("Failed to load config: %v\n", err)
+		wr.Writer.Errorf("Failed to load config: %v\n", err)
 		os.Exit(cliutil.ExitConfigLoadError)
 	}
 
 	// Parse configuration
 	config, err = ParseConfig(mcpCfg, common.ConfigArgs{
 		Options: options,
-		AppInfo: AppInfo(),
-		Logger:  logger,
-		Writer:  writer,
+		AppInfo: appInfo,
+		Logger:  wr.Logger,
+		Writer:  wr.Writer,
 	})
 	if err != nil {
-		writer.Errorf("Failed to parse config: %v\n", err)
+		wr.Writer.Errorf("Failed to parse config: %v\n", err)
 		os.Exit(cliutil.ExitConfigParseError)
 	}
 
@@ -86,7 +90,7 @@ func RunCLI() {
 	err = Run(ctx, args)
 
 	if err != nil {
-		writer.Errorf("MCP server error: %v\n", err)
+		wr.Writer.Errorf("MCP server error: %v\n", err)
 		os.Exit(cliutil.ExitUnknownRuntimeError)
 	}
 }
