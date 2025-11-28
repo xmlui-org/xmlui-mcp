@@ -157,8 +157,8 @@ func TestGetLatestXMLUITag(t *testing.T) {
 
 	// If it fails (e.g., rate limit, network issues), that's okay for a test
 	if err != nil {
-		t.Logf("getLatestXMLUITag() failed (expected in some cases): %v", err)
-		t.Logf("This is expected if there are network issues or GitHub API rate limits")
+		// t.Logf("getLatestXMLUITag() failed (expected in some cases): %v", err)
+		// t.Logf("This is expected if there are network issues or GitHub API rate limits")
 		return
 	}
 
@@ -180,8 +180,8 @@ func TestGetLatestXMLUITag(t *testing.T) {
 		t.Errorf("Expected ZIP URL to contain version %s, got %s", version, zipURL)
 	}
 
-	t.Logf("Latest version: %s", version)
-	t.Logf("Download URL: %s", zipURL)
+	// t.Logf("Latest version: %s", version)
+	// t.Logf("Download URL: %s", zipURL)
 }
 
 func mkdirAll(t *testing.T, dir, fp string, mode os.FileMode) {

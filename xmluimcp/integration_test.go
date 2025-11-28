@@ -29,7 +29,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 		t.Fatal("EnsureXMLUIRepo() returned empty directory")
 	}
 
-	t.Logf("Repository cached at: %s", repoDir)
+	// t.Logf("Repository cached at: %s", repoDir)
 
 	// Verify the directory exists
 	info, err := os.Stat(repoDir)
@@ -63,7 +63,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 		t.Fatalf("Version marker not found: %v", err)
 	}
 
-	t.Logf("Cached version: %s", version)
+	// t.Logf("Cached version: %s", version)
 
 	// Verify version format
 	if len(version) < 6 || version[:6] != "xmlui@" {
@@ -114,7 +114,7 @@ func TestServerWithAutoDownload(t *testing.T) {
 		t.Error("No tools loaded")
 	}
 
-	t.Logf("Loaded %d tools", len(tools))
+	// t.Logf("Loaded %d tools", len(tools))
 
 	// Verify prompts are loaded
 	prompts := server.GetPrompts()
@@ -122,7 +122,7 @@ func TestServerWithAutoDownload(t *testing.T) {
 		t.Error("No prompts loaded")
 	}
 
-	t.Logf("Loaded %d prompts", len(prompts))
+	// t.Logf("Loaded %d prompts", len(prompts))
 
 	// Verify session manager exists
 	sessionMgr := server.GetSessionManager()
@@ -169,5 +169,5 @@ func TestCachePersistence(t *testing.T) {
 		t.Errorf("Different versions: %s vs %s", version1, version2)
 	}
 
-	t.Logf("Cache persistence verified: %s at %s", version1, dir1)
+	// t.Logf("Cache persistence verified: %s at %s", version1, dir1)
 }

@@ -65,13 +65,13 @@ func TestServerConfigValidation(t *testing.T) {
 			XMLUIDir: "",
 		})
 		if err != nil {
-			t.Logf("Auto-download failed (may be expected): %v", err)
+			// t.Logf("Auto-download failed (may be expected): %v", err)
 		} else if server != nil {
 			// Verify that XMLUIDir was populated
 			if server.Config().XMLUIDir == "" {
 				t.Error("XMLUIDir should be populated after auto-download")
 			}
-			t.Logf("Auto-download successful, using: %s", server.Config().XMLUIDir)
+			// t.Logf("Auto-download successful, using: %s", server.Config().XMLUIDir)
 		}
 	}
 
@@ -157,7 +157,7 @@ func TestNewServerAutoDownload(t *testing.T) {
 		t.Fatal("XMLUIDir should be populated after auto-download")
 	}
 
-	t.Logf("Auto-downloaded repository to: %s", server.Config().XMLUIDir)
+	// t.Logf("Auto-downloaded repository to: %s", server.Config().XMLUIDir)
 
 	// Verify tools are loaded
 	tools := server.GetTools()
