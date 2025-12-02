@@ -12,7 +12,7 @@ fi
 echo "==> Running tests for all modules..."
 while IFS= read -r mod_dir; do
   echo "  → $mod_dir"
-  (cd "$mod_dir" && $GO test $RACE_FLAG -v ./...)
+  (cd "$mod_dir" && GOEXPERIMENT=jsonv2 $GO test $RACE_FLAG -v ./...)
 done < <(get_module_dirs)
 
 echo "✓ All tests passed"

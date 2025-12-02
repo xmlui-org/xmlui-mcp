@@ -7,7 +7,7 @@ source ./scripts/shared.sh
 echo "==> Running go vet on all modules..."
 while IFS= read -r mod_dir; do
   echo "  → $mod_dir"
-  (cd "$mod_dir" && $GO vet ./...)
+  (cd "$mod_dir" && GOEXPERIMENT=jsonv2 $GO vet ./...)
 done < <(get_module_dirs)
 
 echo "✓ Vet complete"

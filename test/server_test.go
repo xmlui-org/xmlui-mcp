@@ -1,4 +1,4 @@
-package xmluimcp_test
+package test
 
 import (
 	"log/slog"
@@ -6,21 +6,47 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mikeschinkel/go-cliutil"
+	"github.com/mikeschinkel/go-cfgstore"
+	"github.com/mikeschinkel/go-dt"
 	"github.com/mikeschinkel/go-testutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 )
 
+var _ dt.FilepathGetter = (*bufferedJSONHandler)(nil)
+
+type bufferedJSONHandler struct {
+	slog.Handler
+	filepath dt.Filepath
+}
+
+func (h bufferedJSONHandler) Filepath() dt.Filepath {
+	return h.filepath
+}
+
 func getNewMCPServer(svrCfg *common.ServerConfig) (svr *xmluimcp.MCPServer, err error) {
+	var configDir dt.DirPath
+
+	appInfo := xmluimcp.AppInfo()
+	// TODO: Update this to use a filefixture with same data instead of live data on
+	//  developer's machine.
+	configDir, err = cfgstore.CLIConfigDir(appInfo.ConfigSlug())
+	if err != nil {
+		goto end
+	}
+
 	svr = xmluimcp.NewServer(&common.Config{
 		Options: nil, // TODO: Set this, maybe?
 		AppInfo: xmluimcp.AppInfo(),
-		Logger:  slog.New(testutil.NewBufferedLogHandler()),
-		Writer:  cliutil.NewBufferedWriter(),
+		Writer:  testutil.NewBufferedWriter(),
 		Server:  svrCfg,
+		Logger: slog.New(bufferedJSONHandler{
+			Handler:  testutil.NewBufferedLogHandler(),
+			filepath: dt.FilepathJoin3(configDir, appInfo.LogPath(), appInfo.LogFile()),
+		}),
 	})
 	err = svr.Initialize()
+end:
 	return svr, err
 }
 func TestNewServer(t *testing.T) {
@@ -90,9 +116,7 @@ func TestServerConfigValidation(t *testing.T) {
 }
 
 func TestSessionManager(t *testing.T) {
-	sessionManager := &SessionManager{
-		sessions: make(map[string]*xmluimcp.SessionContext),
-	}
+	sessionManager := xmluimcp.NewSessionManager()
 
 	// Test creating a new session
 	session := sessionManager.GetOrCreateSession("test-session")
@@ -129,45 +153,5 @@ func TestSessionManager(t *testing.T) {
 	sessions = sessionManager.ListSessions()
 	if len(sessions) != 0 {
 		t.Errorf("Expected 0 sessions after removal, got %d", len(sessions))
-	}
-}
-
-func TestNewServerAutoDownload(t *testing.T) {
-	// Skip if network tests are disabled
-	if os.Getenv("SKIP_NETWORK_TESTS") != "" {
-		t.Skip("Skipping network test")
-	}
-
-	// Test creating server with empty XMLUIDir (should trigger auto-download)
-	server, err := getNewMCPServer(&common.ServerConfig{
-		XMLUIDir: "",
-		HTTPMode: false,
-		Port:     "8080",
-	})
-	if err != nil {
-		t.Fatalf("Failed to create server with auto-download: %v", err)
-	}
-
-	if server == nil {
-		t.Fatal("Server should not be nil")
-	}
-
-	// Verify that XMLUIDir was populated
-	if server.Config().XMLUIDir == "" {
-		t.Fatal("XMLUIDir should be populated after auto-download")
-	}
-
-	// t.Logf("Auto-downloaded repository to: %s", server.Config().XMLUIDir)
-
-	// Verify tools are loaded
-	tools := server.GetTools()
-	if len(tools) == 0 {
-		t.Error("Server should have tools initialized")
-	}
-
-	// Verify prompts are loaded
-	prompts := server.GetPrompts()
-	if len(prompts) == 0 {
-		t.Error("Server should have prompts initialized")
 	}
 }

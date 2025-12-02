@@ -72,12 +72,7 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 		groups := make(map[string][]string)
 		for _, c := range components {
 			parts := strings.Split(c, string(filepath.Separator))
-			group := "Core"
-			if len(parts) > 1 {
-				group = parts[0]
-			} else {
-				group = parts[0]
-			}
+			group := parts[0]
 			groups[group] = append(groups[group], c)
 		}
 

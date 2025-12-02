@@ -15,6 +15,7 @@ var appInfo = appinfo.New(appinfo.Args{
 	InfoURL:     common.InfoURL,
 	ExeName:     common.ExeName,
 	LogFile:     common.LogFile,
+	LogPath:     common.LogPath,
 	ExtraInfo:   common.ExtraInfo,
 })
 

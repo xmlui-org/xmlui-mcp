@@ -11,11 +11,13 @@ define run
 	./scripts/$(1).sh $(2)
 endef
 
-.PHONY: help deps tidy fmt vet lint build prepare run test cover clean analytics
+.PHONY: help deps tidy fmt vet lint build prepare run test cover clean analytics ensure-valid
 
 help:    ## Show targets
 	@echo "Targets:" && printf "  %s\n" \
 	  deps tidy fmt vet lint build prepare run test cover clean analytics
+
+ensure-valid: tidy test lint vet examples
 
 deps:    ## Download & tidy modules
 	$(call run,deps)

@@ -82,8 +82,10 @@ func (svr *MCPServer) Initialize() (err error) {
 
 	// If XMLUIDir is not provided, automatically download and cache the repository
 	if svrCfg.XMLUIDir == "" {
+		var cachedRepo string
+
 		logger.Debug("No XMLUI directory specified, using cached repository.")
-		cachedRepo, err := EnsureXMLUIRepo(svr.logger)
+		cachedRepo, err = EnsureXMLUIRepo(svr.logger)
 		if err != nil {
 			err = fmt.Errorf("failed to ensure XMLUI repository: %w (you can specify a local XMLUI directory as an argument)", err)
 			goto end
@@ -111,14 +113,20 @@ func (svr *MCPServer) Initialize() (err error) {
 
 	// Initialize analytics
 	err = mcpsvr.InitializeAnalytics(svr.logger)
+	if err != nil {
+		err = fmt.Errorf("failed to initialize analytics: %w", err)
+		goto end
+	}
 
 	// Setup all tools and prompts
-	if err := svr.setupTools(); err != nil {
+	err = svr.setupTools()
+	if err != nil {
 		err = fmt.Errorf("failed to setup tools: %w", err)
 		goto end
 	}
 
-	if err := svr.setupPrompts(); err != nil {
+	err = svr.setupPrompts()
+	if err != nil {
 		err = fmt.Errorf("failed to setup prompts: %w", err)
 		goto end
 	}

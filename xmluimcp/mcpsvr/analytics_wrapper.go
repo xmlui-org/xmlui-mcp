@@ -3,17 +3,9 @@ package mcpsvr
 import (
 	"context"
 	"log/slog"
-	"os"
-	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-)
-
-// Global debug log file handle and mutex for thread-safe writing
-var (
-	debugLogFile  *os.File
-	debugLogMutex sync.Mutex
 )
 
 type ToolHandler = func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
@@ -39,7 +31,7 @@ func WithAnalytics(toolName string, handler ToolHandler, logger *slog.Logger) To
 		// DEBUG: Log after calling original handler
 		logger.Debug("WithAnalytics AFTER_HANDLER",
 			slog.String("tool", toolName),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 			slog.Bool("result_nil", result == nil),
 		)
 

@@ -6,25 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
-
-// Helper: Convert title to URL anchor
-func titleToAnchor(title string) string {
-	// Convert title to URL anchor
-	anchor := strings.ToLower(title)
-	anchor = strings.ReplaceAll(anchor, " ", "-")
-	// Remove special characters, keep only letters, numbers, hyphens
-	var result strings.Builder
-	for _, r := range anchor {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
-}
 
 // NewListHowtoTool returns the MCP tool and handler for listing howto titles
 func NewListHowtoTool(xmluiDir string, logger *slog.Logger) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {

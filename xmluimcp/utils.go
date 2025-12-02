@@ -84,39 +84,3 @@ func printStartupInfo(prompts []mcp.Prompt, tools []mcp.Tool, xmluiRulesHandler 
 	}
 
 }
-
-// getToolInfo creates ToolInfo from mcp.Tool
-func getToolInfo(tool mcp.Tool) ToolInfo {
-	return ToolInfo{
-		Name:        tool.Name,
-		Description: tool.Description,
-		InputSchema: tool.InputSchema.Properties,
-	}
-}
-
-// getXmluiRulesContent extracts XMLUI rules content from the prompt handler
-func getXmluiRulesContent(handler PromptHandler) string {
-	if handler == nil {
-		return ""
-	}
-
-	ctx := context.Background()
-	request := mcp.GetPromptRequest{}
-	result, err := handler(ctx, request)
-	if err != nil {
-		return ""
-	}
-
-	if len(result.Messages) == 0 {
-		return ""
-	}
-
-	switch content := result.Messages[0].Content.(type) {
-	case *mcp.TextContent:
-		return content.Text
-	case mcp.TextContent:
-		return content.Text
-	default:
-		return ""
-	}
-}

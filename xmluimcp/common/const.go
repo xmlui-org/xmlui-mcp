@@ -28,6 +28,8 @@ const (
 	// for our own convenince andwe do not expect to distribute it.
 	ExeName dt.Filename = "xmlui-mcp"
 
+	LogPath dt.PathSegments = "logs"
+
 	// GitHubRepoURL provides the GitHub repo for this project for use in error messages
 	// TODO: Can we change this Github URL to be "https://github.com/xmlui-org/xmlui-mcp"?
 	GitHubRepoURL dt.URL = "https://github.com/xmlui-org/mcp"

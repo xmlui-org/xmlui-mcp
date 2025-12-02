@@ -4,10 +4,10 @@ import (
 	"context"
 	"os"
 
+	"github.com/mikeschinkel/go-cfgstore"
 	"github.com/mikeschinkel/go-cliutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/xmluihelpers"
 )
 
 // RunCLI is the CLI entry point for the XMLUI MCP server.
@@ -43,7 +43,7 @@ func RunCLI() {
 	}
 
 	appInfo = AppInfo()
-	wr, err = xmluihelpers.CreateWriterLogger(&xmluihelpers.WriterLoggerArgs{
+	wr, err = cfgstore.CreateWriterLogger(&cfgstore.WriterLoggerArgs{
 		Quiet:      options.Quiet(),
 		Verbosity:  options.Verbosity(),
 		ConfigSlug: appInfo.ConfigSlug(),
@@ -60,7 +60,7 @@ func RunCLI() {
 		Options: cfgOpts,
 	})
 	if err != nil {
-		wr.Writer.Errorf("Failed to load config: %v\n", err)
+		wr.Errorf("Failed to load config: %v\n", err)
 		os.Exit(cliutil.ExitConfigLoadError)
 	}
 
@@ -72,7 +72,7 @@ func RunCLI() {
 		Writer:  wr.Writer,
 	})
 	if err != nil {
-		wr.Writer.Errorf("Failed to parse config: %v\n", err)
+		wr.Errorf("Failed to parse config: %v\n", err)
 		os.Exit(cliutil.ExitConfigParseError)
 	}
 
@@ -90,7 +90,7 @@ func RunCLI() {
 	err = Run(ctx, args)
 
 	if err != nil {
-		wr.Writer.Errorf("MCP server error: %v\n", err)
+		wr.Errorf("MCP server error: %v\n", err)
 		os.Exit(cliutil.ExitUnknownRuntimeError)
 	}
 }

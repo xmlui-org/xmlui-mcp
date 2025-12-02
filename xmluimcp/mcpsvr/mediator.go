@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mikeschinkel/go-dt"
 )
 
 //
@@ -98,17 +100,15 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	if cfg.Classifier == nil {
 		cfg.Classifier = SimpleClassifier(homeDir)
 	}
-	if cfg.EnableFilenameMatches == false {
-		// leave as-is; default is true below
-	} else {
-		cfg.EnableFilenameMatches = true
-	}
+	// leave as-is; default is true below
+	cfg.EnableFilenameMatches = true
+
 	if len(cfg.SectionKeys) == 0 {
 		cfg.SectionKeys = []string{"components", "howtos", "examples", "source"}
 	}
 
 	// Prepare accumulators
-	results := []string{}                               // human-visible lines
+	results := make([]string, 0)                        // human-visible lines
 	seen := map[string]struct{}{}                       // dedupe key: path:line:text
 	uniqueFiles := make(map[string]map[string]struct{}) // section -> set of file paths
 
@@ -204,7 +204,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				if err != nil {
 					return nil
 				}
-				defer f.Close()
+				defer dt.CloseOrLog(f)
 
 				sc := bufio.NewScanner(f)
 				ln := 1

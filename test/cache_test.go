@@ -1,4 +1,4 @@
-package xmluimcp
+package test
 
 import (
 	"os"
@@ -6,10 +6,13 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/mikeschinkel/go-testutil"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
 )
 
 func TestGetCacheDir(t *testing.T) {
-	cacheDir, err := GetCacheDir()
+	cacheDir, err := xmluimcp.GetCacheDir()
 	if err != nil {
 		t.Fatalf("GetCacheDir() failed: %v", err)
 	}
@@ -63,7 +66,7 @@ func TestGetCacheDir(t *testing.T) {
 }
 
 func TestGetRepoDir(t *testing.T) {
-	repoDir, err := GetRepoDir()
+	repoDir, err := xmluimcp.GetRepoDir()
 	if err != nil {
 		t.Fatalf("GetRepoDir() failed: %v", err)
 	}
@@ -78,7 +81,7 @@ func TestGetRepoDir(t *testing.T) {
 	}
 
 	// Parent should be the cache directory
-	cacheDir, _ := GetCacheDir()
+	cacheDir, _ := xmluimcp.GetCacheDir()
 	expectedRepo := filepath.Join(cacheDir, "repo")
 	if repoDir != expectedRepo {
 		t.Errorf("Expected repo dir %s, got %s", expectedRepo, repoDir)
@@ -88,7 +91,7 @@ func TestGetRepoDir(t *testing.T) {
 func TestIsRepoValid(t *testing.T) {
 	var err error
 	// Test with non-existent directory
-	if isRepoValid("/nonexistent/path/to/repo") {
+	if xmluimcp.IsRepoValid("/nonexistent/path/to/repo") {
 		t.Error("isRepoValid() should return false for non-existent directory")
 	}
 
@@ -96,16 +99,16 @@ func TestIsRepoValid(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Test with empty directory
-	if isRepoValid(tempDir) {
+	if xmluimcp.IsRepoValid(tempDir) {
 		t.Error("isRepoValid() should return false for empty directory")
 	}
 
 	// Create version marker but no content
-	err = writeVersionMarker(tempDir, "xmlui@0.11.4")
+	err = xmluimcp.WriteVersionMarker(tempDir, "xmlui@0.11.4")
 	if err != nil {
 		t.Errorf("writeVersionMarker() failed; %v", err)
 	}
-	if isRepoValid(tempDir) {
+	if xmluimcp.IsRepoValid(tempDir) {
 		t.Error("isRepoValid() should return false when essential directories are missing")
 	}
 
@@ -114,7 +117,7 @@ func TestIsRepoValid(t *testing.T) {
 	mkdirAll(t, tempDir, "xmlui", 0755)
 
 	// Now it should be valid
-	if !isRepoValid(tempDir) {
+	if !xmluimcp.IsRepoValid(tempDir) {
 		t.Error("isRepoValid() should return true when all requirements are met")
 	}
 }
@@ -124,13 +127,13 @@ func TestVersionMarker(t *testing.T) {
 	version := "xmlui@0.11.4"
 
 	// Test writing
-	err := writeVersionMarker(tempDir, version)
+	err := xmluimcp.WriteVersionMarker(tempDir, version)
 	if err != nil {
 		t.Fatalf("writeVersionMarker() failed: %v", err)
 	}
 
 	// Test reading
-	readVersion, err := readVersionMarker(tempDir)
+	readVersion, err := xmluimcp.ReadVersionMarker(tempDir)
 	if err != nil {
 		t.Fatalf("readVersionMarker() failed: %v", err)
 	}
@@ -140,7 +143,7 @@ func TestVersionMarker(t *testing.T) {
 	}
 
 	// Test reading non-existent marker
-	_, err = readVersionMarker("/nonexistent/path")
+	_, err = xmluimcp.ReadVersionMarker("/nonexistent/path")
 	if err == nil {
 		t.Error("readVersionMarker() should fail for non-existent directory")
 	}
@@ -153,7 +156,7 @@ func TestGetLatestXMLUITag(t *testing.T) {
 		t.Skip("Skipping network test")
 	}
 
-	version, zipURL, err := getLatestXMLUITag()
+	version, zipURL, err := xmluimcp.GetLatestXMLUITag(testutil.GetBufferedLogger())
 
 	// If it fails (e.g., rate limit, network issues), that's okay for a test
 	if err != nil {

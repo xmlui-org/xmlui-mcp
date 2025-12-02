@@ -28,8 +28,8 @@ type GitHubRelease struct {
 	CreatedAt  string `json:"created_at"`
 }
 
-// getLatestXMLUITag queries GitHub API for the latest xmlui@* release
-func getLatestXMLUITag(logger *slog.Logger) (string, string, error) {
+// GetLatestXMLUITag queries GitHub API for the latest xmlui@* release
+func GetLatestXMLUITag(logger *slog.Logger) (string, string, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -163,8 +163,8 @@ func unzipFile(zipPath, destDir string, logger *slog.Logger) error {
 	return nil
 }
 
-// writeVersionMarker writes a version marker file to track which version is cached
-func writeVersionMarker(repoDir, version string) error {
+// WriteVersionMarker writes a version marker file to track which version is cached
+func WriteVersionMarker(repoDir, version string) error {
 	markerPath := filepath.Join(repoDir, versionMarkerFile)
 	return os.WriteFile(markerPath, []byte(version), 0644)
 }
@@ -179,8 +179,8 @@ func ReadVersionMarker(repoDir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// isRepoValid checks if the cached repo exists and is valid
-func isRepoValid(repoDir string) bool {
+// IsRepoValid checks if the cached repo exists and is valid
+func IsRepoValid(repoDir string) bool {
 	// Check if directory exists
 	info, err := os.Stat(repoDir)
 	if err != nil || !info.IsDir() {
@@ -216,24 +216,23 @@ func EnsureXMLUIRepo(logger *slog.Logger) (string, error) {
 	}
 
 	// Check if repo is already valid
-	if isRepoValid(repoDir) {
-		logger.Info("XMLUI repo already cached at: %s\n", repoDir)
+	if IsRepoValid(repoDir) {
 		version, _ := ReadVersionMarker(repoDir)
-		logger.Info("Cached version: %s\n", version)
+		logger.Info("XMLUI repo already cached", "cache_dir", repoDir, "cache_version", version)
 		return repoDir, nil
 	}
 
 	logger.Error("XMLUI repo not found or invalid, downloading...\n")
 
 	// Try to get the latest version from GitHub
-	version, zipURL, err := getLatestXMLUITag(logger)
+	version, zipURL, err := GetLatestXMLUITag(logger)
 	if err != nil {
-		logger.Info("Failed to get latest tag from GitHub: %v\n", err)
-		logger.Info("Falling back to version: %s\n", fallbackVersion)
+		logger.Info("Failed to get latest tag from GitHub", "error", err)
+		logger.Info("Falling back", "fallback_version", fallbackVersion)
 		version = fallbackVersion
 		zipURL = fallbackZipURL
 	} else {
-		logger.Info("Latest version from GitHub: %s\n", version)
+		logger.Info("Latest version from GitHub", "github_version", version)
 	}
 
 	// Use a temporary directory for atomic download
@@ -328,7 +327,7 @@ func EnsureXMLUIRepo(logger *slog.Logger) (string, error) {
 	}
 
 	// Write version marker
-	if err := writeVersionMarker(finalDir, version); err != nil {
+	if err := WriteVersionMarker(finalDir, version); err != nil {
 		return "", fmt.Errorf("failed to write version marker to %s: %w", finalDir, err)
 	}
 
@@ -348,9 +347,10 @@ func EnsureXMLUIRepo(logger *slog.Logger) (string, error) {
 	// Clean up temp directory
 	removeAllOrLog(tempDir, logger)
 
-	logger.Info("XMLUI repo successfully cached at: %s\n", repoDir)
-	logger.Info("Version: %s\n", version)
-
+	logger.Info("XMLUI repo successfully cached",
+		slog.String("cache_dir", repoDir),
+		slog.String("cached_version", version),
+	)
 	return repoDir, nil
 }
 

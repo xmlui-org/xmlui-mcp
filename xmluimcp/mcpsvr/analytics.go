@@ -3,6 +3,7 @@ package mcpsvr
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -74,40 +75,41 @@ func (a *Analytics) Initialize() (err error) {
 
 func (a *Analytics) loadData() (err error) {
 	const maxLineSize = 1024 * 1024
-	var file, data *os.File
-	var dataFile dt.Filepath
+	var workFile *os.File
+	var logFilename, workFilename dt.Filepath
 	var scanner *bufio.Scanner
 	var buf []byte
 
-	logFile := logutil.GetJSONFilepath(a.logger)
-
-	file, err = dt.CreateTemp(dt.TempDir(), "xmlui-analytics-*")
+	workFile, err = dt.CreateTemp(dt.TempDir(), "xmlui-analytics-*.json")
 	if err != nil {
-		a.logger.Debug("Failed to create temp file")
+		a.logger.Debug("Failed to create temporary logFile")
 		goto end
 	}
-	defer dt.CloseOrLog(file)
+	defer dt.CloseOrLog(workFile)
 
-	dataFile = dt.Filepath(file.Name())
-	err = logFile.CopyTo(dataFile, nil)
-	if err != nil {
-		a.logger.Debug("Failed to copy log file",
-			"log_file", logFile,
-			"working_file", dataFile,
+	logFilename = logutil.GetJSONFilepath(a.logger)
+	workFilename = dt.Filepath(workFile.Name())
+	defer dt.LogOnError(workFilename.Remove())
+	err = logFilename.CopyTo(workFilename, &dt.CopyOptions{
+		Overwrite: true,
+	})
+	if !os.IsNotExist(err) && err != nil {
+		a.logger.Debug("Failed to copy log logFile",
+			"log_file", logFilename,
+			"working_file", workFilename,
 			"err", err,
 		)
 		goto end
 	}
-
-	data, err = dataFile.Open()
+	_, err = workFile.Seek(0, io.SeekStart)
 	if err != nil {
-		a.logger.Debug("Failed to open data file",
-			"data_file", dataFile,
+		a.logger.Debug("Failed to reset work file back to start of file",
+			"data_file", workFilename,
 			"err", err,
 		)
 		goto end
 	}
-	scanner = bufio.NewScanner(data)
+	scanner = bufio.NewScanner(workFile)
 	buf = make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, maxLineSize)
 
@@ -139,7 +141,7 @@ func (a *Analytics) parseJSONLine(line string) {
 
 	err := json.Unmarshal([]byte(line), &typeCheck)
 	if err != nil {
-		a.logger.Debug("Failed to parse type from analytics line: %s\n", line)
+		a.logger.Debug("Failed to parse entry type in analytics", "line", line)
 		goto end
 	}
 
@@ -301,9 +303,6 @@ func (a *Analytics) GetSummary() map[string]any {
 
 // Global analytics instance
 var globalAnalytics *Analytics
-
-// Global debug log path for server.log; set alongside analytics file
-var debugLogPath string
 
 func InitializeAnalytics(logger *slog.Logger) (err error) {
 	var logFile dt.Filepath

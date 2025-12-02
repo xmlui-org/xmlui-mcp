@@ -1,7 +1,6 @@
-package xmluimcp_test
+package test
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +18,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 
 	// Get the repo directory
-	repoDir, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
+	repoDir, err := xmluimcp.EnsureXMLUIRepo(testutil.GetBufferedLogger())
 	if err != nil {
 		t.Fatalf("EnsureXMLUIRepo() failed: %v", err)
 	}
@@ -71,7 +70,7 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 
 	// Test that subsequent calls use the cached version (should be fast)
-	repoDir2, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
+	repoDir2, err := xmluimcp.EnsureXMLUIRepo(testutil.GetBufferedLogger())
 	if err != nil {
 		t.Fatalf("Second EnsureXMLUIRepo() call failed: %v", err)
 	}
@@ -81,15 +80,15 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 	}
 }
 
-// TestServerWithAutoDownload tests creating a server with automatic repo download
-func TestServerWithAutoDownload(t *testing.T) {
+// TestServerWithDownloadedRepo tests creating a server with a manually downloaded repo
+func TestServerWithDownloadedRepo(t *testing.T) {
 	// This test requires internet connectivity
 	if os.Getenv("SKIP_NETWORK_TESTS") != "" {
 		t.Skip("Skipping network test")
 	}
 
-	// Ensure repo is downloaded
-	xmluiDir, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
+	// Manually ensure repo is downloaded first
+	xmluiDir, err := xmluimcp.EnsureXMLUIRepo(testutil.GetBufferedLogger())
 	if err != nil {
 		t.Fatalf("Failed to ensure XMLUI repo: %v", err)
 	}
@@ -139,7 +138,7 @@ func TestCachePersistence(t *testing.T) {
 	}
 
 	// First call - may download
-	dir1, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
+	dir1, err := xmluimcp.EnsureXMLUIRepo(testutil.GetBufferedLogger())
 	if err != nil {
 		t.Fatalf("First call failed: %v", err)
 	}
@@ -150,7 +149,7 @@ func TestCachePersistence(t *testing.T) {
 	}
 
 	// Second call - should use cache
-	dir2, err := xmluimcp.EnsureXMLUIRepo(slog.New(testutil.NewBufferedLogHandler()))
+	dir2, err := xmluimcp.EnsureXMLUIRepo(testutil.GetBufferedLogger())
 	if err != nil {
 		t.Fatalf("Second call failed: %v", err)
 	}

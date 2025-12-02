@@ -5,8 +5,6 @@ import (
 	"github.com/mikeschinkel/go-dt"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
-
-	. "github.com/mikeschinkel/go-doterr"
 )
 
 // ParseOptions converts raw options from mcpcfg.Options into

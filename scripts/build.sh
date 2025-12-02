@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
 cd cmd
-go build -o ../bin/xmlui-mcp
+GOEXPERIMENT=jsonv2 go build -o ../bin/xmlui-mcp
 echo "Build completed successfully"
