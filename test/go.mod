@@ -7,7 +7,7 @@ replace github.com/xmlui-org/xmlui-mcp/xmluimcp => ../xmluimcp
 require (
 	github.com/mark3labs/mcp-go v0.43.1
 	github.com/mikeschinkel/go-cfgstore v0.2.2
-	github.com/mikeschinkel/go-dt v0.3.0
+	github.com/mikeschinkel/go-dt v0.3.1
 	github.com/mikeschinkel/go-testutil v0.2.1
 	github.com/xmlui-org/xmlui-mcp/xmluimcp v0.2.2
 )
