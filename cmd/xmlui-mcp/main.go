@@ -9,36 +9,36 @@ import (
 	"xmlui-mcp/pkg/xmluimcp"
 )
 
+// stringSlice handles repeated string flags
+type stringSlice []string
+
+func (s *stringSlice) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *stringSlice) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 func main() {
 	// Define command-line flags
 	var (
-		httpMode = flag.Bool("http", false, "Run in HTTP mode instead of stdio")
-		port     = flag.String("port", "8080", "Port to listen on in HTTP mode")
+		httpMode    = flag.Bool("http", false, "Run in HTTP mode instead of stdio")
+		port        = flag.String("port", "8080", "Port to listen on in HTTP mode")
+		exampleDirs stringSlice
 	)
 
-	// Parse flags but allow positional arguments
+	// Bind example flag and its alias
+	flag.Var(&exampleDirs, "example", "Example directory path (can be repeated, alias for -e)")
+	flag.Var(&exampleDirs, "e", "Example directory path (can be repeated)")
+
+	// Parse flags
 	flag.Parse()
-
-	// Get positional arguments after flags
-	args := flag.Args()
-
-	exampleRoot := ""
-	exampleDirs := []string{}
-
-	// Optional arg 1: example root
-	if len(args) >= 1 {
-		exampleRoot = args[0]
-	}
-
-	// Optional arg 2: comma-separated subdirs
-	if len(args) >= 2 {
-		exampleDirs = strings.Split(args[1], ",")
-	}
 
 	// Create server configuration
 	// The XMLUI repository will be automatically downloaded and cached by NewServer
 	config := xmluimcp.ServerConfig{
-		ExampleRoot: exampleRoot,
 		ExampleDirs: exampleDirs,
 		HTTPMode:    *httpMode,
 		Port:        *port,

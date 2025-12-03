@@ -20,11 +20,9 @@ import (
 
 // ServerConfig holds configuration for the XMLUI MCP server
 type ServerConfig struct {
-	ExampleRoot   string   // Optional: root directory for examples
-	ExampleDirs   []string // Optional: subdirectories within example root
-	HTTPMode      bool     // Whether to run in HTTP mode
-	Port          string   // Port for HTTP mode (default: "8080")
-	AnalyticsFile string   // Path to analytics file (optional)
+	ExampleDirs []string // Optional: directories for examples
+	HTTPMode    bool     // Whether to run in HTTP mode
+	Port        string   // Port for HTTP mode (default: "8080")
 }
 
 // MCPServer represents an XMLUI MCP server instance
@@ -41,34 +39,30 @@ type MCPServer struct {
 // NewServer creates a new XMLUI MCP server with the given configuration
 func NewServer(config ServerConfig) (*MCPServer, error) {
 	// Set up analytics file path first (needed for debug log path)
-	if config.AnalyticsFile == "" {
-		// Put analytics file in cache directory for consistency
-		cacheDir, err := GetCacheDir()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: Failed to get cache directory for analytics file: %v\n", err)
-			// Fallback to current directory if cache directory unavailable
-			config.AnalyticsFile = filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
-		} else {
-			config.AnalyticsFile = filepath.Join(cacheDir, "xmlui-mcp-analytics.json")
-		}
+	// Put analytics file in cache directory for consistency
+	cacheDir, err := GetCacheDir()
+	var analyticsFile string
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: Failed to get cache directory for analytics file: %v\n", err)
+		// Fallback to current directory if cache directory unavailable
+		analyticsFile = filepath.Join(getCurrentDir(), "xmlui-mcp-analytics.json")
+	} else {
+		analyticsFile = filepath.Join(cacheDir, "xmlui-mcp-analytics.json")
 	}
 
 	// Set debug log path early, before any logging happens
 	// This ensures all logs go to the cache directory, not the current working directory
-	logPath := filepath.Join(filepath.Dir(config.AnalyticsFile), "server.log")
+	logPath := filepath.Join(filepath.Dir(analyticsFile), "xmlui-mcp-server.log")
 	mcpserver.SetDebugLogPath(logPath)
 
 	// Always download and cache the repository
 	mcpserver.WriteDebugLog("Ensuring cached XMLUI repository is available...\n")
-	fmt.Fprintf(os.Stderr, "Ensuring cached XMLUI repository is available...\n")
 	cachedRepo, err := EnsureXMLUIRepo()
 	if err != nil {
 		mcpserver.WriteDebugLog("ERROR: Failed to ensure XMLUI repository: %v\n", err)
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to ensure XMLUI repository: %v\n", err)
-		return nil, fmt.Errorf("failed to ensure XMLUI repository: %w", err)
+		return nil, fmt.Errorf("Failed to ensure the presence of XMLUI repository: %w\nFor more information, check the logs at: %s", err, logPath)
 	}
 	mcpserver.WriteDebugLog("Using cached XMLUI repository at: %s\n", cachedRepo)
-	fmt.Fprintf(os.Stderr, "Using cached XMLUI repository at: %s\n", cachedRepo)
 
 	// Set defaults
 	if config.Port == "" {
@@ -82,7 +76,7 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 	)
 
 	// Initialize analytics
-	mcpserver.InitializeAnalytics(config.AnalyticsFile)
+	mcpserver.InitializeAnalytics(analyticsFile)
 
 	// Create session manager
 	sessionManager := &SessionManager{
@@ -124,12 +118,10 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 func (s *MCPServer) setupTools() error {
 	// Build example roots from configuration
 	exampleRoots := []string{}
-	if s.config.ExampleRoot != "" && len(s.config.ExampleDirs) > 0 {
-		for _, d := range s.config.ExampleDirs {
-			trimmed := strings.TrimSpace(d)
-			if trimmed != "" {
-				exampleRoots = append(exampleRoots, filepath.Join(s.config.ExampleRoot, trimmed))
-			}
+	for _, d := range s.config.ExampleDirs {
+		trimmed := strings.TrimSpace(d)
+		if trimmed != "" {
+			exampleRoots = append(exampleRoots, trimmed)
 		}
 	}
 
@@ -446,6 +438,7 @@ func (s *MCPServer) ServeStdio() error {
 	go func() {
 		serverDone <- server.ServeStdio(s.mcpServer)
 	}()
+	fmt.Fprintf(os.Stderr, "Listening for messages on standard input...\n")
 
 	// Wait for either server error or signal
 	select {
@@ -677,6 +670,7 @@ func (s *MCPServer) ServeHTTP() error {
 
 	addr := ":" + s.config.Port
 	mcpserver.WriteDebugLog("Starting HTTP server on port %s\n", s.config.Port)
+	fmt.Fprintf(os.Stderr, "Server listening on http://localhost%s...\n", addr)
 	mcpserver.WriteDebugLog("SSE endpoint: http://localhost%s/sse\n", addr)
 	mcpserver.WriteDebugLog("Message endpoint: http://localhost%s/message\n", addr)
 	mcpserver.WriteDebugLog("Tools endpoint: http://localhost%s/tools\n", addr)

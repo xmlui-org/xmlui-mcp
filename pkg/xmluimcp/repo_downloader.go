@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	githubAPIURL     = "https://api.github.com/repos/xmlui-org/xmlui/releases"
-	fallbackVersion  = "xmlui@0.11.4"
-	fallbackZipURL   = "https://github.com/xmlui-org/xmlui/archive/refs/tags/xmlui@0.11.4.zip"
+	githubAPIURL      = "https://api.github.com/repos/xmlui-org/xmlui/releases"
+	fallbackVersion   = "xmlui@0.11.4"
+	fallbackZipURL    = "https://github.com/xmlui-org/xmlui/archive/refs/tags/xmlui@0.11.4.zip"
 	versionMarkerFile = ".xmlui-version"
 )
 
@@ -217,17 +217,14 @@ func EnsureXMLUIRepo() (string, error) {
 		os.Remove(lockFile) // Ignore errors, it's just cleanup
 
 		mcpserver.WriteDebugLog("XMLUI repo already cached at: %s\n", repoDir)
-		fmt.Fprintf(os.Stderr, "XMLUI repo already cached at: %s\n", repoDir)
 		version, _ := readVersionMarker(repoDir)
 		mcpserver.WriteDebugLog("Cached version: %s\n", version)
-		fmt.Fprintf(os.Stderr, "Cached version: %s\n", version)
 		return repoDir, nil
 	}
 
 	// Acquire file-based lock to prevent concurrent downloads across processes
 	lockFile := repoDir + ".lock"
 	mcpserver.WriteDebugLog("Acquiring file-based download lock: %s\n", lockFile)
-	fmt.Fprintf(os.Stderr, "Acquiring file-based download lock...\n")
 
 	// Open or create lock file
 	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_WRONLY, 0644)
@@ -250,20 +247,16 @@ func EnsureXMLUIRepo() (string, error) {
 	}()
 
 	mcpserver.WriteDebugLog("File-based download lock acquired\n")
-	fmt.Fprintf(os.Stderr, "File-based download lock acquired\n")
 
 	// Check again after acquiring lock (another process might have downloaded it)
 	if isRepoValid(repoDir) {
 		mcpserver.WriteDebugLog("XMLUI repo was cached by another process while waiting for lock\n")
-		fmt.Fprintf(os.Stderr, "XMLUI repo was cached by another process while waiting for lock\n")
 		version, _ := readVersionMarker(repoDir)
 		mcpserver.WriteDebugLog("Cached version: %s\n", version)
-		fmt.Fprintf(os.Stderr, "Cached version: %s\n", version)
 		return repoDir, nil
 	}
 
 	mcpserver.WriteDebugLog("XMLUI repo not found or invalid, downloading...\n")
-	fmt.Fprintf(os.Stderr, "XMLUI repo not found or invalid, downloading...\n")
 
 	// Try to get the latest version from GitHub
 	version, zipURL, err := getLatestXMLUITag()
