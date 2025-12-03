@@ -44,7 +44,7 @@ func getLatestXMLUITag() (string, string, error) {
 		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set User-Agent to avoid GitHub API rate limiting issues
+	//From Github docs: "Requests with no User-Agent header will be rejected."
 	req.Header.Set("User-Agent", "xmlui-mcp")
 
 	resp, err := client.Do(req)
