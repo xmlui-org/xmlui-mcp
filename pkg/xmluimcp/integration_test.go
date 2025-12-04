@@ -3,6 +3,7 @@ package xmluimcp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,10 +14,10 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 		t.Skip("Skipping network test")
 	}
 
-	// Get the repo directory
-	repoDir, err := EnsureXMLUIRepo()
+	// Get the repo directory (latest version)
+	repoDir, err := EnsureXMLUIRepo("")
 	if err != nil {
-		t.Fatalf("EnsureXMLUIRepo() failed: %v", err)
+		t.Fatalf("EnsureXMLUIRepo(\"\") failed: %v", err)
 	}
 
 	// Verify it's not empty
@@ -52,23 +53,18 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 		}
 	}
 
-	// Verify version marker exists
-	version, err := readVersionMarker(repoDir)
-	if err != nil {
-		t.Fatalf("Version marker not found: %v", err)
+	// Verify directory name contains version
+	dirName := filepath.Base(repoDir)
+	if !strings.HasPrefix(dirName, "xmlui@") {
+		t.Errorf("Directory name %s does not start with xmlui@", dirName)
 	}
 
-	t.Logf("Cached version: %s", version)
-
-	// Verify version format
-	if len(version) < 6 || version[:6] != "xmlui@" {
-		t.Errorf("Invalid version format: %s", version)
-	}
+	t.Logf("Cached version (from dir name): %s", dirName)
 
 	// Test that subsequent calls use the cached version (should be fast)
-	repoDir2, err := EnsureXMLUIRepo()
+	repoDir2, err := EnsureXMLUIRepo("")
 	if err != nil {
-		t.Fatalf("Second EnsureXMLUIRepo() call failed: %v", err)
+		t.Fatalf("Second EnsureXMLUIRepo(\"\") call failed: %v", err)
 	}
 
 	if repoDir2 != repoDir {
@@ -130,35 +126,21 @@ func TestCachePersistence(t *testing.T) {
 	}
 
 	// First call - may download
-	dir1, err := EnsureXMLUIRepo()
+	dir1, err := EnsureXMLUIRepo("")
 	if err != nil {
 		t.Fatalf("First call failed: %v", err)
 	}
 
-	version1, err := readVersionMarker(dir1)
-	if err != nil {
-		t.Fatalf("Failed to read version marker: %v", err)
-	}
-
 	// Second call - should use cache
-	dir2, err := EnsureXMLUIRepo()
+	dir2, err := EnsureXMLUIRepo("")
 	if err != nil {
 		t.Fatalf("Second call failed: %v", err)
 	}
 
-	version2, err := readVersionMarker(dir2)
-	if err != nil {
-		t.Fatalf("Failed to read version marker on second call: %v", err)
-	}
-
-	// Verify same directory and version
+	// Verify same directory
 	if dir1 != dir2 {
 		t.Errorf("Different directories returned: %s vs %s", dir1, dir2)
 	}
 
-	if version1 != version2 {
-		t.Errorf("Different versions: %s vs %s", version1, version2)
-	}
-
-	t.Logf("Cache persistence verified: %s at %s", version1, dir1)
+	t.Logf("Cache persistence verified at %s", dir1)
 }

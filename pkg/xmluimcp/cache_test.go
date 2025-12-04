@@ -62,26 +62,26 @@ func TestGetCacheDir(t *testing.T) {
 	}
 }
 
-func TestGetRepoDir(t *testing.T) {
-	repoDir, err := GetRepoDir()
+func TestGetReposDir(t *testing.T) {
+	reposDir, err := GetReposDir()
 	if err != nil {
-		t.Fatalf("GetRepoDir() failed: %v", err)
+		t.Fatalf("GetReposDir() failed: %v", err)
 	}
 
-	if repoDir == "" {
-		t.Fatal("GetRepoDir() returned empty string")
+	if reposDir == "" {
+		t.Fatal("GetReposDir() returned empty string")
 	}
 
-	// Should end with /repo
-	if filepath.Base(repoDir) != "repo" {
-		t.Errorf("Expected repo directory to end with 'repo', got %s", repoDir)
+	// Should end with /xmlui-repoes
+	if filepath.Base(reposDir) != "xmlui-repoes" {
+		t.Errorf("Expected repos directory to end with 'xmlui-repoes', got %s", reposDir)
 	}
 
 	// Parent should be the cache directory
 	cacheDir, _ := GetCacheDir()
-	expectedRepo := filepath.Join(cacheDir, "repo")
-	if repoDir != expectedRepo {
-		t.Errorf("Expected repo dir %s, got %s", expectedRepo, repoDir)
+	expectedRepos := filepath.Join(cacheDir, "xmlui-repoes")
+	if reposDir != expectedRepos {
+		t.Errorf("Expected repos dir %s, got %s", expectedRepos, reposDir)
 	}
 }
 
@@ -99,46 +99,18 @@ func TestIsRepoValid(t *testing.T) {
 		t.Error("isRepoValid() should return false for empty directory")
 	}
 
-	// Create version marker but no content
-	writeVersionMarker(tempDir, "xmlui@0.11.4")
+	// Create partial structure
+	os.MkdirAll(filepath.Join(tempDir, "docs"), 0755)
 	if isRepoValid(tempDir) {
-		t.Error("isRepoValid() should return false when essential directories are missing")
+		t.Error("isRepoValid() should return false when 'xmlui' directory is missing")
 	}
 
 	// Create essential directories
-	os.MkdirAll(filepath.Join(tempDir, "docs"), 0755)
 	os.MkdirAll(filepath.Join(tempDir, "xmlui"), 0755)
 
 	// Now it should be valid
 	if !isRepoValid(tempDir) {
 		t.Error("isRepoValid() should return true when all requirements are met")
-	}
-}
-
-func TestVersionMarker(t *testing.T) {
-	tempDir := t.TempDir()
-	version := "xmlui@0.11.4"
-
-	// Test writing
-	err := writeVersionMarker(tempDir, version)
-	if err != nil {
-		t.Fatalf("writeVersionMarker() failed: %v", err)
-	}
-
-	// Test reading
-	readVersion, err := readVersionMarker(tempDir)
-	if err != nil {
-		t.Fatalf("readVersionMarker() failed: %v", err)
-	}
-
-	if readVersion != version {
-		t.Errorf("Expected version %s, got %s", version, readVersion)
-	}
-
-	// Test reading non-existent marker
-	_, err = readVersionMarker("/nonexistent/path")
-	if err == nil {
-		t.Error("readVersionMarker() should fail for non-existent directory")
 	}
 }
 

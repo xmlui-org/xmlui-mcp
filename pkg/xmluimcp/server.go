@@ -20,9 +20,10 @@ import (
 
 // ServerConfig holds configuration for the XMLUI MCP server
 type ServerConfig struct {
-	ExampleDirs []string // Optional: directories for examples
-	HTTPMode    bool     // Whether to run in HTTP mode
-	Port        string   // Port for HTTP mode (default: "8080")
+	ExampleDirs  []string // Optional: directories for examples
+	HTTPMode     bool     // Whether to run in HTTP mode
+	Port         string   // Port for HTTP mode (default: "8080")
+	XMLUIVersion string   // Specific XMLUI version to use (e.g. "0.11.4")
 }
 
 // MCPServer represents an XMLUI MCP server instance
@@ -57,7 +58,7 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 
 	// Always download and cache the repository
 	mcpserver.WriteDebugLog("Ensuring cached XMLUI repository is available...\n")
-	cachedRepo, err := EnsureXMLUIRepo()
+	cachedRepo, err := EnsureXMLUIRepo(config.XMLUIVersion)
 	if err != nil {
 		mcpserver.WriteDebugLog("ERROR: Failed to ensure XMLUI repository: %v\n", err)
 		return nil, fmt.Errorf("Failed to ensure the presence of XMLUI repository: %w\nFor more information, check the logs at: %s", err, logPath)

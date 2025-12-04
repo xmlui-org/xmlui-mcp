@@ -12,7 +12,6 @@ func TestNewServer(t *testing.T) {
 	}
 
 	config := ServerConfig{
-		ExampleRoot: "/tmp/test-examples",
 		ExampleDirs: []string{"demo"},
 		HTTPMode:    false,
 		Port:        "8080",

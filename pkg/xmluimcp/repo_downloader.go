@@ -3,11 +3,13 @@ package xmluimcp
 import (
 	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,14 +18,16 @@ import (
 )
 
 const (
-	githubAPIURL      = "https://api.github.com/repos/xmlui-org/xmlui/releases"
-	fallbackVersion   = "xmlui@0.11.4"
-	fallbackZipURL    = "https://github.com/xmlui-org/xmlui/archive/refs/tags/xmlui@0.11.4.zip"
-	versionMarkerFile = ".xmlui-version"
+	githubAPIURL   = "https://api.github.com/repos/xmlui-org/xmlui/releases"
+	maxCachedRepos = 5
+	metadataFile   = "metadata.json"
 )
 
 // downloadMutex prevents concurrent downloads within the same process
 var downloadMutex sync.Mutex
+
+// ErrVersionNotFound is returned when the requested version does not exist
+var ErrVersionNotFound = errors.New("version not found")
 
 // GitHubRelease represents a release from the GitHub API
 type GitHubRelease struct {
@@ -31,6 +35,11 @@ type GitHubRelease struct {
 	ZipballURL string `json:"zipball_url"`
 	TarballURL string `json:"tarball_url"`
 	CreatedAt  string `json:"created_at"`
+}
+
+// CacheMetadata stores access times for LRU eviction
+type CacheMetadata struct {
+	LastAccessTimeByRepo map[string]string `json:"lastAccessTimeByRepo"`
 }
 
 // getLatestXMLUITag queries GitHub API for the latest xmlui@* release
@@ -85,6 +94,10 @@ func downloadFile(url, destPath string) error {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrVersionNotFound
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status %d", resp.StatusCode)
@@ -158,33 +171,11 @@ func unzipFile(zipPath, destDir string) error {
 	return nil
 }
 
-// writeVersionMarker writes a version marker file to track which version is cached
-func writeVersionMarker(repoDir, version string) error {
-	markerPath := filepath.Join(repoDir, versionMarkerFile)
-	return os.WriteFile(markerPath, []byte(version), 0644)
-}
-
-// readVersionMarker reads the version marker file
-func readVersionMarker(repoDir string) (string, error) {
-	markerPath := filepath.Join(repoDir, versionMarkerFile)
-	data, err := os.ReadFile(markerPath)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
 // isRepoValid checks if the cached repo exists and is valid
 func isRepoValid(repoDir string) bool {
 	// Check if directory exists
 	info, err := os.Stat(repoDir)
 	if err != nil || !info.IsDir() {
-		return false
-	}
-
-	// Check if version marker exists
-	version, err := readVersionMarker(repoDir)
-	if err != nil || version == "" {
 		return false
 	}
 
@@ -202,27 +193,148 @@ func isRepoValid(repoDir string) bool {
 	return true
 }
 
-// EnsureXMLUIRepo ensures the XMLUI repository is available in the cache
-// Returns the path to the cached repository
-func EnsureXMLUIRepo() (string, error) {
-	repoDir, err := GetRepoDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get repo directory: %w", err)
+func updateMetadata(reposDir string, repoName string) error {
+	metadataPath := filepath.Join(reposDir, metadataFile)
+
+	// Read existing metadata
+	var metadata CacheMetadata
+	data, err := os.ReadFile(metadataPath)
+
+	if err == nil {
+		json.Unmarshal(data, &metadata)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if metadata.LastAccessTimeByRepo == nil {
+		metadata.LastAccessTimeByRepo = make(map[string]string)
 	}
 
-	// Check if repo is already valid (do this before acquiring lock)
+	// Update access time
+	metadata.LastAccessTimeByRepo[repoName] = time.Now().UTC().Format(time.RFC3339)
+
+	// Write back
+	newData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	return os.WriteFile(metadataPath, newData, 0644)
+}
+
+func cleanupCache(reposDir string) error {
+	metadataPath := filepath.Join(reposDir, metadataFile)
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		// If metadata cannot be read, do not clear old repos
+		return nil
+	}
+
+	var metadata CacheMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil // Invalid metadata, don't clear
+	}
+
+	// Collect existing repos
+	entries, err := os.ReadDir(reposDir)
+	if err != nil {
+		return err
+	}
+
+	var repos []string
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "xmlui@") {
+			repos = append(repos, entry.Name())
+		}
+	}
+
+	if len(repos) <= maxCachedRepos {
+		return nil
+	}
+
+	// Sort repos by access time
+	type repoEntry struct {
+		Name string
+		Time time.Time
+	}
+
+	var sortedRepos []repoEntry
+	for _, name := range repos {
+		tsStr, ok := metadata.LastAccessTimeByRepo[name]
+		var ts time.Time
+		if ok {
+			ts, _ = time.Parse(time.RFC3339, tsStr)
+		}
+		// If parsing fails or not found, it gets zero time (oldest)
+		sortedRepos = append(sortedRepos, repoEntry{Name: name, Time: ts})
+	}
+
+	sort.Slice(sortedRepos, func(i, j int) bool {
+		return sortedRepos[i].Time.Before(sortedRepos[j].Time)
+	})
+
+	// Delete oldest until we have maxCachedRepos
+	toDelete := len(sortedRepos) - maxCachedRepos
+	for i := range toDelete {
+		repoName := sortedRepos[i].Name
+		repoPath := filepath.Join(reposDir, repoName)
+		mcpserver.WriteDebugLog("Removing old cache: %s\n", repoName)
+		os.RemoveAll(repoPath)
+		delete(metadata.LastAccessTimeByRepo, repoName)
+	}
+
+	// Save updated metadata
+	newData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metadataPath, newData, 0644)
+}
+
+// EnsureXMLUIRepo ensures the XMLUI repository is available in the cache
+// Returns the path to the cached repository
+func EnsureXMLUIRepo(version string) (string, error) {
+	reposDir, err := GetReposDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get repos directory: %w", err)
+	}
+
+	var tagName string
+	var zipURL string
+
+	if version == "" {
+		// Fetch latest
+		t, url, err := getLatestXMLUITag()
+		if err != nil {
+			return "", fmt.Errorf("failed to get latest version: %w", err)
+		}
+		tagName = t
+		zipURL = url
+	} else {
+		// Use specified version
+		if strings.HasPrefix(version, "xmlui@") {
+			tagName = version
+		} else {
+			tagName = "xmlui@" + version
+		}
+		zipURL = fmt.Sprintf("https://github.com/xmlui-org/xmlui/archive/refs/tags/%s.zip", tagName)
+	}
+
+	repoDir := filepath.Join(reposDir, tagName)
+
+	// Check if repo is already valid
 	if isRepoValid(repoDir) {
-		// Clean up any stale lock file
-		lockFile := repoDir + ".lock"
-		os.Remove(lockFile) // Ignore errors, it's just cleanup
+		updateMetadata(reposDir, tagName)
+		cleanupCache(reposDir)
 
 		mcpserver.WriteDebugLog("XMLUI repo already cached at: %s\n", repoDir)
-		version, _ := readVersionMarker(repoDir)
-		mcpserver.WriteDebugLog("Cached version: %s\n", version)
 		return repoDir, nil
 	}
 
-	// Acquire file-based lock to prevent concurrent downloads across processes
+	// Ensure parent dir exists
+	if err := os.MkdirAll(reposDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create repos directory: %w", err)
+	}
+
+	// Acquire file-based lock for this specific repo version
 	lockFile := repoDir + ".lock"
 	mcpserver.WriteDebugLog("Acquiring file-based download lock: %s\n", lockFile)
 
@@ -233,41 +345,28 @@ func EnsureXMLUIRepo() (string, error) {
 	}
 	defer lock.Close()
 
-	// Acquire exclusive lock (platform-specific implementation)
+	// Acquire exclusive lock
 	unlock, err := acquireFileLock(lock)
 	if err != nil {
-		// Clean up lock file on error
 		os.Remove(lockFile)
 		return "", fmt.Errorf("failed to acquire file lock: %w", err)
 	}
 	defer func() {
 		unlock()
-		// Clean up lock file after releasing lock
 		os.Remove(lockFile)
 	}()
 
 	mcpserver.WriteDebugLog("File-based download lock acquired\n")
 
-	// Check again after acquiring lock (another process might have downloaded it)
+	// Check again after acquiring lock
 	if isRepoValid(repoDir) {
-		mcpserver.WriteDebugLog("XMLUI repo was cached by another process while waiting for lock\n")
-		version, _ := readVersionMarker(repoDir)
-		mcpserver.WriteDebugLog("Cached version: %s\n", version)
+		mcpserver.WriteDebugLog("XMLUI repo was cached by another process\n")
+		updateMetadata(reposDir, tagName)
+		cleanupCache(reposDir)
 		return repoDir, nil
 	}
 
-	mcpserver.WriteDebugLog("XMLUI repo not found or invalid, downloading...\n")
-
-	// Try to get the latest version from GitHub
-	version, zipURL, err := getLatestXMLUITag()
-	if err != nil {
-		mcpserver.WriteDebugLog("Failed to get latest tag from GitHub: %v\n", err)
-		mcpserver.WriteDebugLog("Falling back to version: %s\n", fallbackVersion)
-		version = fallbackVersion
-		zipURL = fallbackZipURL
-	} else {
-		mcpserver.WriteDebugLog("Latest version from GitHub: %s\n", version)
-	}
+	mcpserver.WriteDebugLog("Downloading XMLUI repo version %s...\n", tagName)
 
 	// Use a temporary directory for atomic download
 	tempDir := repoDir + ".tmp"
@@ -282,7 +381,6 @@ func EnsureXMLUIRepo() (string, error) {
 		return "", fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
-	// Ensure cleanup on failure
 	success := false
 	defer func() {
 		if !success {
@@ -290,15 +388,14 @@ func EnsureXMLUIRepo() (string, error) {
 		}
 	}()
 
-	// Download the zip file
+	// Download zip
 	zipPath := filepath.Join(tempDir, "xmlui.zip")
 	mcpserver.WriteDebugLog("Downloading from: %s\n", zipURL)
 	if err := downloadFile(zipURL, zipPath); err != nil {
 		return "", fmt.Errorf("failed to download XMLUI repository: %w", err)
 	}
-	mcpserver.WriteDebugLog("Download complete\n")
 
-	// Extract the zip file
+	// Extract
 	extractDir := filepath.Join(tempDir, "extracted")
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create extraction directory: %w", err)
@@ -310,18 +407,12 @@ func EnsureXMLUIRepo() (string, error) {
 	}
 	mcpserver.WriteDebugLog("Extraction complete\n")
 
-	// GitHub zip files contain a single top-level directory
-	// Find it and move its contents to the final location
+	// Find top level dir
 	entries, err := os.ReadDir(extractDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to read extracted directory: %w", err)
 	}
 
-	if len(entries) == 0 {
-		return "", fmt.Errorf("extracted archive is empty")
-	}
-
-	// Find the top-level directory (should be xmlui-org-xmlui-* or similar)
 	var topLevelDir string
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -334,13 +425,12 @@ func EnsureXMLUIRepo() (string, error) {
 		return "", fmt.Errorf("no top-level directory found in extracted archive")
 	}
 
-	// Create the final repo directory
+	// Move contents to final location structure inside tempDir
 	finalDir := filepath.Join(tempDir, "final")
 	if err := os.MkdirAll(finalDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create final directory: %w", err)
 	}
 
-	// Move contents from top-level dir to final dir
 	topEntries, err := os.ReadDir(topLevelDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to read top-level directory: %w", err)
@@ -354,29 +444,23 @@ func EnsureXMLUIRepo() (string, error) {
 		}
 	}
 
-	// Write version marker
-	if err := writeVersionMarker(finalDir, version); err != nil {
-		return "", fmt.Errorf("failed to write version marker: %w", err)
-	}
-
-	// Remove old repo directory if it exists
+	// Atomically move to repoDir
 	if err := os.RemoveAll(repoDir); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to remove old repository: %w", err)
+		return "", fmt.Errorf("failed to remove old directory: %w", err)
 	}
 
-	// Atomically move the final directory to the repo directory
 	if err := os.Rename(finalDir, repoDir); err != nil {
 		return "", fmt.Errorf("failed to move repository to final location: %w", err)
 	}
 
-	// Mark success so cleanup doesn't remove our work
 	success = true
-
-	// Clean up temp directory
 	os.RemoveAll(tempDir)
 
 	mcpserver.WriteDebugLog("XMLUI repo successfully cached at: %s\n", repoDir)
-	mcpserver.WriteDebugLog("Version: %s\n", version)
+
+	// Update metadata and cleanup
+	updateMetadata(reposDir, tagName)
+	cleanupCache(reposDir)
 
 	return repoDir, nil
 }

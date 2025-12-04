@@ -67,3 +67,12 @@ func GetRepoDir() (string, error) {
 	}
 	return filepath.Join(cacheDir, "repo"), nil
 }
+
+// GetReposDir returns the directory where XMLUI repositories are stored
+func GetReposDir() (string, error) {
+	cacheDir, err := GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "xmlui-repoes"), nil
+}
