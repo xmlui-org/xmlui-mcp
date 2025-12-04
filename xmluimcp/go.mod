@@ -4,11 +4,11 @@ go 1.25.3
 
 require (
 	github.com/mark3labs/mcp-go v0.43.1
-	github.com/mikeschinkel/go-cfgstore v0.2.2
-	github.com/mikeschinkel/go-cliutil v0.2.0
+	github.com/mikeschinkel/go-cfgstore v0.3.0
+	github.com/mikeschinkel/go-cliutil v0.2.1
 	github.com/mikeschinkel/go-dt v0.3.1
 	github.com/mikeschinkel/go-dt/appinfo v0.2.1
-	github.com/mikeschinkel/go-logutil v0.2.0
+	github.com/mikeschinkel/go-logutil v0.2.1
 )
 
 require (

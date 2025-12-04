@@ -22,8 +22,12 @@ github.com/mark3labs/mcp-go v0.43.1 h1:WXNVd+bRM/7mOzCM9zulSwn/s9YEdAxbmeh9LoRHE
 github.com/mark3labs/mcp-go v0.43.1/go.mod h1:YnJfOL382MIWDx1kMY+2zsRHU/q78dBg9aFb8W6Thdw=
 github.com/mikeschinkel/go-cfgstore v0.2.2 h1:NN8d7Onm9Ee32LNt6Q7jywMGB0RhgdUFTMDM+fo2Wdo=
 github.com/mikeschinkel/go-cfgstore v0.2.2/go.mod h1:N+4PoxFi092Cdv4isNpYdVuba25GvlKvwx0FYQG70fs=
+github.com/mikeschinkel/go-cfgstore v0.3.0 h1:fY02YABjT513eSah5WECfDsMpBWkEkfsxU7iSJqF2q0=
+github.com/mikeschinkel/go-cfgstore v0.3.0/go.mod h1:UfVsVgezVNHNw7dnjFX3eEgARd7wonaP9gpjj6o9LJg=
 github.com/mikeschinkel/go-cliutil v0.2.0 h1:rcSSSNeVplQQ/Fz2Tebw2uylwRgbDYysMY7y/RHnTns=
 github.com/mikeschinkel/go-cliutil v0.2.0/go.mod h1:S7FUUlXiaBWCTePqcrIQ4GcGTfLP5oBYO+T9Vi6PuUY=
+github.com/mikeschinkel/go-cliutil v0.2.1 h1:8wPBSwLV84KhrDXJ2XyJs7/nyUtKTogePC9vBwTmJ1k=
+github.com/mikeschinkel/go-cliutil v0.2.1/go.mod h1:MK9TO2oi7hmKbyXmvsGaCLI9tNDl7qZWGA7YUQnrAL4=
 github.com/mikeschinkel/go-dt v0.3.1 h1:3UjewCLbcTOgI1s1Z2z3Te5/QYZ/Av5X5PENjavGOK0=
 github.com/mikeschinkel/go-dt v0.3.1/go.mod h1:KJYRXePwYdBr57WhtRgDagOb7Ih/ORxE/kG4Mg6c8iE=
 github.com/mikeschinkel/go-dt/appinfo v0.2.1 h1:5BB8HQtGFyZ0qCG2DoBSeDBc9CblEJefUoR/4WxZXiw=
@@ -32,6 +36,8 @@ github.com/mikeschinkel/go-dt/dtx v0.2.1 h1:OsFs0kHuEZuSJwGyTI+LDZVABf5pAvcPXDuE
 github.com/mikeschinkel/go-dt/dtx v0.2.1/go.mod h1:mFuyP/9gMzCKaLXhFWOXHngR2ou2jun7yE67NZRBhW8=
 github.com/mikeschinkel/go-logutil v0.2.0 h1:mHO3M11cdKDO3r+cAG9LAswzsNJro/Id/nMrababygk=
 github.com/mikeschinkel/go-logutil v0.2.0/go.mod h1:swofTcpoFc/zLLGXcArdGISA6r+Oq3kW0V1MmITaVWM=
+github.com/mikeschinkel/go-logutil v0.2.1 h1:jYwZCRSA/rlXXNP4grOerzTkMx1OcLZQjarjSJqVFzg=
+github.com/mikeschinkel/go-logutil v0.2.1/go.mod h1:1yNSU+v0f+8anOjTq8hvHG7/A2FcRfVmXfnHTorHNk4=
 github.com/mikeschinkel/go-testutil v0.2.1 h1:jI232rxSc6dS0XwCDSO5WpC9bb+2xZPYFJk1J6RzWoc=
 github.com/mikeschinkel/go-testutil v0.2.1/go.mod h1:oPFd+C2liN+b8MD0Vn67ExqyT7x1DJp52fsfGb4V4LM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
