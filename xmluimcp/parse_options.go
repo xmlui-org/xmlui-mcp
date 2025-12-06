@@ -3,21 +3,21 @@ package xmluimcp
 import (
 	"github.com/mikeschinkel/go-cliutil"
 	"github.com/mikeschinkel/go-dt"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 // ParseOptions converts raw options from mcpcfg.Options into
-// validated common.Options with embedded cliutil.GlobalOptions.
-func ParseOptions(cfgOpts *mcpcfg.Options) (opts *common.Options, err error) {
+// validated mcpsvr.Options with embedded cliutil.GlobalOptions.
+func ParseOptions(cfgOpts *mcpcfg.Options) (opts *mcpsvr.Options, err error) {
 	var errs []error
-	var cliOpts *cliutil.CLIOptions
+	var globalOpts *cliutil.GlobalOptions
 	var xmluiDir dt.DirPath
 	var exampleRoot dt.DirPath
 	var exampleDirs []dt.DirPath
 	var analyticsFile dt.Filepath
 
-	cliOpts, err = cliutil.NewCLIOptions(cliutil.CLIOptionsArgs{
+	globalOpts, err = cliutil.NewGlobalOptions(cliutil.GlobalOptionsArgs{
 		Quiet:     &cfgOpts.Quiet,
 		Verbosity: &cfgOpts.Verbosity,
 	})
@@ -35,8 +35,8 @@ func ParseOptions(cfgOpts *mcpcfg.Options) (opts *common.Options, err error) {
 	analyticsFile, err = dt.ParseFilepath(cfgOpts.AnalyticsFile)
 	errs = AppendErr(errs, err)
 
-	opts = &common.Options{
-		CLIOptions:    cliOpts,
+	opts = &mcpsvr.Options{
+		GlobalOptions: globalOpts,
 		XMLUIDir:      xmluiDir,
 		ExampleRoot:   exampleRoot,
 		ExampleDirs:   exampleDirs,

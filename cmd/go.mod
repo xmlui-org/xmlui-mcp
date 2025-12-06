@@ -2,7 +2,7 @@ module xmlui-mcp
 
 go 1.25.3
 
-require github.com/xmlui-org/xmlui-mcp/xmluimcp v0.2.2
+require github.com/xmlui-org/xmlui-mcp/xmluimcp v0.2.3
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -10,10 +10,10 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
-	github.com/mark3labs/mcp-go v0.43.1 // indirect
-	github.com/mikeschinkel/go-cfgstore v0.3.0 // indirect
-	github.com/mikeschinkel/go-cliutil v0.2.1 // indirect
-	github.com/mikeschinkel/go-dt v0.3.1 // indirect
+	github.com/mark3labs/mcp-go v0.43.2 // indirect
+	github.com/mikeschinkel/go-cfgstore v0.4.0 // indirect
+	github.com/mikeschinkel/go-cliutil v0.3.0 // indirect
+	github.com/mikeschinkel/go-dt v0.3.3 // indirect
 	github.com/mikeschinkel/go-dt/appinfo v0.2.1 // indirect
 	github.com/mikeschinkel/go-dt/dtx v0.2.1 // indirect
 	github.com/mikeschinkel/go-logutil v0.2.1 // indirect

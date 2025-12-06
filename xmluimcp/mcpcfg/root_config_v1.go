@@ -6,7 +6,7 @@ import (
 
 	"github.com/mikeschinkel/go-cfgstore"
 	"github.com/mikeschinkel/go-dt/appinfo"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 const (
@@ -82,12 +82,12 @@ func LoadRootConfigV1(args LoadRootConfigV1Args) (_ *RootConfigV1, err error) {
 	configStores := cfgstore.NewConfigStores(cfgstore.ConfigStoresArgs{
 		DirTypes: dirTypes,
 		ConfigStoreArgs: cfgstore.ConfigStoreArgs{
-			ConfigSlug:  common.ConfigSlug,
-			RelFilepath: common.ConfigFile,
+			ConfigSlug:  mcpsvr.ConfigSlug,
+			RelFilepath: mcpsvr.ConfigFile,
 		},
 	})
 
-	return cfgstore.LoadRootConfig[RootConfigV1, *RootConfigV1](configStores, cfgstore.RootConfigArgs{
+	return cfgstore.LoadConfigStores[RootConfigV1, *RootConfigV1](configStores, cfgstore.RootConfigArgs{
 		DirTypes: dirTypes,
 		Options:  args.Options,
 	})

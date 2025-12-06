@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcppkg"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -22,7 +22,7 @@ import (
 
 // MCPServer represents an XMLUI MCP server instance
 type MCPServer struct {
-	config         *common.ServerConfig
+	config         *mcpsvr.ServerConfig
 	mcpServer      *server.MCPServer
 	sessionManager *SessionManager
 	prompts        []mcp.Prompt
@@ -31,7 +31,7 @@ type MCPServer struct {
 	logger         *slog.Logger
 }
 
-func (svr *MCPServer) Config() *common.ServerConfig {
+func (svr *MCPServer) Config() *mcpsvr.ServerConfig {
 	return svr.config
 }
 
@@ -51,7 +51,7 @@ func (svr *MCPServer) sendJSONResponse(w http.ResponseWriter, data interface{}) 
 }
 
 // NewServer creates a new XMLUI MCP server with the given configuration
-func NewServer(config *common.Config) (svr *MCPServer) {
+func NewServer(config *mcpsvr.Config) (svr *MCPServer) {
 	svrCfg := config.Server
 	// Set defaults
 	if svrCfg.Port == "" {
@@ -112,7 +112,7 @@ func (svr *MCPServer) Initialize() (err error) {
 	}
 
 	// Initialize analytics
-	err = mcpsvr.InitializeAnalytics(svr.logger)
+	err = mcppkg.InitializeAnalytics(svr.logger)
 	if err != nil {
 		err = fmt.Errorf("failed to initialize analytics: %w", err)
 		goto end
@@ -159,38 +159,38 @@ func (svr *MCPServer) setupTools() error {
 	}
 
 	// List components tool
-	listComponentsTool, listComponentsHandler := mcpsvr.NewListComponentsTool(svr.config.XMLUIDir)
-	svr.mcpServer.AddTool(listComponentsTool, mcpsvr.WithAnalytics("xmlui_list_components", listComponentsHandler, svr.logger))
+	listComponentsTool, listComponentsHandler := mcppkg.NewListComponentsTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(listComponentsTool, mcppkg.WithAnalytics("xmlui_list_components", listComponentsHandler, svr.logger))
 	svr.tools = append(svr.tools, listComponentsTool)
 
 	// Component docs tool
-	componentDocsTool, componentDocsHandler := mcpsvr.NewComponentDocsTool(svr.config.XMLUIDir)
-	svr.mcpServer.AddTool(componentDocsTool, mcpsvr.WithAnalytics("xmlui_component_docs", componentDocsHandler, svr.logger))
+	componentDocsTool, componentDocsHandler := mcppkg.NewComponentDocsTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(componentDocsTool, mcppkg.WithAnalytics("xmlui_component_docs", componentDocsHandler, svr.logger))
 	svr.tools = append(svr.tools, componentDocsTool)
 
 	// Search docs tool
-	searchDocsTool, searchDocsHandler := mcpsvr.NewSearchTool(svr.config.XMLUIDir)
-	svr.mcpServer.AddTool(searchDocsTool, mcpsvr.WithSearchAnalytics("xmlui_search", searchDocsHandler, svr.logger))
+	searchDocsTool, searchDocsHandler := mcppkg.NewSearchTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(searchDocsTool, mcppkg.WithSearchAnalytics("xmlui_search", searchDocsHandler, svr.logger))
 	svr.tools = append(svr.tools, searchDocsTool)
 
 	// Read file tool
-	readFileTool, readFileHandler := mcpsvr.NewReadFileTool(svr.config.XMLUIDir)
-	svr.mcpServer.AddTool(readFileTool, mcpsvr.WithAnalytics("xmlui_read_file", readFileHandler, svr.logger))
+	readFileTool, readFileHandler := mcppkg.NewReadFileTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(readFileTool, mcppkg.WithAnalytics("xmlui_read_file", readFileHandler, svr.logger))
 	svr.tools = append(svr.tools, readFileTool)
 
 	// Examples tool
-	examplesTool, examplesHandler := mcpsvr.NewExamplesTool(exampleRoots, svr.logger)
-	svr.mcpServer.AddTool(examplesTool, mcpsvr.WithSearchAnalytics("xmlui_examples", examplesHandler, svr.logger))
+	examplesTool, examplesHandler := mcppkg.NewExamplesTool(exampleRoots, svr.logger)
+	svr.mcpServer.AddTool(examplesTool, mcppkg.WithSearchAnalytics("xmlui_examples", examplesHandler, svr.logger))
 	svr.tools = append(svr.tools, examplesTool)
 
 	// List howto tool
-	listHowtoTool, listHowtoHandler := mcpsvr.NewListHowtoTool(svr.config.XMLUIDir, svr.logger)
-	svr.mcpServer.AddTool(listHowtoTool, mcpsvr.WithAnalytics("xmlui_list_howto", listHowtoHandler, svr.logger))
+	listHowtoTool, listHowtoHandler := mcppkg.NewListHowtoTool(svr.config.XMLUIDir, svr.logger)
+	svr.mcpServer.AddTool(listHowtoTool, mcppkg.WithAnalytics("xmlui_list_howto", listHowtoHandler, svr.logger))
 	svr.tools = append(svr.tools, listHowtoTool)
 
 	// Search howto tool
-	searchHowtoTool, searchHowtoHandler := mcpsvr.NewSearchHowtoTool(svr.config.XMLUIDir)
-	svr.mcpServer.AddTool(searchHowtoTool, mcpsvr.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler, svr.logger))
+	searchHowtoTool, searchHowtoHandler := mcppkg.NewSearchHowtoTool(svr.config.XMLUIDir)
+	svr.mcpServer.AddTool(searchHowtoTool, mcppkg.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler, svr.logger))
 	svr.tools = append(svr.tools, searchHowtoTool)
 
 	// Add prompt injection tool
@@ -220,10 +220,10 @@ func (svr *MCPServer) setupTools() error {
 		promptName := "xmlui_rules" // default
 		sessionID := "default"      // default
 
-		if name := mcpsvr.RequestArgument(request, "prompt_name"); name != "" {
+		if name := mcppkg.RequestArgument(request, "prompt_name"); name != "" {
 			promptName = name
 		}
-		if id := mcpsvr.RequestArgument(request, "session_id"); id != "" {
+		if id := mcppkg.RequestArgument(request, "session_id"); id != "" {
 			sessionID = id
 		}
 
@@ -240,7 +240,7 @@ func (svr *MCPServer) setupTools() error {
 		return mcp.NewToolResultError("❌ Failed to inject prompt: " + response.Message), nil
 	}
 
-	svr.mcpServer.AddTool(injectPromptTool, mcpsvr.WithAnalytics("xmlui_inject_prompt", injectPromptHandler, svr.logger))
+	svr.mcpServer.AddTool(injectPromptTool, mcppkg.WithAnalytics("xmlui_inject_prompt", injectPromptHandler, svr.logger))
 	svr.tools = append(svr.tools, injectPromptTool)
 
 	// Add prompt listing tool
@@ -260,7 +260,7 @@ func (svr *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	svr.mcpServer.AddTool(listPromptsTool, mcpsvr.WithAnalytics("xmlui_list_prompts", listPromptsHandler, svr.logger))
+	svr.mcpServer.AddTool(listPromptsTool, mcppkg.WithAnalytics("xmlui_list_prompts", listPromptsHandler, svr.logger))
 	svr.tools = append(svr.tools, listPromptsTool)
 
 	// Add prompt content retrieval tool
@@ -281,7 +281,7 @@ func (svr *MCPServer) setupTools() error {
 
 	getPromptHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract prompt name
-		promptName := mcpsvr.RequestArgument(request, "prompt_name")
+		promptName := mcppkg.RequestArgument(request, "prompt_name")
 
 		if promptName == "" {
 			return mcp.NewToolResultError("prompt_name parameter is required"), nil
@@ -333,7 +333,7 @@ func (svr *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	svr.mcpServer.AddTool(getPromptTool, mcpsvr.WithAnalytics("xmlui_get_prompt", getPromptHandler, svr.logger))
+	svr.mcpServer.AddTool(getPromptTool, mcppkg.WithAnalytics("xmlui_get_prompt", getPromptHandler, svr.logger))
 	svr.tools = append(svr.tools, getPromptTool)
 
 	// Add session context retrieval tool
@@ -356,7 +356,7 @@ func (svr *MCPServer) setupTools() error {
 	getSessionContextHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract session ID
 		sessionID := "default" // default
-		if id := mcpsvr.RequestArgument(request, "session_id"); id != "" {
+		if id := mcppkg.RequestArgument(request, "session_id"); id != "" {
 			sessionID = id
 		}
 
@@ -388,7 +388,7 @@ func (svr *MCPServer) setupTools() error {
 		return mcp.NewToolResultText(out.String()), nil
 	}
 
-	svr.mcpServer.AddTool(getSessionContextTool, mcpsvr.WithAnalytics("xmlui_get_session_context", getSessionContextHandler, svr.logger))
+	svr.mcpServer.AddTool(getSessionContextTool, mcppkg.WithAnalytics("xmlui_get_session_context", getSessionContextHandler, svr.logger))
 	svr.tools = append(svr.tools, getSessionContextTool)
 
 	return nil
@@ -687,7 +687,7 @@ func (svr *MCPServer) ServeHTTP() error {
 			return
 		}
 
-		summary := mcpsvr.GetAnalyticsSummary()
+		summary := mcppkg.GetAnalyticsSummary()
 		svr.sendJSONResponse(w, summary)
 	})
 	addr := ":" + svr.config.Port

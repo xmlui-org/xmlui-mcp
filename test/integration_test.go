@@ -7,7 +7,7 @@ import (
 
 	"github.com/mikeschinkel/go-testutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 // TestEnsureXMLUIRepoIntegration tests the full integration of automatic repo download
@@ -94,7 +94,7 @@ func TestServerWithDownloadedRepo(t *testing.T) {
 	}
 
 	// Create server
-	server, err := getNewMCPServer(&common.ServerConfig{
+	server, err := getNewMCPServer(&mcpsvr.ServerConfig{
 		XMLUIDir: xmluiDir,
 		HTTPMode: false,
 		Port:     "8080",

@@ -1,4 +1,4 @@
-package common
+package mcpsvr
 
 import (
 	"log/slog"

@@ -1,7 +1,7 @@
 package xmluimcp
 
 import (
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 // RunArgs contains all the configuration and dependencies needed to run the MCP server.
@@ -9,6 +9,6 @@ import (
 // matching the pattern used by xmluisvr for consistency.
 type RunArgs struct {
 	CLIArgs []string        // Command-line arguments (for reference)
-	Config  *common.Config  // Typed runtime configuration
-	Options *common.Options // Parsed command-line options (embedded in Config, kept for compatibility)
+	Config  *mcpsvr.Config  // Typed runtime configuration
+	Options *mcpsvr.Options // Parsed command-line options (embedded in Config, kept for compatibility)
 }

@@ -8,7 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcppkg"
 )
 
 func TestNewListComponentsTool(t *testing.T) {
@@ -25,7 +25,7 @@ func TestNewListComponentsTool(t *testing.T) {
 	}
 
 	// Create the tool
-	tool, handler := mcpsvr.NewListComponentsTool(xmluiDir)
+	tool, handler := mcppkg.NewListComponentsTool(xmluiDir)
 
 	// Verify tool was created
 	if tool.Name != "xmlui_list_components" {
@@ -97,10 +97,10 @@ func TestNewListComponentsTool_WithAnalytics(t *testing.T) {
 	}
 
 	// Create the tool
-	_, handler := mcpsvr.NewListComponentsTool(xmluiDir)
+	_, handler := mcppkg.NewListComponentsTool(xmluiDir)
 
 	// Wrap with analytics (this is where the panic occurs)
-	wrappedHandler := mcpsvr.WithAnalytics("xmlui_list_components", handler, logger)
+	wrappedHandler := mcppkg.WithAnalytics("xmlui_list_components", handler, logger)
 
 	// Create a request
 	req := mcp.CallToolRequest{}
@@ -131,7 +131,7 @@ func TestNewListComponentsTool_WithMissingDirectory(t *testing.T) {
 	nonExistentDir := filepath.Join(os.TempDir(), "xmlui-test-nonexistent")
 
 	// Create the tool
-	_, handler := mcpsvr.NewListComponentsTool(nonExistentDir)
+	_, handler := mcppkg.NewListComponentsTool(nonExistentDir)
 
 	// Create a request
 	req := mcp.CallToolRequest{}

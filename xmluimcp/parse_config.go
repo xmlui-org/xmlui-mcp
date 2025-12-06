@@ -1,15 +1,15 @@
 package xmluimcp
 
 import (
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
-type ParseConfigArgs = common.ConfigArgs
+type ParseConfigArgs = mcpsvr.ConfigArgs
 
 // ParseConfig converts raw config from mcpcfg.RootConfigV1 into
-// typed common.Config with all runtime dependencies.
-func ParseConfig(cfg *mcpcfg.RootConfigV1, args common.ConfigArgs) (config *common.Config, err error) {
+// typed mcpsvr.Config with all runtime dependencies.
+func ParseConfig(cfg *mcpcfg.RootConfigV1, args mcpsvr.ConfigArgs) (config *mcpsvr.Config, err error) {
 	// Convert typed Options paths back to strings for ServerConfig
 	var exampleDirs []string
 	if args.Options != nil {
@@ -19,7 +19,7 @@ func ParseConfig(cfg *mcpcfg.RootConfigV1, args common.ConfigArgs) (config *comm
 		}
 	}
 
-	serverConfig := &common.ServerConfig{
+	serverConfig := &mcpsvr.ServerConfig{
 		XMLUIDir:      string(args.Options.XMLUIDir),
 		ExampleRoot:   string(args.Options.ExampleRoot),
 		ExampleDirs:   exampleDirs,
@@ -28,7 +28,7 @@ func ParseConfig(cfg *mcpcfg.RootConfigV1, args common.ConfigArgs) (config *comm
 		AnalyticsFile: string(args.Options.AnalyticsFile),
 	}
 
-	config = common.NewConfig(common.ConfigArgs{
+	config = mcpsvr.NewConfig(mcpsvr.ConfigArgs{
 		Server:  serverConfig,
 		Options: args.Options,
 		AppInfo: args.AppInfo,

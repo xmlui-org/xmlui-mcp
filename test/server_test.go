@@ -10,7 +10,7 @@ import (
 	"github.com/mikeschinkel/go-dt"
 	"github.com/mikeschinkel/go-testutil"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 var _ dt.FilepathGetter = (*bufferedJSONHandler)(nil)
@@ -24,7 +24,7 @@ func (h bufferedJSONHandler) Filepath() dt.Filepath {
 	return h.filepath
 }
 
-func getNewMCPServer(svrCfg *common.ServerConfig) (svr *xmluimcp.MCPServer, err error) {
+func getNewMCPServer(svrCfg *mcpsvr.ServerConfig) (svr *xmluimcp.MCPServer, err error) {
 	var configDir dt.DirPath
 
 	appInfo := xmluimcp.AppInfo()
@@ -35,7 +35,7 @@ func getNewMCPServer(svrCfg *common.ServerConfig) (svr *xmluimcp.MCPServer, err 
 		goto end
 	}
 
-	svr = xmluimcp.NewServer(&common.Config{
+	svr = xmluimcp.NewServer(&mcpsvr.Config{
 		Options: nil, // TODO: Set this, maybe?
 		AppInfo: xmluimcp.AppInfo(),
 		Writer:  testutil.NewBufferedWriter(),
@@ -50,7 +50,7 @@ end:
 	return svr, err
 }
 func TestNewServer(t *testing.T) {
-	server, err := getNewMCPServer(&common.ServerConfig{
+	server, err := getNewMCPServer(&mcpsvr.ServerConfig{
 		XMLUIDir:    filepath.Join(os.TempDir(), "test-xmlui"),
 		ExampleRoot: "/tmp/test-examples",
 		ExampleDirs: []string{"demo"},
@@ -87,7 +87,7 @@ func TestNewServer(t *testing.T) {
 func TestServerConfigValidation(t *testing.T) {
 	// Test that empty XMLUIDir triggers auto-download (skip if network unavailable)
 	if os.Getenv("SKIP_NETWORK_TESTS") == "" {
-		server, err := getNewMCPServer(&common.ServerConfig{
+		server, err := getNewMCPServer(&mcpsvr.ServerConfig{
 			XMLUIDir: "",
 		})
 		if err != nil {
@@ -102,7 +102,7 @@ func TestServerConfigValidation(t *testing.T) {
 	}
 
 	// Test default port
-	server, err := getNewMCPServer(&common.ServerConfig{
+	server, err := getNewMCPServer(&mcpsvr.ServerConfig{
 		XMLUIDir: filepath.Join(os.TempDir(), "test"),
 		Port:     "",
 	})

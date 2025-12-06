@@ -3,10 +3,10 @@ module github.com/xmlui-org/xmlui-mcp/xmluimcp
 go 1.25.3
 
 require (
-	github.com/mark3labs/mcp-go v0.43.1
-	github.com/mikeschinkel/go-cfgstore v0.3.0
-	github.com/mikeschinkel/go-cliutil v0.2.1
-	github.com/mikeschinkel/go-dt v0.3.1
+	github.com/mark3labs/mcp-go v0.43.2
+	github.com/mikeschinkel/go-cfgstore v0.4.0
+	github.com/mikeschinkel/go-cliutil v0.3.0
+	github.com/mikeschinkel/go-dt v0.3.3
 	github.com/mikeschinkel/go-dt/appinfo v0.2.1
 	github.com/mikeschinkel/go-logutil v0.2.1
 )
@@ -23,3 +23,5 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/mikeschinkel/go-cfgstore => ../../../go-pkgs/go-cfgstore

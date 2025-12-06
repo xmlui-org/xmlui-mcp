@@ -6,7 +6,7 @@ import (
 
 	"github.com/mikeschinkel/go-dt"
 	"github.com/mikeschinkel/go-testutil"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcppkg"
 )
 
 // bufferedJSONHandlerForAnalytics implements FilepathGetter for analytics tests
@@ -30,7 +30,7 @@ func getTestLogger(t *testing.T) *slog.Logger {
 
 func TestGetAnalyticsSummary_WhenGlobalAnalyticsIsNil(t *testing.T) {
 	// GetAnalyticsSummary should return an empty map when globalAnalytics is nil
-	summary := mcpsvr.GetAnalyticsSummary()
+	summary := mcppkg.GetAnalyticsSummary()
 
 	if summary == nil {
 		t.Fatal("GetAnalyticsSummary() should not return nil")
@@ -44,12 +44,12 @@ func TestGetAnalyticsSummary_WhenGlobalAnalyticsIsNil(t *testing.T) {
 func TestGetAnalyticsSummary_WithEmptyData(t *testing.T) {
 	// Initialize analytics with empty data
 	logger := getTestLogger(t)
-	err := mcpsvr.InitializeAnalytics(logger)
+	err := mcppkg.InitializeAnalytics(logger)
 	if err != nil {
 		t.Fatalf("Failed to initialize analytics: %v", err)
 	}
 
-	summary := mcpsvr.GetAnalyticsSummary()
+	summary := mcppkg.GetAnalyticsSummary()
 
 	if summary == nil {
 		t.Fatal("GetAnalyticsSummary() should not return nil")
@@ -76,7 +76,7 @@ func TestGetAnalyticsSummary_WithEmptyData(t *testing.T) {
 
 func TestAnalytics_GetSummary_WithToolInvocations(t *testing.T) {
 	logger := getTestLogger(t)
-	analytics := mcpsvr.NewAnalytics(logger)
+	analytics := mcppkg.NewAnalytics(logger)
 
 	// Log some tool invocations
 	analytics.LogToolInvocation("xmlui_search", map[string]interface{}{"query": "Button"}, true, 1234, "")
@@ -141,7 +141,7 @@ func TestAnalytics_GetSummary_WithToolInvocations(t *testing.T) {
 
 func TestAnalytics_GetSummary_WithSearchQueries(t *testing.T) {
 	logger := getTestLogger(t)
-	analytics := mcpsvr.NewAnalytics(logger)
+	analytics := mcppkg.NewAnalytics(logger)
 
 	// Log some search queries
 	analytics.LogSearchQuery("xmlui_search", "Button", 5, true, []string{"docs/content/components"}, []string{"Button.md"})
@@ -187,7 +187,7 @@ func TestAnalytics_GetSummary_WithSearchQueries(t *testing.T) {
 
 func TestAnalytics_GetSummary_WithMixedData(t *testing.T) {
 	logger := getTestLogger(t)
-	analytics := mcpsvr.NewAnalytics(logger)
+	analytics := mcppkg.NewAnalytics(logger)
 
 	// Log both tool invocations and search queries
 	analytics.LogToolInvocation("xmlui_search", map[string]interface{}{"query": "Button"}, true, 1234, "")

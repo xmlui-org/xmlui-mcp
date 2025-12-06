@@ -1,4 +1,4 @@
-package mcpsvr
+package mcppkg
 
 import (
 	"bufio"

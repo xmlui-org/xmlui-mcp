@@ -6,8 +6,8 @@ import (
 
 	"github.com/mikeschinkel/go-cfgstore"
 	"github.com/mikeschinkel/go-cliutil"
-	"github.com/xmlui-org/xmlui-mcp/xmluimcp/common"
 	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpcfg"
+	"github.com/xmlui-org/xmlui-mcp/xmluimcp/mcpsvr"
 )
 
 // RunCLI is the CLI entry point for the XMLUI MCP server.
@@ -24,8 +24,8 @@ func RunCLI() {
 	var err error
 	var mcpCfg *mcpcfg.RootConfigV1
 	var cfgOpts *mcpcfg.Options
-	var options *common.Options
-	var config *common.Config
+	var options *mcpsvr.Options
+	var config *mcpsvr.Config
 	var wr cliutil.WriterLogger
 
 	// Parse command-line flags
@@ -47,7 +47,7 @@ func RunCLI() {
 		Quiet:      options.Quiet(),
 		Verbosity:  options.Verbosity(),
 		ConfigSlug: appInfo.ConfigSlug(),
-		LogFile:    common.LogFile,
+		LogFile:    mcpsvr.LogFile,
 	})
 	if err != nil {
 		cliutil.Stderrf("Failed to run: %v\n", err)
@@ -65,7 +65,7 @@ func RunCLI() {
 	}
 
 	// Parse configuration
-	config, err = ParseConfig(mcpCfg, common.ConfigArgs{
+	config, err = ParseConfig(mcpCfg, mcpsvr.ConfigArgs{
 		Options: options,
 		AppInfo: appInfo,
 		Logger:  wr.Logger,

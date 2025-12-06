@@ -5,9 +5,9 @@ go 1.25.3
 replace github.com/xmlui-org/xmlui-mcp/xmluimcp => ../xmluimcp
 
 require (
-	github.com/mark3labs/mcp-go v0.43.1
-	github.com/mikeschinkel/go-cfgstore v0.3.0
-	github.com/mikeschinkel/go-dt v0.3.1
+	github.com/mark3labs/mcp-go v0.43.2
+	github.com/mikeschinkel/go-cfgstore v0.4.0
+	github.com/mikeschinkel/go-dt v0.3.3
 	github.com/mikeschinkel/go-testutil v0.2.1
 	github.com/xmlui-org/xmlui-mcp/xmluimcp v0.2.2
 )
@@ -18,7 +18,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
-	github.com/mikeschinkel/go-cliutil v0.2.1 // indirect
+	github.com/mikeschinkel/go-cliutil v0.3.0 // indirect
 	github.com/mikeschinkel/go-dt/appinfo v0.2.1 // indirect
 	github.com/mikeschinkel/go-dt/dtx v0.2.1 // indirect
 	github.com/mikeschinkel/go-logutil v0.2.1 // indirect
