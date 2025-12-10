@@ -29,11 +29,12 @@ func titleToAnchor(title string) string {
 func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_list_howto",
-		mcp.WithDescription("List all 'How To' entry titles from docs/public/pages/howto/."),
+		mcp.WithDescription("List all 'How To' entry titles from docs/content/pages/howto/ (or docs/public/pages/howto/)."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Read all howto files from the howto directory
-		howtoDir := filepath.Join(xmluiDir, "docs", "public", "pages", "howto")
+		pagesDir := DetectPagesDir(xmluiDir)
+		howtoDir := filepath.Join(xmluiDir, pagesDir, "howto")
 		WriteDebugLog("xmlui_list_howto: xmluiDir=%s, howtoDir=%s\n", xmluiDir, howtoDir)
 		var docs []string
 		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
@@ -72,8 +73,9 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 		query := strings.TrimSpace(raw)
 
 		// Howto search roots
+		pagesDir := DetectPagesDir(xmluiDir)
 		roots := []string{
-			filepath.Join(xmluiDir, "docs", "public", "pages", "howto"),
+			filepath.Join(xmluiDir, pagesDir, "howto"),
 		}
 
 		cfg := MediatorConfig{

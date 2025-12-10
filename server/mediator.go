@@ -490,7 +490,7 @@ func isAlphaNum(b byte) bool {
 
 func reorderRootsByPreference(roots []string, preferredSections []string) []string {
 	// We don't know the section of a root directly. We use the typical XMLUI path layout:
-	//   components → docs/content/components, docs/public/pages
+	//   components → docs/content/components, docs/content/pages (or docs/public/pages)
 	//   examples   → docs/src/components
 	//   source     → xmlui/src/components
 	// We'll just move roots that *contain* a preferred marker to the front (stable).
@@ -505,11 +505,11 @@ func reorderRootsByPreference(roots []string, preferredSections []string) []stri
 			// lightweight mapping heuristic
 			switch sec {
 			case "components":
-				if strings.Contains(r, "/docs/content/components") || strings.Contains(r, "/docs/public/pages") {
+				if strings.Contains(r, "/docs/content/components") || strings.Contains(r, "/docs/content/pages") || strings.Contains(r, "/docs/public/pages") {
 					score = max(score, 100-i)
 				}
 			case "howtos":
-				if strings.Contains(r, "/docs/public/pages") && strings.Contains(r, "howto") {
+				if (strings.Contains(r, "/docs/content/pages") || strings.Contains(r, "/docs/public/pages")) && strings.Contains(r, "howto") {
 					score = max(score, 100-i)
 				}
 			case "examples":
@@ -578,6 +578,8 @@ func max(a, b int) int {
 // exampleRoots are optional paths outside homeDir that should be classified as "examples".
 func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, absPath string) string {
 	home := filepath.Clean(homeDir)
+	pagesDir := DetectPagesDir(homeDir)
+
 	// Normalize example roots for comparison
 	normalizedExampleRoots := make([]string, len(exampleRoots))
 	for i, root := range exampleRoots {
@@ -591,9 +593,9 @@ func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, ab
 		switch {
 		case strings.HasPrefix(r, "docs/content/components/"):
 			return "components"
-		case strings.HasPrefix(r, "docs/public/pages/howto/"):
+		case strings.HasPrefix(r, pagesDir+"/howto/"):
 			return "howtos"
-		case strings.HasPrefix(r, "docs/public/pages/"):
+		case strings.HasPrefix(r, pagesDir+"/"):
 			return "components"
 		case strings.HasPrefix(r, "docs/src/components/"):
 			return "examples"
@@ -794,12 +796,12 @@ func constructDocumentationURL(filePath string, lineNum int, baseURL string) str
 		// docs/content/components/Table.md -> /components/Table
 		componentName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
 		return fmt.Sprintf("%s/components/%s", baseURL, componentName)
-	case strings.HasPrefix(urlPath, "docs/public/pages/howto/"):
-		// docs/public/pages/howto/paginate-a-list.md -> /howto/paginate-a-list
+	case strings.HasPrefix(urlPath, "docs/content/pages/howto/") || strings.HasPrefix(urlPath, "docs/public/pages/howto/"):
+		// docs/content/pages/howto/paginate-a-list.md -> /howto/paginate-a-list
 		howtoName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
 		return fmt.Sprintf("%s/howto/%s", baseURL, howtoName)
-	case strings.HasPrefix(urlPath, "docs/public/pages/"):
-		// docs/public/pages/components-intro.md -> /components-intro
+	case strings.HasPrefix(urlPath, "docs/content/pages/") || strings.HasPrefix(urlPath, "docs/public/pages/"):
+		// docs/content/pages/components-intro.md -> /components-intro
 		pageName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
 		return fmt.Sprintf("%s/%s", baseURL, pageName)
 	default:

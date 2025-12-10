@@ -34,7 +34,7 @@ func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(contex
 		// Repository roots to scan (order matters for biasing)
 		roots := []string{
 			filepath.Join(homeDir, "docs", "content", "components"),
-			filepath.Join(homeDir, "docs", "public", "pages"),
+			filepath.Join(homeDir, DetectPagesDir(homeDir)),
 			filepath.Join(homeDir, "docs", "src", "components"),
 			filepath.Join(homeDir, "xmlui", "src", "components"),
 			filepath.Join(homeDir, "blog"),
