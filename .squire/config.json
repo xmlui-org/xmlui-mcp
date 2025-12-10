@@ -1,0 +1,22 @@
+{
+  "modules": {
+    "./cmd": {
+      "name": "cmd",
+      "role": [
+        "cli"
+      ]
+    },
+    "./test": {
+      "name": "test",
+      "role": [
+        "test"
+      ]
+    },
+    "./xmluimcp": {
+      "name": "xmluimcp",
+      "role": [
+        "lib"
+      ]
+    }
+  }
+}
