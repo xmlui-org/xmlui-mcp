@@ -74,5 +74,5 @@ func GetReposDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cacheDir, "xmlui-repoes"), nil
+	return filepath.Join(cacheDir, "xmlui-repos"), nil
 }

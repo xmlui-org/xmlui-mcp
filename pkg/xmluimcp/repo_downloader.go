@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -303,11 +304,20 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	if version == "" {
 		// Fetch latest
 		t, url, err := getLatestXMLUITag()
-		if err != nil {
-			return "", fmt.Errorf("failed to get latest version: %w", err)
+		if err == nil {
+			tagName = t
+			zipURL = url
+		} else {
+			// Try to fallback to cached version
+			latestCached, cacheErr := getLatestCachedTag(reposDir)
+			if cacheErr == nil && latestCached != "" {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to check the latest version of xmlui: %v\nFalling back to cached version: %s\n", err, latestCached)
+				mcpserver.WriteDebugLog("Failed to fetch latest version from GitHub (%v), falling back to cached version: %s\n", err, latestCached)
+				tagName = latestCached
+			} else {
+				return "", fmt.Errorf("failed to get latest version: %w", err)
+			}
 		}
-		tagName = t
-		zipURL = url
 	} else {
 		// Use specified version
 		if strings.HasPrefix(version, "xmlui@") {
@@ -367,6 +377,10 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	}
 
 	mcpserver.WriteDebugLog("Downloading XMLUI repo version %s...\n", tagName)
+
+	if zipURL == "" {
+		return "", fmt.Errorf("Cannot download repository. Expected to read it from cache, but it was invalidated while processing")
+	}
 
 	// Use a temporary directory for atomic download
 	tempDir := repoDir + ".tmp"
@@ -463,4 +477,72 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	cleanupCache(reposDir)
 
 	return repoDir, nil
+}
+
+// getLatestCachedTag finds the latest version in the cache
+func getLatestCachedTag(reposDir string) (string, error) {
+	entries, err := os.ReadDir(reposDir)
+	if err != nil {
+		return "", err
+	}
+
+	var tags []string
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "xmlui@") {
+			fullPath := filepath.Join(reposDir, entry.Name())
+			if isRepoValid(fullPath) {
+				tags = append(tags, entry.Name())
+			}
+		}
+	}
+
+	if len(tags) == 0 {
+		return "", nil
+	}
+
+	sort.Slice(tags, func(i, j int) bool {
+		v1 := strings.TrimPrefix(tags[i], "xmlui@")
+		v2 := strings.TrimPrefix(tags[j], "xmlui@")
+		return compareVersions(v1, v2) < 0
+	})
+
+	return tags[len(tags)-1], nil
+}
+
+func compareVersions(v1, v2 string) int {
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	maxLen := max(len(parts2), len(parts1))
+
+	for i := range maxLen {
+		var s1, s2 string
+		if i < len(parts1) {
+			s1 = parts1[i]
+		}
+		if i < len(parts2) {
+			s2 = parts2[i]
+		}
+
+		n1, err1 := strconv.Atoi(s1)
+		n2, err2 := strconv.Atoi(s2)
+
+		if err1 == nil && err2 == nil {
+			if n1 < n2 {
+				return -1
+			}
+			if n1 > n2 {
+				return 1
+			}
+		} else {
+			if s1 < s2 {
+				return -1
+			}
+			if s1 > s2 {
+				return 1
+			}
+		}
+	}
+
+	return 0
 }
