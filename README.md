@@ -7,24 +7,19 @@ This kit provides an MCP server that you can use with an MCP-aware tool, like Cl
 ## Features
 
 - **Standalone CLI**: Run as a command-line tool for MCP clients
-- **Go Library**: Import into other Go applications as a library
+- **Go Library**: Import into other Go applications as a library (in development, API isn't stable)
 - **Multiple Modes**: Support for stdio and HTTP server modes
 - **Session Management**: Track and manage multiple user sessions
 - **Analytics**: Built-in usage tracking and analytics
 - **Extensible**: Easy to extend with custom tools and prompts
 
-- [Prerequisites](#prerequisites)
+## Sections
+
 - [Install](#install)
 - [Configure](#configure)
+- [Usage](#usage)
 - [Test](#test-the-server)
-- [Library Usage](#library-usage)
-- [API Reference](#api-reference)
-
-In order to be able to search XMLUI documentation and source code, the server will automatically download the latest XMLUI repository from GitHub. The repository is cached in:
-
-- **Linux**: `$XDG_CACHE_HOME/xmlui/xmlui-mcp` or `~/.cache/xmlui/xmlui-mcp`
-- **macOS**: `~/Library/Caches/xmlui/xmlui-mcp`
-- **Windows**: `%LOCALAPPDATA%\xmlui\xmlui-mcp`
+- [Analytics](#analytics)
 
 The download happens once and is reused on subsequent runs. The server will fetch the latest `xmlui@<version>` release from GitHub.
 
@@ -46,16 +41,21 @@ The simplest configuration just names the location of the binary. The server wil
 }
 ```
 
-If you want to have the server also search one or more XMLUI projects, add two optional arguments: a root folder, and a list of project folders within it.
+- With the `-e` or `--example` options, additional XMLUI projects will be searched.
+- With the `--version` option, you can choose a specific xmlui version to use
 
 ```json
 {
   "mcpServers": {
     "xmlui": {
-      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp"
+      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp",
       "args": [
-        "/Users/jonudell",
-        "xmlui-invoice,xmlui-mastodon"
+        "--example",
+        "/Users/jonudell/xmlui-invoice",
+        "--example",
+        "/Users/jonudell/xmlui-weather",
+        "--xmlui-version",
+        "0.11.4"
       ]
     }
   }
@@ -68,25 +68,32 @@ Note: The syntax can (annoyingly) vary by coding assistant. With Codex, for exam
 [mcp_servers.xmlui]
 command = "/Users/jonudell/xmlui-mcp/xmlui-mcp"
 args = [
-  "/Users/jonudell",
-  "xmlui-invoice,xmlui-mastodon,xmlui-codefence-runner"
+    "--example",
+    "/Users/jonudell/xmlui-invoice",
+    "--example",
+    "/Users/jonudell/xmlui-weather",
+    "--xmlui-version",
+    "0.11.4"
 ]
 ```
 
 ## Usage
 
 ```
-Usage: ./xmlui-mcp [--http] [--port PORT] [exampleRoot] [comma-separated-exampleDirs]
-  --http: Run in HTTP mode (default: stdio mode)
-  --port: Port to listen on in HTTP mode (default: 8080)
+Usage of xmlui-mcp:
+  -e value
+        Example directory path (can be repeated)
+  -example value
+        Example directory path (can be repeated, alias for -e)
+  -http
+        Run in HTTP mode instead of stdio
+  -port string
+        Port to listen on in HTTP mode (default "8080")
+  -xmlui-version string
+        Specific XMLUI version to use (e.g. 0.11.4)
 ```
 
 - **./xmlui-mcp** The server binary
-
-- **exampleRoot** An optional directory to search for examples
-
-- **comma-separated-exampleDirs** Subdirectories under exampleRoot
-
 
 The paths for these config files on a Mac are:
 
@@ -124,130 +131,6 @@ Instead of: _How can I right-align a Column in an XMLUI Table_
 
 Say: _Show me a documented example of right-aligning a Column in an XMLUI Table_
 
-## Library Usage
-
-This project can be used as a Go library in other applications. The CLI is a thin wrapper around the library functionality.
-
-### Basic Usage with Automatic Download
-
-```go
-import "xmlui-mcp/pkg/xmluimcp"
-
-func main() {
-    // XMLUI repository is automatically downloaded and cached by NewServer
-    config := xmluimcp.ServerConfig{
-        ExampleRoot: "/path/to/examples",
-        ExampleDirs: []string{"demo", "tutorial"},
-        HTTPMode:    false, // stdio mode
-        Port:        "8080",
-    }
-
-    server, err := xmluimcp.NewServer(config)
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Print startup information
-    server.PrintStartupInfo()
-
-    // Start the server
-    if config.HTTPMode {
-        err = server.ServeHTTP()
-    } else {
-        err = server.ServeStdio()
-    }
-
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-```
-
-### Integration Example
-
-```go
-// In your go.mod:
-// require xmlui-mcp v0.1.0
-
-// Then import and use:
-import "xmlui-mcp/pkg/xmluimcp"
-
-type MyApp struct {
-    mcpServer *xmluimcp.MCPServer
-}
-
-func NewMyApp() (*MyApp, error) {
-    // XMLUI repository is automatically downloaded and cached by NewServer
-    config := xmluimcp.ServerConfig{
-        HTTPMode: true,
-        Port:     "8080",
-    }
-
-    server, err := xmluimcp.NewServer(config)
-    if err != nil {
-        return nil, err
-    }
-
-    return &MyApp{mcpServer: server}, nil
-}
-
-func (app *MyApp) Start() error {
-    app.mcpServer.PrintStartupInfo()
-    return app.mcpServer.ServeHTTP()
-}
-```
-
-### Available Methods
-
-- `EnsureXMLUIRepo() (string, error)` - Download and cache XMLUI repository if needed, returns path
-- `GetCacheDir() (string, error)` - Get platform-specific cache directory
-- `GetRepoDir() (string, error)` - Get cached repository directory path
-- `NewServer(config ServerConfig) (*MCPServer, error)` - Create a new server instance
-- `ServeStdio() error` - Start server in stdio mode
-- `ServeHTTP() error` - Start server in HTTP mode
-- `GetTools() []mcp.Tool` - Get available tools
-- `GetPrompts() []mcp.Prompt` - Get available prompts
-- `GetSessionManager() *SessionManager` - Get session manager
-- `PrintStartupInfo()` - Print server information
-
-### Configuration
-
-The `ServerConfig` struct supports:
-
-- `ExampleRoot`: Root directory for examples (optional)
-- `ExampleDirs`: Subdirectories within example root (optional)
-- `HTTPMode`: Whether to run in HTTP mode
-- `Port`: Port for HTTP mode (default: "8080")
-- `AnalyticsFile`: Path to analytics file (optional)
-
-Note: The XMLUI repository is automatically downloaded and cached on first use. No manual path configuration is needed.
-
-## API Reference
-
-### ServerConfig
-
-Configuration for the XMLUI MCP server.
-
-```go
-type ServerConfig struct {
-    ExampleRoot  string   // Optional: root directory for examples
-    ExampleDirs  []string // Optional: subdirectories within example root
-    HTTPMode     bool     // Whether to run in HTTP mode
-    Port         string   // Port for HTTP mode (default: "8080")
-    AnalyticsFile string  // Path to analytics file (optional)
-}
-```
-
-Note: The XMLUI repository path is automatically managed by the server and does not need to be specified in the config.
-
-### MCPServer
-
-Main server instance with methods for starting and managing the server.
-
-### SessionManager
-
-Manages multiple user sessions with injected prompts and context.
-
 ## Test the server
 
 Agents like Claude, Cursor, and Copilot typically use the server in stdio mode. You can use the server directly that way.
@@ -260,69 +143,14 @@ http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=550d43b6ac5b2881185e81c9c4abdb8115bc
 If a browser does not auto-launch, copy/paste that URL. In the inspector, fill in Command and Arguments.
 
 Command: /path/to/xmlui-mcp
-
-Arguments: path/to/examples "folder1,folder2"
+Arguments: -e path/to/examples
 
 Then click Connect.
 
-## Building from Source
-
-### Library Build
-
-To build just the library:
-
-```bash
-go build ./pkg/xmluimcp/...
-```
-
-### CLI Build
-
-To build the CLI executable:
-
-```bash
-go build -o xmlui-mcp ./cmd/xmlui-mcp
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-go test ./...
-
-# Run specific package tests
-go test ./pkg/xmluimcp -v
-
-# Skip network tests (if offline)
-SKIP_NETWORK_TESTS=1 go test ./pkg/xmluimcp -v
-```
-
-### Development
-
-The project structure is organized as:
-
-```
-xmlui-mcp/
-├── pkg/xmluimcp/       # Library package
-│   ├── cache.go        # Platform-specific cache directory resolution
-│   ├── repo_downloader.go  # GitHub repository download and caching
-│   ├── server.go       # MCP server implementation
-│   ├── session.go      # Session management
-│   └── utils.go        # Utility functions
-├── cmd/xmlui-mcp/      # CLI executable
-├── server/             # Tool implementations
-└── example/            # Library usage examples
-```
-
-### How Repository Caching Works
-
-1. **First Run**: When started without a directory argument, the server queries GitHub for the latest `xmlui@<version>` release
-2. **Download**: The repository is downloaded as a ZIP file to a temporary directory
-3. **Extraction**: The ZIP is extracted and validated
-4. **Atomic Move**: Once complete, the repository is atomically moved to the cache directory
-5. **Subsequent Runs**: The cached version is used, no re-download needed
-
-The atomic download process ensures that interrupted downloads or crashes don't leave the cache in a broken state.
-
 ## Analytics
 
-The server saves logs to enable tracking agent usage patterns and optimizing the tools. Data is saved to `xmlui-mcp-analytics.json`. Use `./analytics-helper.sh` for overviews of what's been captured.
+In order to be able to search XMLUI documentation and source code, the server will automatically download the specified (or latest) XMLUI repository from GitHub. The server saves logs to enable tracking agent usage patterns and optimizing the tools. Data is saved to a file named `xmlui-mcp-analytics.json`. Use `./analytics-helper.sh` for overviews of what's been captured. The saved files are located at:
+
+- **Linux**: `$XDG_CACHE_HOME/xmlui/xmlui-mcp` or `~/.cache/xmlui/xmlui-mcp`
+- **macOS**: `~/Library/Caches/xmlui/xmlui-mcp`
+- **Windows**: `%LOCALAPPDATA%\xmlui\xmlui-mcp`
