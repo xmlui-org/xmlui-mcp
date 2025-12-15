@@ -2,48 +2,9 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"sync"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
-
-// Global debug log file handle and mutex for thread-safe writing
-var (
-	debugLogFile  *os.File
-	debugLogMutex sync.Mutex
-)
-
-// WriteDebugLog writes debug messages to server.log in a thread-safe way
-func WriteDebugLog(format string, args ...interface{}) {
-	debugLogMutex.Lock()
-	defer debugLogMutex.Unlock()
-
-	// Resolve target path for server.log
-	targetPath := "server.log"
-	if debugLogPath != "" {
-		targetPath = debugLogPath
-	}
-
-	// Open file if not already open
-	if debugLogFile == nil {
-		var err error
-		debugLogFile, err = os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			// Last resort: write to stderr
-			fmt.Fprintf(os.Stderr, "Failed to open debug log file %s: %v\n", targetPath, err)
-			return
-		}
-	}
-
-	// Write the message
-	fmt.Fprintf(debugLogFile, format, args...)
-
-	// Flush immediately to ensure it's written
-	debugLogFile.Sync()
-}
 
 // Wrapper function to add analytics to any tool handler
 func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -51,18 +12,13 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		// DEBUG: Log entry into withAnalytics wrapper
 		WriteDebugLog("[DEBUG] withAnalytics ENTRY: tool=%s\n", toolName)
 
-		// Write to server.log
-		WriteDebugLog("[DEBUG] %s withAnalytics ENTRY: tool=%s\n", time.Now().Format("15:04:05.000"), toolName)
-
 		// DEBUG: Log before calling original handler
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
 		WriteDebugLog("[DEBUG] withAnalytics BEFORE_HANDLER: tool=%s\n", toolName)
 
 		// Call the original handler
 		result, err := handler(ctx, req)
 
 		// DEBUG: Log after calling original handler
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
 		WriteDebugLog("[DEBUG] withAnalytics AFTER_HANDLER: tool=%s, err=%v, result_nil=%v\n", toolName, err, result == nil)
 
 		// Calculate metrics
@@ -99,13 +55,11 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 
 		// DEBUG: Log before calling LogTool
 		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
-		WriteDebugLog("[DEBUG] withAnalytics BEFORE_LOGGING: tool=%s, success=%v, resultSize=%d\n", toolName, success, resultSize)
 
 		// Log the invocation
 		LogTool(toolName, req.Params.Arguments, success, resultSize, errorMsg)
 
 		// DEBUG: Log after calling LogTool
-		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 
 		return result, err

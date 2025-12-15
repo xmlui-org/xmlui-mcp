@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -280,20 +279,9 @@ func (a *Analytics) GetSummary() map[string]interface{} {
 // Global analytics instance
 var globalAnalytics *Analytics
 
-// Global debug log path for server.log; set alongside analytics file
-var debugLogPath string
-
-// SetDebugLogPath sets the path for the debug log file
-// This should be called early, before any logging happens
-func SetDebugLogPath(path string) {
-	debugLogPath = path
-}
-
 func InitializeAnalytics(logFile string) {
 	// Initialize analytics storage
 	globalAnalytics = NewAnalytics(logFile)
-	// Ensure server.log is written next to analytics file
-	debugLogPath = filepath.Join(filepath.Dir(logFile), "server.log")
 	WriteDebugLog("[DEBUG] Initializing analytics with log file: %s\n", logFile)
 	WriteDebugLog("[DEBUG] Analytics initialized, globalAnalytics is nil: %v\n", globalAnalytics == nil)
 }
@@ -324,4 +312,3 @@ func GetAnalyticsSummary() map[string]interface{} {
 	}
 	return map[string]interface{}{}
 }
-

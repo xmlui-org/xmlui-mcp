@@ -51,10 +51,13 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 		analyticsFile = filepath.Join(cacheDir, "xmlui-mcp-analytics.json")
 	}
 
-	// Set debug log path early, before any logging happens
+	// Initialize logger early, before any logging happens
 	// This ensures all logs go to the cache directory, not the current working directory
-	logPath := filepath.Join(filepath.Dir(analyticsFile), "xmlui-mcp-server.log")
-	mcpserver.SetDebugLogPath(logPath)
+	logDir := filepath.Dir(analyticsFile)
+	if err := mcpserver.InitLogger(logDir); err != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: Failed to initialize logger: %v\n", err)
+	}
+	logPath := filepath.Join(logDir, mcpserver.LogFileName)
 
 	// Always download and cache the repository
 	mcpserver.WriteDebugLog("Ensuring cached XMLUI repository is available...\n")
