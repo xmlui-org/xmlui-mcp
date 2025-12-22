@@ -25,57 +25,8 @@ The download happens once and is reused on subsequent runs. The server will fetc
 
 ## Install
 
-To install, download the zip for your platform from [https://github.com/xmlui-org/xmlui-mcp/releases](https://github.com/xmlui-org/xmlui-mcp/releases) and unzip into a known location like ~/xmlui-mcp. On Mac, run `prepare-binary.sh` to handle permissions.
+See [https://xmlui.org/get-started](https://xmlui.org/get-started).
 
-## Configure
-
-The simplest configuration just names the location of the binary. The server will search the cached repo.
-
-```json
-{
-  "mcpServers": {
-    "xmlui": {
-      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp"
-    }
-  }
-}
-```
-
-- With the `-e` or `--example` options, additional XMLUI projects will be searched.
-- With the `--version` option, you can choose a specific xmlui version to use
-
-```json
-{
-  "mcpServers": {
-    "xmlui": {
-      "command": "/Users/jonudell/xmlui-mcp/xmlui-mcp",
-      "args": [
-        "--example",
-        "/Users/jonudell/xmlui-invoice",
-        "--example",
-        "/Users/jonudell/xmlui-weather",
-        "--xmlui-version",
-        "0.11.4"
-      ]
-    }
-  }
-}
-```
-
-Note: The syntax can (annoyingly) vary by coding assistant. With Codex, for example, it is `.toml` not `.json` and looks like this:
-
-```toml
-[mcp_servers.xmlui]
-command = "/Users/jonudell/xmlui-mcp/xmlui-mcp"
-args = [
-    "--example",
-    "/Users/jonudell/xmlui-invoice",
-    "--example",
-    "/Users/jonudell/xmlui-weather",
-    "--xmlui-version",
-    "0.11.4"
-]
-```
 
 ## Usage
 
@@ -92,24 +43,6 @@ Usage of xmlui-mcp:
   -xmlui-version string
         Specific XMLUI version to use (e.g. 0.11.4)
 ```
-
-- **./xmlui-mcp** The server binary
-
-The paths for these config files on a Mac are:
-
-**Claude:** ~/Library/Application Support/Claude/claude_desktop_config.json
-
-**Cursor:** ~/.cursor.mcp.json
-
-**Copilot:** ~/Library/Application Support/Code/User/mcp.json (created initially by `MCP: Add Server`)
-
-With this setup I am giving the agents access to the XMLUI projects I'm working on (xmlui-invoice, xmlui-mastodon), so they can both read and write those projects.
-
-I am also encouraging them to use the xmlui-mcp tools as we work on those projects. Here's what that looks like.
-
-<img width="737" alt="image" src="https://github.com/user-attachments/assets/1f87519c-1338-4eca-a730-9f2e0c1a64a9" />
-
-<img width="788" alt="image" src="https://github.com/user-attachments/assets/4793a475-46d1-418e-ad6a-0760af53ddca" />
 
 ## Tips for working with agents that use this server
 
