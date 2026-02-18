@@ -47,8 +47,8 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			EnableFilenameMatches: true,
 		}
 
-		// Use a synthetic homeDir for relative paths in examples
-		homeDir := "examples"
+		// Use the common parent of example roots for relative paths
+		homeDir := commonParent(exampleRoots)
 		human, _, err := ExecuteMediatedSearch(homeDir, cfg, query)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
