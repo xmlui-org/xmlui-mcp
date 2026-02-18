@@ -2,7 +2,6 @@ package server
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +30,12 @@ type MediatorConfig struct {
 
 	// Max snippet length in characters (default 200)
 	MaxSnippetLength int
+
+	// Max files to return after ranking (default 15)
+	MaxFileResults int
+
+	// Max snippets per file in output (default 3)
+	MaxSnippetsPerFile int
 
 	// File extensions to scan.
 	FileExtensions []string // default: .mdx, .md, .tsx, .scss
@@ -82,6 +87,8 @@ type MediatorJSON struct {
 	AgentGuidance       *AgentGuidance          `json:"agent_guidance,omitempty"`
 	Diagnostics         map[string]any          `json:"diagnostics,omitempty"`
 	SearchToolHierarchy []string                `json:"search_tool_hierarchy,omitempty"`
+	TopicMatches        []string                `json:"topic_matches,omitempty"`
+	Suggestions         []string                `json:"suggestions,omitempty"`
 }
 
 // ExecuteMediatedSearch runs the staged scan and returns:
@@ -91,6 +98,23 @@ type MediatorJSON struct {
 //  2. JSON summary (also included at the end of the human block),
 //
 //  3. error if something goes wrong (I/O etc. are soft-failed inside).
+// scoredFile accumulates matches for a single file during search.
+type scoredFile struct {
+	RelPath  string
+	AbsPath  string
+	Section  string
+	Score    float64
+	Snippets []scoredSnippet
+	// tracking which query terms were found in this file
+	TermsFound map[string]bool
+}
+
+type scoredSnippet struct {
+	Line    int
+	Text    string
+	IsTitle bool // filename match or heading
+}
+
 func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery string) (string, MediatorJSON, error) {
 	// defaults
 	if cfg.MaxResults <= 0 {
@@ -98,6 +122,12 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 	if cfg.MaxSnippetLength <= 0 {
 		cfg.MaxSnippetLength = 200
+	}
+	if cfg.MaxFileResults <= 0 {
+		cfg.MaxFileResults = 15
+	}
+	if cfg.MaxSnippetsPerFile <= 0 {
+		cfg.MaxSnippetsPerFile = 3
 	}
 	if len(cfg.FileExtensions) == 0 {
 		cfg.FileExtensions = []string{".mdx", ".md", ".tsx", ".scss"}
@@ -115,9 +145,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 
 	// Prepare accumulators
-	results := []string{}                               // human-visible lines
-	seen := map[string]struct{}{}                       // dedupe key: path:line:text
-	uniqueFiles := make(map[string]map[string]struct{}) // section -> set of file paths
+	fileScores := make(map[string]*scoredFile) // keyed by absPath
 
 	jsonOut := MediatorJSON{
 		QueryPlan: []stageHit{},
@@ -129,43 +157,77 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		},
 	}
 
-	// Initialize sections and file tracking for stable ordering
+	// Initialize sections for stable ordering
 	for _, k := range cfg.SectionKeys {
 		jsonOut.Sections[k] = []resultItem{}
-		uniqueFiles[k] = make(map[string]struct{})
+	}
+
+	// Normalize query tokens for scoring
+	kept, removed := normalizeTokens(originalQuery, cfg.Stopwords)
+	jsonOut.Tokens["kept"] = kept
+	jsonOut.Tokens["removed"] = removed
+	queryTerms := kept
+	if len(queryTerms) == 0 {
+		queryTerms = strings.Fields(strings.ToLower(originalQuery))
+	}
+
+	// -------- Topic matching (Rec #4) --------
+	topicMatches := matchTopics(queryTerms)
+	topicBonusFiles := make(map[string]bool) // canonical doc paths that get bonus
+	if len(topicMatches) > 0 {
+		for _, tm := range topicMatches {
+			jsonOut.TopicMatches = append(jsonOut.TopicMatches, tm.Name)
+			for _, doc := range tm.CanonicalDocs {
+				topicBonusFiles[doc] = true
+			}
+		}
 	}
 
 	// -------- helpers --------
 
-	addHit := func(rel string, absPath string, lineNum int, line string) {
-		if len(results) >= cfg.MaxResults {
-			return
-		}
-		key := fmt.Sprintf("%s:%d:%s", rel, lineNum, line)
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-
-		// Truncate snippet if too long
+	addFileHit := func(rel string, absPath string, lineNum int, line string, queryTermsForMatch []string) {
+		// Truncate snippet
 		snippet := line
 		if len(snippet) > cfg.MaxSnippetLength {
 			snippet = snippet[:cfg.MaxSnippetLength] + "..."
 		}
 
-		results = append(results, fmt.Sprintf("%s:%d: %s", rel, lineNum, snippet))
-
-		section := cfg.Classifier(rel, absPath)
-		if _, ok := jsonOut.Sections[section]; !ok {
-			// unknown section -> create on the fly so we don't lose hits
-			jsonOut.Sections[section] = []resultItem{}
-			uniqueFiles[section] = make(map[string]struct{})
+		sf, exists := fileScores[absPath]
+		if !exists {
+			section := cfg.Classifier(rel, absPath)
+			sf = &scoredFile{
+				RelPath:    rel,
+				AbsPath:    absPath,
+				Section:    section,
+				TermsFound: make(map[string]bool),
+			}
+			fileScores[absPath] = sf
 		}
-		jsonOut.Sections[section] = append(jsonOut.Sections[section], resultItem{
-			Type: section, Path: rel, Line: lineNum, Snippet: snippet,
-		})
-		// Track unique file for this section
-		uniqueFiles[section][rel] = struct{}{}
+
+		// Track which query terms this hit covers
+		snippetLower := strings.ToLower(snippet)
+		for _, term := range queryTermsForMatch {
+			if strings.Contains(snippetLower, term) {
+				sf.TermsFound[term] = true
+			}
+		}
+
+		// Deduplicate by line number (same line can match across stages)
+		isDuplicate := false
+		for _, existing := range sf.Snippets {
+			if existing.Line == lineNum {
+				isDuplicate = true
+				break
+			}
+		}
+
+		// Add snippet (capped loosely to avoid unbounded growth)
+		if !isDuplicate && len(sf.Snippets) < 20 {
+			isTitle := lineNum == 0 || strings.HasPrefix(strings.TrimSpace(line), "#")
+			sf.Snippets = append(sf.Snippets, scoredSnippet{
+				Line: lineNum, Text: snippet, IsTitle: isTitle,
+			})
+		}
 	}
 
 	runStage := func(stageName, stageQuery string, roots []string, usePartialMatch bool) int {
@@ -195,7 +257,6 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 					return nil
 				}
 
-				// filename match (optional)
 				var matchFunc func(string, string) bool
 				if usePartialMatch {
 					matchFunc = func(text, query string) bool {
@@ -205,13 +266,11 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 					matchFunc = fuzzyMatch
 				}
 
+				rel, _ := filepath.Rel(homeDir, path)
+
 				if cfg.EnableFilenameMatches && matchFunc(d.Name(), lq) {
-					rel, _ := filepath.Rel(homeDir, path)
-					addHit(rel, path, 0, "[filename match]")
+					addFileHit(rel, path, 0, "[filename match]", queryTerms)
 					hits++
-					if len(results) >= cfg.MaxResults {
-						return nil
-					}
 				}
 
 				f, err := os.Open(path)
@@ -225,20 +284,13 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				for sc.Scan() {
 					line := sc.Text()
 					if matchFunc(line, lq) {
-						rel, _ := filepath.Rel(homeDir, path)
-						addHit(rel, path, ln, line)
+						addFileHit(rel, path, ln, line, queryTerms)
 						hits++
-						if len(results) >= cfg.MaxResults {
-							return nil
-						}
 					}
 					ln++
 				}
 				return nil
 			})
-			if len(results) >= cfg.MaxResults {
-				break
-			}
 		}
 		jsonOut.QueryPlan = append(jsonOut.QueryPlan, stageHit{Stage: stageName, Query: lq, Hits: hits})
 		return hits
@@ -248,33 +300,113 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 	totalHits := 0
 
-	// Stage 1: exact (legacy behavior)
+	// Stage 1: exact
 	totalHits += runStage("exact", strings.ToLower(originalQuery), cfg.Roots, false)
 
 	// Stage 2: relaxed (strip sigils/stopwords)
-	kept, removed := normalizeTokens(originalQuery, cfg.Stopwords)
-	jsonOut.Tokens["kept"] = kept
-	jsonOut.Tokens["removed"] = removed
-	if len(kept) > 0 && len(results) < cfg.MaxResults {
+	if len(kept) > 0 {
 		relaxed := strings.Join(kept, " ")
 		totalHits += runStage("relaxed", relaxed, cfg.Roots, false)
 	}
 
-	// Stage 3: partial matching (relaxed word requirements)
-	if len(kept) > 0 && len(results) < cfg.MaxResults {
+	// Stage 3: partial matching
+	if len(kept) > 0 {
 		relaxed := strings.Join(kept, " ")
 		roots := cfg.Roots
 		if looksLikeConcept(kept) && len(cfg.PreferSections) > 0 {
-			// re-order roots so preferred sections' paths come first
 			roots = reorderRootsByPreference(cfg.Roots, cfg.PreferSections)
 		}
 		totalHits += runStage("partial", relaxed, roots, true)
-
-		// Update tokens to show we used partial matching
-		jsonOut.Tokens["expanded"] = kept // Show what we searched with partial matching
+		jsonOut.Tokens["expanded"] = kept
 	}
 
-	// Build facets with both file counts and match counts
+	// -------- Score files --------
+	sectionWeights := map[string]float64{
+		"components": 1.5,
+		"howtos":     1.5,
+		"examples":   1.2,
+		"source":     1.0,
+		"blog":       0.8,
+		"unknown":    0.5,
+	}
+
+	for _, sf := range fileScores {
+		// (a) Term coverage: distinct query terms found / total query terms
+		if len(queryTerms) > 0 {
+			sf.Score += float64(len(sf.TermsFound)) / float64(len(queryTerms))
+		}
+
+		// (b) Section weight
+		weight, ok := sectionWeights[sf.Section]
+		if !ok {
+			weight = 1.0
+		}
+		sf.Score *= weight
+
+		// (c) Filename match bonus
+		filenameLower := strings.ToLower(filepath.Base(sf.RelPath))
+		for _, term := range queryTerms {
+			if strings.Contains(filenameLower, term) {
+				sf.Score += 2.0
+				break
+			}
+		}
+
+		// (d) Topic bonus
+		for bonusPath := range topicBonusFiles {
+			if strings.Contains(sf.RelPath, bonusPath) {
+				sf.Score += 5.0
+				break
+			}
+		}
+
+		// (e) Match density bonus (more snippets = more relevant)
+		sf.Score += float64(len(sf.Snippets)) * 0.1
+	}
+
+	// Sort files by score descending
+	ranked := make([]*scoredFile, 0, len(fileScores))
+	for _, sf := range fileScores {
+		ranked = append(ranked, sf)
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].Score > ranked[j].Score
+	})
+
+	// Take top N files
+	if len(ranked) > cfg.MaxFileResults {
+		ranked = ranked[:cfg.MaxFileResults]
+	}
+
+	// Build sections and facets from ranked files
+	uniqueFiles := make(map[string]map[string]struct{})
+	for _, k := range cfg.SectionKeys {
+		uniqueFiles[k] = make(map[string]struct{})
+	}
+
+	for _, sf := range ranked {
+		section := sf.Section
+		if _, ok := jsonOut.Sections[section]; !ok {
+			jsonOut.Sections[section] = []resultItem{}
+			uniqueFiles[section] = make(map[string]struct{})
+		}
+		uniqueFiles[section][sf.RelPath] = struct{}{}
+
+		// Pick best snippets: prefer title/heading lines, then first N
+		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
+		for _, snip := range bestSnippets {
+			jsonOut.Sections[section] = append(jsonOut.Sections[section], resultItem{
+				Type:    section,
+				Path:    sf.RelPath,
+				AbsPath: sf.AbsPath,
+				Line:    snip.Line,
+				Snippet: snip.Text,
+				Score:   sf.Score,
+			})
+		}
+	}
+
+	// Build facets
 	for k := range jsonOut.Sections {
 		jsonOut.Facets[k] = FacetCounts{
 			Files:   len(uniqueFiles[k]),
@@ -282,7 +414,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 	}
 
-	// Confidence heuristic (updated to use new facet structure)
+	// Confidence heuristic
 	jsonOut.Confidence = confidenceHeuristicV2(jsonOut.Facets, totalHits)
 
 	// Set search tool hierarchy for howto/example queries
@@ -294,18 +426,42 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 	}
 
-	// Agent guidance for low-confidence scenarios
+	// Agent guidance
 	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
+
+	// Inject topic URLs into guidance
+	if len(topicMatches) > 0 && jsonOut.AgentGuidance != nil {
+		for _, tm := range topicMatches {
+			for _, u := range tm.URLs {
+				jsonOut.AgentGuidance.DocumentationURLs = append(jsonOut.AgentGuidance.DocumentationURLs, DocumentationURL{
+					Title: tm.Name,
+					URL:   u,
+					Type:  "topic",
+				})
+			}
+		}
+	}
+
+	// "Did You Mean?" suggestions (Rec #5)
+	if len(ranked) == 0 || jsonOut.Confidence == "low" {
+		suggestions := suggestAlternatives(originalQuery, homeDir, 3)
+		if len(suggestions) > 0 {
+			jsonOut.Suggestions = suggestions
+			if jsonOut.AgentGuidance != nil {
+				jsonOut.AgentGuidance.RuleReminders = append(jsonOut.AgentGuidance.RuleReminders,
+					fmt.Sprintf("Did you mean: %s?", strings.Join(suggestions, ", ")))
+			}
+		}
+	}
 
 	// Related queries - removed for now
 	jsonOut.RelatedQueries = []string{}
 
-	// Human block
+	// -------- Human block --------
 	var out strings.Builder
-	if len(results) == 0 {
+	if len(ranked) == 0 {
 		out.WriteString("No matches found.\n")
 
-		// Only show guidance section if there's actionable guidance
 		hasGuidance := false
 		if jsonOut.AgentGuidance != nil {
 			if len(jsonOut.AgentGuidance.RuleReminders) > 0 ||
@@ -323,25 +479,31 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 						out.WriteString("• " + reminder + "\n")
 					}
 				}
-
 				if jsonOut.AgentGuidance.SuggestedApproach != "" {
 					out.WriteString("\n" + jsonOut.AgentGuidance.SuggestedApproach + "\n")
 				}
-
 				if jsonOut.AgentGuidance.SearchToolPreference != "" {
 					out.WriteString("\nPREFERRED TOOL: " + jsonOut.AgentGuidance.SearchToolPreference + "\n")
 				}
 			}
 		}
 
-		blob, _ := json.MarshalIndent(jsonOut, "", "  ")
-		out.WriteString("\n---\nJSON:\n")
-		out.Write(blob)
+		if len(jsonOut.Suggestions) > 0 {
+			out.WriteString("\nDid you mean: " + strings.Join(jsonOut.Suggestions, ", ") + "?\n")
+		}
+
+		writeGuidanceBlock(&out, jsonOut)
 		return out.String(), jsonOut, nil
 	}
 
-	fmt.Fprintf(&out, "Query: %q  (stages=%d, hits=%d, confidence=%s)\n",
-		originalQuery, len(jsonOut.QueryPlan), len(results), jsonOut.Confidence)
+	fmt.Fprintf(&out, "Query: %q  (files=%d, total_hits=%d, confidence=%s)\n",
+		originalQuery, len(ranked), totalHits, jsonOut.Confidence)
+
+	// Show topic matches
+	if len(jsonOut.TopicMatches) > 0 {
+		fmt.Fprintf(&out, "Topics: %s\n", strings.Join(jsonOut.TopicMatches, ", "))
+	}
+
 	fmt.Fprintf(&out, "Facets: ")
 	keys := keysSortedV2(jsonOut.Facets)
 	for i, k := range keys {
@@ -351,31 +513,93 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		facet := jsonOut.Facets[k]
 		if facet.Files == 1 {
 			fmt.Fprintf(&out, "%s=%d", k, facet.Matches)
-		} else {
+		} else if facet.Files > 0 {
 			fmt.Fprintf(&out, "%s=%d files (%d matches)", k, facet.Files, facet.Matches)
 		}
 	}
 	out.WriteString("\n\n")
 
-	// Limit displayed results to a reasonable number (e.g., 20 for readability)
-	displayLimit := 20
-	if displayLimit > len(results) {
-		displayLimit = len(results)
+	// Grouped-by-file output with scores
+	for _, sf := range ranked {
+		fmt.Fprintf(&out, "## %s  (score=%.2f, section=%s)\n", sf.RelPath, sf.Score, sf.Section)
+		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
+		for _, snip := range bestSnippets {
+			if snip.Line == 0 {
+				fmt.Fprintf(&out, "  %s\n", snip.Text)
+			} else {
+				fmt.Fprintf(&out, "  L%d: %s\n", snip.Line, snip.Text)
+			}
+		}
+		out.WriteString("\n")
 	}
 
-	for i := 0; i < displayLimit; i++ {
-		out.WriteString(results[i] + "\n")
+	if len(jsonOut.Suggestions) > 0 {
+		out.WriteString("Did you mean: " + strings.Join(jsonOut.Suggestions, ", ") + "?\n\n")
 	}
 
-	if len(results) > displayLimit {
-		fmt.Fprintf(&out, "\n... %d more results omitted ...\n", len(results)-displayLimit)
-	}
-
-	blob, _ := json.MarshalIndent(jsonOut, "", "  ")
-	out.WriteString("\n---\nJSON:\n")
-	out.Write(blob)
+	writeGuidanceBlock(&out, jsonOut)
 
 	return out.String(), jsonOut, nil
+}
+
+// writeGuidanceBlock appends agent guidance and documentation URLs
+// to the human-readable output, replacing the verbose full JSON dump.
+func writeGuidanceBlock(out *strings.Builder, jsonOut MediatorJSON) {
+	out.WriteString("---\n")
+
+	if len(jsonOut.SearchToolHierarchy) > 0 {
+		out.WriteString("Preferred tools: " + strings.Join(jsonOut.SearchToolHierarchy, ", ") + "\n")
+	}
+
+	if jsonOut.AgentGuidance != nil {
+		if jsonOut.AgentGuidance.SuggestedApproach != "" {
+			out.WriteString("Suggested approach: " + jsonOut.AgentGuidance.SuggestedApproach + "\n")
+		}
+		if jsonOut.AgentGuidance.SearchToolPreference != "" {
+			out.WriteString("Preferred tool: " + jsonOut.AgentGuidance.SearchToolPreference + "\n")
+		}
+		if len(jsonOut.AgentGuidance.DocumentationURLs) > 0 {
+			out.WriteString("\nDocumentation URLs:\n")
+			for _, doc := range jsonOut.AgentGuidance.DocumentationURLs {
+				fmt.Fprintf(out, "  - %s: %s\n", doc.Title, doc.URL)
+			}
+		}
+	}
+}
+
+// pickBestSnippets selects the best N snippets from a file's matches.
+// Prefers title/heading lines, then picks by line order.
+func pickBestSnippets(snippets []scoredSnippet, maxN int) []scoredSnippet {
+	if len(snippets) <= maxN {
+		return snippets
+	}
+
+	// Partition into title and non-title
+	var titles, others []scoredSnippet
+	for _, s := range snippets {
+		if s.IsTitle {
+			titles = append(titles, s)
+		} else {
+			others = append(others, s)
+		}
+	}
+
+	result := make([]scoredSnippet, 0, maxN)
+	// Add titles first (up to maxN)
+	for _, t := range titles {
+		if len(result) >= maxN {
+			break
+		}
+		result = append(result, t)
+	}
+	// Fill remainder with others
+	for _, o := range others {
+		if len(result) >= maxN {
+			break
+		}
+		result = append(result, o)
+	}
+	return result
 }
 
 //
@@ -446,10 +670,12 @@ type stageHit struct {
 }
 
 type resultItem struct {
-	Type    string `json:"type"` // section key
-	Path    string `json:"path"`
-	Line    int    `json:"line"`
-	Snippet string `json:"snippet"`
+	Type    string  `json:"type"` // section key
+	Path    string  `json:"path"`
+	AbsPath string  `json:"abs_path,omitempty"`
+	Line    int     `json:"line"`
+	Snippet string  `json:"snippet"`
+	Score   float64 `json:"score,omitempty"`
 }
 
 // normalizeTokens: lowercase, strip simple punctuation/sigils, drop stopwords.
