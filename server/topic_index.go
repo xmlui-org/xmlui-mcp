@@ -21,9 +21,7 @@ var topicIndex = []TopicEntry{
 			"docs/content/pages/event-handling",
 			"docs/content/components/Button",
 		},
-		URLs: []string{
-			"https://docs.xmlui.org/event-handling",
-		},
+		URLs: []string{},
 		Description: "XMLUI event handling: onClick, onChange, and other event callbacks on components",
 	},
 	{
@@ -33,7 +31,7 @@ var topicIndex = []TopicEntry{
 			"docs/content/pages/code-behind",
 		},
 		URLs: []string{
-			"https://docs.xmlui.org/code-behind",
+			"https://docs.xmlui.org/guides/scripting",
 		},
 		Description: "Using JavaScript code-behind files and script functions in XMLUI applications",
 	},
@@ -43,9 +41,7 @@ var topicIndex = []TopicEntry{
 		CanonicalDocs: []string{
 			"docs/content/pages/conditional-rendering",
 		},
-		URLs: []string{
-			"https://docs.xmlui.org/conditional-rendering",
-		},
+		URLs: []string{},
 		Description: "Showing or hiding components based on conditions using when/visible attributes",
 	},
 	{
@@ -65,9 +61,7 @@ var topicIndex = []TopicEntry{
 		CanonicalDocs: []string{
 			"docs/content/pages/theming",
 		},
-		URLs: []string{
-			"https://docs.xmlui.org/theming",
-		},
+		URLs: []string{},
 		Description: "Customizing the look and feel of XMLUI apps through theme variables",
 	},
 	{
@@ -76,9 +70,7 @@ var topicIndex = []TopicEntry{
 		CanonicalDocs: []string{
 			"docs/content/pages/data-binding",
 		},
-		URLs: []string{
-			"https://docs.xmlui.org/data-binding",
-		},
+		URLs: []string{},
 		Description: "Binding data to components using variables and AppState",
 	},
 }

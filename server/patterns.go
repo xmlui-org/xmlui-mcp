@@ -26,7 +26,7 @@ var patternIndex = []PatternEntry{
 
 <!-- Toggle visibility -->
 <Button label="Toggle" onClick="showGreeting = !showGreeting" />`,
-		URL: "https://docs.xmlui.org/conditional-rendering",
+		URL: "", // no dedicated page exists
 	},
 	{
 		Name:     "List Rendering",
@@ -79,7 +79,7 @@ var patternIndex = []PatternEntry{
 <!-- Bind to component -->
 <Text value="Count: {count}" />
 <Button label="Increment" onClick="count = count + 1" />`,
-		URL: "https://docs.xmlui.org/data-binding",
+		URL: "", // no dedicated page exists
 	},
 	{
 		Name:     "Dialog / Modal",
@@ -91,7 +91,7 @@ var patternIndex = []PatternEntry{
   <Button label="Yes" onClick="handleConfirm" />
   <Button label="Cancel" onClick="showDialog = false" />
 </Dialog>`,
-		URL: "https://docs.xmlui.org/components/Dialog",
+		URL: "https://docs.xmlui.org/components/ModalDialog",
 	},
 	{
 		Name:     "API / Data Fetching",
@@ -105,7 +105,7 @@ var patternIndex = []PatternEntry{
     <Text value="{$item.name}" />
   </ListItem>
 </List>`,
-		URL: "https://docs.xmlui.org/data-binding",
+		URL: "", // no dedicated page exists
 	},
 	{
 		Name:     "Theming / Dark Mode",
@@ -122,7 +122,7 @@ var patternIndex = []PatternEntry{
     "background": "#1F2937"
   }
 }`,
-		URL: "https://docs.xmlui.org/theming",
+		URL: "", // no dedicated page exists
 	},
 	{
 		Name:     "Table / DataGrid",
@@ -145,7 +145,7 @@ var patternIndex = []PatternEntry{
     <Text value="Details content" />
   </Tab>
 </TabStrip>`,
-		URL: "https://docs.xmlui.org/components/TabStrip",
+		URL: "https://docs.xmlui.org/components/Tabs",
 	},
 	{
 		Name:     "Event Handling",
@@ -157,7 +157,7 @@ var patternIndex = []PatternEntry{
 window.handleClick = function() {
   console.log("Button clicked");
 };`,
-		URL: "https://docs.xmlui.org/event-handling",
+		URL: "", // no dedicated page exists
 	},
 	{
 		Name:     "Code-Behind Pattern",
@@ -170,7 +170,7 @@ window.handleClick = function() {
 window.doCalc = function() {
   window.result = 42;
 };`,
-		URL: "https://docs.xmlui.org/code-behind",
+		URL: "https://docs.xmlui.org/guides/scripting",
 	},
 	{
 		Name:     "Stack Layout",
@@ -259,6 +259,7 @@ func NewPatternTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToo
 			if limit > len(matches) {
 				limit = len(matches)
 			}
+			registry := GetURLRegistry(homeDir)
 			for i := 0; i < limit; i++ {
 				p := matches[i].pattern
 				if i > 0 {
@@ -266,7 +267,12 @@ func NewPatternTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToo
 				}
 				fmt.Fprintf(&out, "## %s\n\n", p.Name)
 				fmt.Fprintf(&out, "```xml\n%s\n```\n\n", p.Code)
-				fmt.Fprintf(&out, "**Documentation:** %s\n", p.URL)
+				if p.URL != "" {
+					validatedURL := registry.ValidateURL(p.URL)
+					if validatedURL != "" {
+						fmt.Fprintf(&out, "**Documentation:** %s\n", validatedURL)
+					}
+				}
 			}
 			return mcp.NewToolResultText(out.String()), nil
 		}

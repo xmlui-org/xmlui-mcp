@@ -116,6 +116,9 @@ type scoredSnippet struct {
 }
 
 func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery string) (string, MediatorJSON, error) {
+	// Initialize the URL registry for this search
+	registryForMediator = GetURLRegistry(homeDir)
+
 	// defaults
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = 50
@@ -429,15 +432,18 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Agent guidance
 	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
 
-	// Inject topic URLs into guidance
+	// Inject topic URLs into guidance (only if they pass registry validation)
 	if len(topicMatches) > 0 && jsonOut.AgentGuidance != nil {
+		registry := GetURLRegistry(homeDir)
 		for _, tm := range topicMatches {
 			for _, u := range tm.URLs {
-				jsonOut.AgentGuidance.DocumentationURLs = append(jsonOut.AgentGuidance.DocumentationURLs, DocumentationURL{
-					Title: tm.Name,
-					URL:   u,
-					Type:  "topic",
-				})
+				if registry.ValidateURL(u) != "" {
+					jsonOut.AgentGuidance.DocumentationURLs = append(jsonOut.AgentGuidance.DocumentationURLs, DocumentationURL{
+						Title: tm.Name,
+						URL:   u,
+						Type:  "topic",
+					})
+				}
 			}
 		}
 	}
@@ -1011,30 +1017,17 @@ func constructURLBase() string {
 	return "https://docs.xmlui.org"
 }
 
-// constructDocumentationURL converts a file path to a clickable documentation URL
+// constructDocumentationURL converts a file path to a clickable documentation URL.
+// It delegates to the URL registry to ensure only valid URLs are returned.
+// Returns empty string if no valid URL can be constructed.
 func constructDocumentationURL(filePath string, lineNum int, baseURL string) string {
-	// Convert file path to URL path
-	urlPath := strings.ReplaceAll(filePath, "\\", "/")
-
-	// Map file paths to URL patterns
-	switch {
-	case strings.HasPrefix(urlPath, "docs/content/components/"):
-		// docs/content/components/Table.md -> /components/Table
-		componentName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
-		return fmt.Sprintf("%s/components/%s", baseURL, componentName)
-	case strings.HasPrefix(urlPath, "docs/content/pages/howto/") || strings.HasPrefix(urlPath, "docs/public/pages/howto/"):
-		// docs/content/pages/howto/paginate-a-list.md -> /howto/paginate-a-list
-		howtoName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
-		return fmt.Sprintf("%s/howto/%s", baseURL, howtoName)
-	case strings.HasPrefix(urlPath, "docs/content/pages/") || strings.HasPrefix(urlPath, "docs/public/pages/"):
-		// docs/content/pages/components-intro.md -> /components-intro
-		pageName := strings.TrimSuffix(filepath.Base(urlPath), ".md")
-		return fmt.Sprintf("%s/%s", baseURL, pageName)
-	default:
-		// For other paths, provide a generic link with line reference
-		return fmt.Sprintf("%s#%s:%d", baseURL, urlPath, lineNum)
-	}
+	return constructValidatedDocURL(filePath, registryForMediator)
 }
+
+// registryForMediator is set during search execution so constructDocumentationURL
+// can access it without changing signatures. This is safe because the mediator
+// is not used concurrently within a single request.
+var registryForMediator *URLRegistry
 
 // extractDocumentationURLs extracts URLs from found documentation sections
 func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) []DocumentationURL {
@@ -1044,7 +1037,7 @@ func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) 
 	for sectionName, items := range sections {
 		for _, item := range items {
 			url := constructDocumentationURL(item.Path, item.Line, baseURL)
-			if !seen[url] {
+			if url != "" && !seen[url] {
 				seen[url] = true
 				urls = append(urls, DocumentationURL{
 					Title: extractTitleFromPath(item.Path),

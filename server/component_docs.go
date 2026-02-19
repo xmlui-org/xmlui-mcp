@@ -67,10 +67,13 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			}
 		}
 
-		// Add source URL
-		baseURL := "https://docs.xmlui.org/components"
-		componentURL := baseURL + "/" + componentName
-		contentWithURL := contentStr + "\n\n**Source:** " + componentURL
+		// Add source URL (only if valid in the registry)
+		registry := GetURLRegistry(homeDir)
+		componentURL := "https://docs.xmlui.org/components/" + componentName
+		contentWithURL := contentStr
+		if registry.ValidateURL(componentURL) != "" {
+			contentWithURL += "\n\n**Source:** " + componentURL
+		}
 
 		return mcp.NewToolResultText(contentWithURL), nil
 	}
