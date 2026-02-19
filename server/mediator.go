@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// mdLinkRe matches markdown links like [text](path)
+var mdLinkRe = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 
 //
 // --------------------------- Public API ---------------------------
@@ -105,7 +109,9 @@ type scoredFile struct {
 	Section    string
 	Score      float64
 	Snippets   []scoredSnippet
-	Deprecated bool // true if file contains a [!WARNING] deprecation notice
+	Deprecated      bool   // true if file contains a [!WARNING] deprecation notice
+	ReplacementText string // e.g. "global variables"
+	ReplacementLink string // e.g. "/guides/markup#global-variables"
 	// tracking which query terms were found in this file
 	TermsFound map[string]bool
 }
@@ -300,6 +306,19 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 					if sawWarning && strings.Contains(strings.ToLower(line), "deprecated") {
 						if sf, ok := fileScores[path]; ok {
 							sf.Deprecated = true
+						}
+					}
+					// Extract replacement link from deprecation block
+					if sawWarning {
+						if m := mdLinkRe.FindStringSubmatch(line); m != nil {
+							if sf, ok := fileScores[path]; ok && sf.ReplacementLink == "" {
+								sf.ReplacementText = m[1]
+								sf.ReplacementLink = m[2]
+							}
+						}
+						// Stop scanning the warning block after a blank line
+						if strings.TrimSpace(line) == "" {
+							sawWarning = false
 						}
 					}
 					ln++
@@ -545,6 +564,13 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Grouped-by-file output with scores
 	for _, sf := range ranked {
 		fmt.Fprintf(&out, "## %s  (score=%.2f, section=%s)\n", sf.RelPath, sf.Score, sf.Section)
+		if sf.Deprecated {
+			if sf.ReplacementLink != "" {
+				fmt.Fprintf(&out, "  **DEPRECATED**: Use [%s](%s%s) instead.\n", sf.ReplacementText, constructURLBase(), sf.ReplacementLink)
+			} else {
+				out.WriteString("  **DEPRECATED**\n")
+			}
+		}
 		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
 		for _, snip := range bestSnippets {
 			if snip.Line == 0 {
