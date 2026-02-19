@@ -164,11 +164,6 @@ func (s *MCPServer) setupTools() error {
 	s.mcpServer.AddTool(searchHowtoTool, mcpserver.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	s.tools = append(s.tools, searchHowtoTool)
 
-	// Pattern/cookbook tool
-	patternTool, patternHandler := mcpserver.NewPatternTool(s.xmluiDir)
-	s.mcpServer.AddTool(patternTool, mcpserver.WithSearchAnalytics("xmlui_pattern", patternHandler))
-	s.tools = append(s.tools, patternTool)
-
 	// Add prompt injection tool
 	injectPromptTool := mcp.NewTool("xmlui_inject_prompt",
 		mcp.WithDescription("Inject a prompt into the current session context for guidance"),

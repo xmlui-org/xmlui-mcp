@@ -107,6 +107,7 @@ func buildCandidateList(homeDir string) []string {
 	}
 
 	// Add topic names
+	ensureTopicIndex(homeDir)
 	for _, topic := range topicIndex {
 		candidates = append(candidates, topic.Name)
 	}

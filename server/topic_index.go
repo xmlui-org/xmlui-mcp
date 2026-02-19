@@ -1,82 +1,173 @@
 package server
 
-import "strings"
+import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"unicode"
+)
 
-// TopicEntry represents a curated topic that maps common query concepts
-// to the best documentation resources.
+// TopicEntry represents a topic extracted from doc headings that maps
+// query terms to documentation resources.
 type TopicEntry struct {
-	Name          string   // Human-readable topic name
-	TriggerTerms []string // Terms that trigger this topic match
+	Name          string   // The heading text (e.g. "Global Variables")
+	TriggerTerms []string // Lowercase words from the heading
 	CanonicalDocs []string // Relative doc paths that should get a score bonus
 	URLs          []string // Direct documentation URLs
-	Description   string   // Brief description of the topic
+	Description   string   // The heading text (same as Name for auto-generated)
 }
 
-// topicIndex is the static list of curated topics.
-var topicIndex = []TopicEntry{
-	{
-		Name:         "Event Callbacks",
-		TriggerTerms: []string{"event", "callback", "handler", "onclick", "onchange", "onselect", "onsubmit", "onclose"},
-		CanonicalDocs: []string{
-			"docs/content/pages/event-handling",
-			"docs/content/components/Button",
-		},
-		URLs: []string{},
-		Description: "XMLUI event handling: onClick, onChange, and other event callbacks on components",
-	},
-	{
-		Name:         "Script and Code-Behind",
-		TriggerTerms: []string{"script", "code-behind", "codebehind", "javascript", "function", "window"},
-		CanonicalDocs: []string{
-			"docs/content/pages/code-behind",
-		},
-		URLs: []string{
-			"https://docs.xmlui.org/guides/scripting",
-		},
-		Description: "Using JavaScript code-behind files and script functions in XMLUI applications",
-	},
-	{
-		Name:         "Conditional Rendering",
-		TriggerTerms: []string{"conditional", "condition", "if", "when", "visible", "show", "hide", "toggle"},
-		CanonicalDocs: []string{
-			"docs/content/pages/conditional-rendering",
-		},
-		URLs: []string{},
-		Description: "Showing or hiding components based on conditions using when/visible attributes",
-	},
-	{
-		Name:         "Stack Layout Family",
-		TriggerTerms: []string{"stack", "vstack", "hstack", "layout", "vertical", "horizontal", "cvstack", "chstack"},
-		CanonicalDocs: []string{
-			"docs/content/components/Stack",
-		},
-		URLs: []string{
-			"https://docs.xmlui.org/components/Stack",
-		},
-		Description: "Stack-based layout components: VStack, HStack, CVStack, CHStack for arranging child elements",
-	},
-	{
-		Name:         "Theming and Styling",
-		TriggerTerms: []string{"theme", "theming", "style", "color", "dark", "light", "custom", "css", "variable"},
-		CanonicalDocs: []string{
-			"docs/content/pages/theming",
-		},
-		URLs: []string{},
-		Description: "Customizing the look and feel of XMLUI apps through theme variables",
-	},
-	{
-		Name:         "Data Binding",
-		TriggerTerms: []string{"binding", "bind", "data", "state", "variable", "appstate", "var", "value"},
-		CanonicalDocs: []string{
-			"docs/content/pages/data-binding",
-		},
-		URLs: []string{},
-		Description: "Binding data to components using variables and AppState",
-	},
+var (
+	topicIndex     []TopicEntry
+	topicIndexOnce sync.Once
+	topicHomeDir   string
+)
+
+// initTopicIndex builds the topic index by scanning doc headings.
+// Called lazily on first use via sync.Once.
+func initTopicIndex(homeDir string) {
+	topicHomeDir = homeDir
+	topicIndexOnce.Do(func() {
+		topicIndex = buildTopicIndex(homeDir)
+	})
+}
+
+// ensureTopicIndex guarantees the topic index is initialized.
+func ensureTopicIndex(homeDir string) {
+	if topicIndex == nil {
+		initTopicIndex(homeDir)
+	}
+}
+
+// buildTopicIndex scans markdown files in the docs tree for headings
+// and generates topic entries from them.
+func buildTopicIndex(homeDir string) []TopicEntry {
+	var entries []TopicEntry
+	seen := make(map[string]bool) // deduplicate by lowercase heading
+
+	pagesDir := filepath.Join(homeDir, DetectPagesDir(homeDir))
+	componentsDir := filepath.Join(homeDir, "docs", "content", "components")
+
+	dirs := []string{pagesDir, componentsDir}
+
+	registry := GetURLRegistry(homeDir)
+
+	for _, dir := range dirs {
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(d.Name(), ".md") && !strings.HasSuffix(d.Name(), ".mdx") {
+				return nil
+			}
+
+			rel, _ := filepath.Rel(homeDir, path)
+			docURL := constructValidatedDocURL(rel, registry)
+
+			f, err := os.Open(path)
+			if err != nil {
+				return nil
+			}
+			defer f.Close()
+
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "# ") && !strings.HasPrefix(line, "## ") {
+					continue
+				}
+
+				// Strip the markdown heading prefix
+				heading := strings.TrimLeft(line, "# ")
+
+				// Strip anchor syntax like [#some-anchor]
+				if idx := strings.Index(heading, "[#"); idx >= 0 {
+					heading = strings.TrimSpace(heading[:idx])
+				}
+
+				heading = strings.TrimSpace(heading)
+				if heading == "" {
+					continue
+				}
+
+				key := strings.ToLower(heading)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+
+				// Tokenize heading into trigger terms
+				terms := tokenizeHeading(heading)
+				if len(terms) == 0 {
+					continue
+				}
+
+				// Skip very generic single-word headings
+				if len(terms) == 1 && isGenericHeading(terms[0]) {
+					continue
+				}
+
+				// Build URL with fragment
+				var urls []string
+				if docURL != "" {
+					slug := strings.ReplaceAll(key, " ", "-")
+					// For top-level headings (# ), no fragment needed
+					if strings.HasPrefix(line, "## ") {
+						urls = append(urls, docURL+"#"+slug)
+					} else {
+						urls = append(urls, docURL)
+					}
+				}
+
+				entries = append(entries, TopicEntry{
+					Name:          heading,
+					TriggerTerms: terms,
+					CanonicalDocs: []string{rel},
+					URLs:          urls,
+					Description:   heading,
+				})
+			}
+			return nil
+		})
+	}
+
+	return entries
+}
+
+// tokenizeHeading splits a heading into lowercase keyword tokens,
+// filtering out very short words and common noise.
+func tokenizeHeading(heading string) []string {
+	words := strings.FieldsFunc(heading, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+
+	var tokens []string
+	for _, w := range words {
+		lower := strings.ToLower(w)
+		if len(lower) < 2 {
+			continue
+		}
+		tokens = append(tokens, lower)
+	}
+	return tokens
+}
+
+// isGenericHeading returns true for headings that are too common to be
+// useful as topic triggers (e.g. "Properties", "Events", "Examples").
+func isGenericHeading(term string) bool {
+	generic := map[string]bool{
+		"properties": true, "events": true, "examples": true,
+		"styling": true, "behaviors": true, "overview": true,
+		"usage": true, "description": true, "notes": true,
+		"methods": true, "parameters": true, "returns": true,
+		"see": true, "also": true, "summary": true,
+	}
+	return generic[term]
 }
 
 // matchTopics returns all topics whose trigger terms overlap with the query tokens.
-// A topic matches if at least one trigger term is found in the query tokens.
 func matchTopics(queryTokens []string) []TopicEntry {
 	if len(queryTokens) == 0 {
 		return nil

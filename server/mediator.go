@@ -100,11 +100,12 @@ type MediatorJSON struct {
 //  3. error if something goes wrong (I/O etc. are soft-failed inside).
 // scoredFile accumulates matches for a single file during search.
 type scoredFile struct {
-	RelPath  string
-	AbsPath  string
-	Section  string
-	Score    float64
-	Snippets []scoredSnippet
+	RelPath    string
+	AbsPath    string
+	Section    string
+	Score      float64
+	Snippets   []scoredSnippet
+	Deprecated bool // true if file contains a [!WARNING] deprecation notice
 	// tracking which query terms were found in this file
 	TermsFound map[string]bool
 }
@@ -175,6 +176,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 
 	// -------- Topic matching (Rec #4) --------
+	ensureTopicIndex(homeDir)
 	topicMatches := matchTopics(queryTerms)
 	topicBonusFiles := make(map[string]bool) // canonical doc paths that get bonus
 	if len(topicMatches) > 0 {
@@ -284,11 +286,21 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 				sc := bufio.NewScanner(f)
 				ln := 1
+				sawWarning := false
 				for sc.Scan() {
 					line := sc.Text()
 					if matchFunc(line, lq) {
 						addFileHit(rel, path, ln, line, queryTerms)
 						hits++
+					}
+					// Detect deprecation: [!WARNING] + "deprecated" nearby
+					if strings.Contains(line, "[!WARNING]") {
+						sawWarning = true
+					}
+					if sawWarning && strings.Contains(strings.ToLower(line), "deprecated") {
+						if sf, ok := fileScores[path]; ok {
+							sf.Deprecated = true
+						}
 					}
 					ln++
 				}
@@ -365,6 +377,11 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 		// (e) Match density bonus (more snippets = more relevant)
 		sf.Score += float64(len(sf.Snippets)) * 0.1
+
+		// (f) Deprecation penalty: demote files with [!WARNING] + "deprecated"
+		if sf.Deprecated {
+			sf.Score *= 0.3
+		}
 	}
 
 	// Sort files by score descending
