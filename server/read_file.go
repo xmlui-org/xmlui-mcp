@@ -15,7 +15,7 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 		mcp.WithDescription("Reads a .mdx, .tsx, .scss, or .md file from the XMLUI source or docs tree."),
 		mcp.WithString("path",
 			mcp.Required(),
-			mcp.Description("Relative path under docs/content/components, xmlui/src/components, or docs/content/pages (or docs/public/pages), e.g. 'xmlui/src/components/Spinner/Spinner.tsx'"),
+			mcp.Description("Relative path under component docs, component source, extension docs, or pages directories"),
 		),
 	)
 
@@ -32,11 +32,12 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 
 		// Construct and validate full path
 		fullPath := filepath.Join(homeDir, relPath)
-		pagesDir := DetectPagesDir(homeDir)
-		if !strings.HasPrefix(fullPath, filepath.Join(homeDir, "docs", "content", "components")) &&
-			!strings.HasPrefix(fullPath, filepath.Join(homeDir, "xmlui", "src", "components")) &&
-			!strings.HasPrefix(fullPath, filepath.Join(homeDir, pagesDir)) {
-			return mcp.NewToolResultError(fmt.Sprintf("Path not allowed. Must be under docs/content/components, xmlui/src/components, or %s.", pagesDir)), nil
+		paths := GetRepoPaths(homeDir)
+		if !strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.ComponentDocs)) &&
+			!strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.ComponentSource)) &&
+			!strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.ExtensionDocs)) &&
+			!strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.Pages)) {
+			return mcp.NewToolResultError(fmt.Sprintf("Path not allowed. Must be under %s, %s, %s, or %s.", paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages)), nil
 		}
 
 		content, err := os.ReadFile(fullPath)

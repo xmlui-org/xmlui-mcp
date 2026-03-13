@@ -465,20 +465,14 @@ func splitLines(text string) []string {
 
 // Helper to get search paths for different tools
 func getSearchPaths(toolName string) []string {
+	// Return generic labels — actual paths come from the manifest
 	switch toolName {
 	case "xmlui_search":
-		return []string{
-			"docs/content/components",
-			"docs/content/pages",
-			"docs/public/pages",
-			"docs/src/components",
-			"xmlui/src/components",
-			"blog",
-		}
+		return []string{"componentDocs", "pages", "componentSource", "blog"}
 	case "xmlui_examples":
-		return []string{"example_roots"} // This would be populated from actual example roots
+		return []string{"example_roots"}
 	case "xmlui_search_howto":
-		return []string{"docs/content/pages/howto.md", "docs/public/pages/howto.md"}
+		return []string{"howto"}
 	default:
 		return []string{}
 	}

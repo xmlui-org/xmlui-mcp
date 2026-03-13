@@ -47,12 +47,11 @@ func buildTopicIndex(homeDir string) []TopicEntry {
 	var entries []TopicEntry
 	seen := make(map[string]bool) // deduplicate by lowercase heading
 
-	pagesDir := filepath.Join(homeDir, DetectPagesDir(homeDir))
-	componentsDir := filepath.Join(homeDir, "docs", "content", "components")
+	paths := GetRepoPaths(homeDir)
+	pagesDir := filepath.Join(homeDir, paths.Pages)
+	componentsDir := filepath.Join(homeDir, paths.ComponentDocs)
 
 	dirs := []string{pagesDir, componentsDir}
-
-	registry := GetURLRegistry(homeDir)
 
 	for _, dir := range dirs {
 		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
@@ -64,7 +63,7 @@ func buildTopicIndex(homeDir string) []TopicEntry {
 			}
 
 			rel, _ := filepath.Rel(homeDir, path)
-			docURL := constructValidatedDocURL(rel, registry)
+			docURL := constructDocURL(rel)
 
 			f, err := os.Open(path)
 			if err != nil {

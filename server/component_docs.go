@@ -30,7 +30,7 @@ var parentComponentMap = map[string]string{
 func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_component_docs",
-		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component from docs/content/components."),
+		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component."),
 		mcp.WithString("component",
 			mcp.Required(),
 			mcp.Description("Component name, e.g. 'Button', 'Avatar', or 'Stack/VStack'"),
@@ -50,7 +50,8 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			return mcp.NewToolResultError("Missing or invalid 'component' parameter"), nil
 		}
 
-		mdxPath := filepath.Join(homeDir, "docs", "content", "components", componentName+".md")
+		paths := GetRepoPaths(homeDir)
+		mdxPath := filepath.Join(homeDir, paths.ComponentDocs, componentName+".md")
 
 		content, err := os.ReadFile(mdxPath)
 		if err != nil {
@@ -67,13 +68,9 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			}
 		}
 
-		// Add source URL (only if valid in the registry)
-		registry := GetURLRegistry(homeDir)
-		componentURL := "https://docs.xmlui.org/components/" + componentName
-		contentWithURL := contentStr
-		if registry.ValidateURL(componentURL) != "" {
-			contentWithURL += "\n\n**Source:** " + componentURL
-		}
+		// Add source URL
+		componentURL := ComponentURL(componentName)
+		contentWithURL := contentStr + "\n\n**Source:** " + componentURL
 
 		return mcp.NewToolResultText(contentWithURL), nil
 	}
@@ -85,13 +82,14 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 func getComponentSupplement(homeDir string, componentName string) string {
 	var supplement strings.Builder
 	maxSupplement := 2000
+	paths := GetRepoPaths(homeDir)
 
 	// Extract the bare component name (handle paths like "Stack/VStack")
 	baseName := filepath.Base(componentName)
 
 	// Check parent component map
 	if parent, ok := parentComponentMap[baseName]; ok {
-		parentPath := filepath.Join(homeDir, "docs", "content", "components", parent+".md")
+		parentPath := filepath.Join(homeDir, paths.ComponentDocs, parent+".md")
 		parentContent, err := os.ReadFile(parentPath)
 		if err == nil {
 			// Extract Properties and Events sections from parent
@@ -105,7 +103,7 @@ func getComponentSupplement(homeDir string, componentName string) string {
 
 	// Check for source .md or .tsx in xmlui/src/components/<Name>/
 	if supplement.Len() < maxSupplement {
-		srcDir := filepath.Join(homeDir, "xmlui", "src", "components", baseName)
+		srcDir := filepath.Join(homeDir, paths.ComponentSource, baseName)
 		if entries, err := os.ReadDir(srcDir); err == nil {
 			for _, entry := range entries {
 				if entry.IsDir() {

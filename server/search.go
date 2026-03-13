@@ -32,12 +32,12 @@ func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(contex
 		query := strings.TrimSpace(raw)
 
 		// Repository roots to scan (order matters for biasing)
+		paths := GetRepoPaths(homeDir)
 		roots := []string{
-			filepath.Join(homeDir, "docs", "content", "components"),
-			filepath.Join(homeDir, DetectPagesDir(homeDir)),
-			filepath.Join(homeDir, "docs", "src", "components"),
-			filepath.Join(homeDir, "xmlui", "src", "components"),
-			filepath.Join(homeDir, "blog"),
+			filepath.Join(homeDir, paths.ComponentDocs),
+			filepath.Join(homeDir, paths.Pages),
+			filepath.Join(homeDir, paths.ComponentSource),
+			filepath.Join(homeDir, paths.Blog),
 		}
 
 		cfg := MediatorConfig{

@@ -37,20 +37,19 @@ func TestEnsureXMLUIRepoIntegration(t *testing.T) {
 		t.Fatal("Repository path is not a directory")
 	}
 
-	// Verify essential directories exist
-	essentialDirs := []string{
-		"docs",
-		"xmlui",
-		filepath.Join("docs", "content", "components"),
-		filepath.Join("docs", "public", "pages"),
-		filepath.Join("xmlui", "src"),
+	// Verify essential directories exist (support both legacy and new layout)
+	xmluiSrc := filepath.Join(repoDir, "xmlui", "src")
+	if _, err := os.Stat(xmluiSrc); err != nil {
+		t.Errorf("Essential directory missing: xmlui/src")
 	}
 
-	for _, dir := range essentialDirs {
-		fullPath := filepath.Join(repoDir, dir)
-		if _, err := os.Stat(fullPath); err != nil {
-			t.Errorf("Essential directory missing: %s", dir)
-		}
+	// Check for docs in either layout
+	docsDir := filepath.Join(repoDir, "docs")
+	websiteDir := filepath.Join(repoDir, "website")
+	_, docsErr := os.Stat(docsDir)
+	_, websiteErr := os.Stat(websiteDir)
+	if docsErr != nil && websiteErr != nil {
+		t.Errorf("Neither docs/ nor website/ directory found")
 	}
 
 	// Verify directory name contains version

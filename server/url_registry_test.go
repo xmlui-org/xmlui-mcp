@@ -1,101 +1,23 @@
 package server
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
-// TestBuildURLRegistryFromRepo tests building the registry from the actual
-// cached XMLUI repo (if available). This is an integration-style test.
-func TestBuildURLRegistryFromRepo(t *testing.T) {
-	// Try to find the cached repo
-	homeDir := os.Getenv("XMLUI_TEST_HOME")
-	if homeDir == "" {
-		// Try common locations
-		candidates := []string{
-			filepath.Join(os.Getenv("HOME"), "xmlui"),
-			filepath.Join(os.Getenv("HOME"), "Library", "Caches", "xmlui", "xmlui-mcp", "xmlui-repos", "xmlui@0.12.2"),
-		}
-		for _, c := range candidates {
-			if _, err := os.Stat(filepath.Join(c, "docs", "src", "Main.xmlui")); err == nil {
-				homeDir = c
-				break
-			}
-		}
-	}
-	if homeDir == "" {
-		t.Skip("No XMLUI repo found; set XMLUI_TEST_HOME to run this test")
-	}
-
-	ResetURLRegistry()
-	registry := GetURLRegistry(homeDir)
-
-	// Check that we found some paths
-	paths := registry.ValidPaths()
-	if len(paths) == 0 {
-		t.Fatal("Registry has no valid paths")
-	}
-	t.Logf("Registry has %d valid paths", len(paths))
-
-	// Check known-good paths
-	knownGood := []string{
-		"/",
-		"/components/Button",
-		"/components/AppState",
-		"/components/ModalDialog",
-		"/components/Tabs",
-		"/components/Stack",
-		"/components/Table",
-		"/components/Form",
-		"/guides/markup",
-		"/guides/scripting",
-		"/guides/forms",
-		"/howto/use-built-in-form-validation",
-	}
-	for _, p := range knownGood {
-		if !registry.IsValidPath(p) {
-			t.Errorf("Expected valid path %q not found in registry", p)
-		}
-	}
-
-	// Check known-bad paths (these should NOT be in the registry)
-	knownBad := []string{
-		"/conditional-rendering",
-		"/data-binding",
-		"/event-handling",
-		"/code-behind",
-		"/theming",
-		"/components/Dialog",
-		"/components/TabStrip",
-	}
-	for _, p := range knownBad {
-		if registry.IsValidPath(p) {
-			t.Errorf("Bogus path %q should NOT be in registry", p)
-		}
-	}
-}
-
 func TestValidateURL(t *testing.T) {
-	// Build a minimal registry for unit testing
+	ResetURLRegistry()
 	registry := &URLRegistry{
-		validPaths: map[string]bool{
-			"/":                  true,
-			"/components/Button": true,
-			"/guides/markup":     true,
-		},
 		baseURL: "https://docs.xmlui.org",
 	}
 
+	// ValidateURL now always returns the URL as-is
 	tests := []struct {
 		input    string
 		expected string
 	}{
 		{"https://docs.xmlui.org/components/Button", "https://docs.xmlui.org/components/Button"},
 		{"https://docs.xmlui.org/guides/markup", "https://docs.xmlui.org/guides/markup"},
-		{"https://docs.xmlui.org/bogus-page", ""},
-		{"https://docs.xmlui.org/components/Dialog", ""},
-		{"https://docs.xmlui.org", "https://docs.xmlui.org"},
+		{"https://docs.xmlui.org/bogus-page", "https://docs.xmlui.org/bogus-page"},
 	}
 
 	for _, tc := range tests {
@@ -106,33 +28,52 @@ func TestValidateURL(t *testing.T) {
 	}
 }
 
-func TestConstructValidatedDocURL(t *testing.T) {
-	registry := &URLRegistry{
-		validPaths: map[string]bool{
-			"/components/Button":              true,
-			"/howto/use-built-in-form-validation": true,
-			"/guides/markup":                  true,
-			"/styles-and-themes/layout-props": true,
-		},
-		baseURL: "https://docs.xmlui.org",
-	}
-
+func TestConstructDocURL(t *testing.T) {
 	tests := []struct {
 		filePath string
 		expected string
 	}{
+		// Component docs
 		{"docs/content/components/Button.md", "https://docs.xmlui.org/components/Button"},
-		{"docs/content/components/Dialog.md", ""}, // Dialog doesn't exist
+		{"website/content/docs/reference/components/Button.md", "https://docs.xmlui.org/components/Button"},
+
+		// Howto
 		{"docs/content/pages/howto/use-built-in-form-validation.md", "https://docs.xmlui.org/howto/use-built-in-form-validation"},
-		{"docs/content/pages/markup.md", "https://docs.xmlui.org/guides/markup"},
+		{"website/content/docs/pages/howto/use-built-in-form-validation.md", "https://docs.xmlui.org/howto/use-built-in-form-validation"},
+
+		// Pages
 		{"docs/content/pages/styles-and-themes/layout-props.md", "https://docs.xmlui.org/styles-and-themes/layout-props"},
-		{"xmlui/src/components/Button/Button.tsx", ""}, // source files don't have doc URLs
+		{"website/content/docs/pages/styles-and-themes/layout-props.md", "https://docs.xmlui.org/styles-and-themes/layout-props"},
+
+		// Extensions
+		{"website/content/docs/reference/extensions/xmlui-animations/Animation.md", "https://docs.xmlui.org/extensions/xmlui-animations/Animation"},
+
+		// Source files don't have doc URLs
+		{"xmlui/src/components/Button/Button.tsx", ""},
 	}
 
 	for _, tc := range tests {
-		result := constructValidatedDocURL(tc.filePath, registry)
+		result := constructDocURL(tc.filePath)
 		if result != tc.expected {
-			t.Errorf("constructValidatedDocURL(%q) = %q, want %q", tc.filePath, result, tc.expected)
+			t.Errorf("constructDocURL(%q) = %q, want %q", tc.filePath, result, tc.expected)
 		}
+	}
+}
+
+func TestComponentURL(t *testing.T) {
+	if got := ComponentURL("Button"); got != "https://docs.xmlui.org/components/Button" {
+		t.Errorf("ComponentURL(Button) = %q", got)
+	}
+}
+
+func TestExtensionURL(t *testing.T) {
+	if got := ExtensionURL("xmlui-animations", "Animation"); got != "https://docs.xmlui.org/extensions/xmlui-animations/Animation" {
+		t.Errorf("ExtensionURL = %q", got)
+	}
+}
+
+func TestHowtoURL(t *testing.T) {
+	if got := HowtoURL("use-built-in-form-validation"); got != "https://docs.xmlui.org/howto/use-built-in-form-validation" {
+		t.Errorf("HowtoURL = %q", got)
 	}
 }

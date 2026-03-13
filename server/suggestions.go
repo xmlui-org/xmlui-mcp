@@ -84,7 +84,8 @@ func buildCandidateList(homeDir string) []string {
 	var candidates []string
 
 	// Scan component docs
-	componentRoot := filepath.Join(homeDir, "docs", "content", "components")
+	paths := GetRepoPaths(homeDir)
+	componentRoot := filepath.Join(homeDir, paths.ComponentDocs)
 	if entries, err := os.ReadDir(componentRoot); err == nil {
 		for _, entry := range entries {
 			name := entry.Name()

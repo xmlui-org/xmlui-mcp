@@ -14,7 +14,7 @@ import (
 func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_list_components",
-		mcp.WithDescription("Lists all available XMLUI components based on .md files in docs/content/components."),
+		mcp.WithDescription("Lists all available XMLUI components."),
 	)
 
 	tool.Annotations = mcp.ToolAnnotation{
@@ -26,7 +26,8 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		componentRoot := filepath.Join(homeDir, "docs", "content", "components")
+		paths := GetRepoPaths(homeDir)
+		componentRoot := filepath.Join(homeDir, paths.ComponentDocs)
 		components := []string{}
 
 		err := filepath.WalkDir(componentRoot, func(path string, d os.DirEntry, err error) error {

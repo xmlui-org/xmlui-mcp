@@ -123,9 +123,6 @@ type scoredSnippet struct {
 }
 
 func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery string) (string, MediatorJSON, error) {
-	// Initialize the URL registry for this search
-	registryForMediator = GetURLRegistry(homeDir)
-
 	// defaults
 	if cfg.MaxResults <= 0 {
 		cfg.MaxResults = 50
@@ -764,11 +761,7 @@ func isAlphaNum(b byte) bool {
 }
 
 func reorderRootsByPreference(roots []string, preferredSections []string) []string {
-	// We don't know the section of a root directly. We use the typical XMLUI path layout:
-	//   components → docs/content/components, docs/content/pages (or docs/public/pages)
-	//   examples   → docs/src/components
-	//   source     → xmlui/src/components
-	// We'll just move roots that *contain* a preferred marker to the front (stable).
+	// Score roots by whether they contain path segments associated with preferred sections.
 	type scored struct {
 		root  string
 		score int
@@ -777,22 +770,21 @@ func reorderRootsByPreference(roots []string, preferredSections []string) []stri
 		r := strings.ReplaceAll(root, "\\", "/")
 		score := 0
 		for i, sec := range preferredSections {
-			// lightweight mapping heuristic
 			switch sec {
 			case "components":
-				if strings.Contains(r, "/docs/content/components") || strings.Contains(r, "/docs/content/pages") || strings.Contains(r, "/docs/public/pages") {
+				if containsSegment(r, "components") || containsSegment(r, "pages") {
 					score = max(score, 100-i)
 				}
 			case "howtos":
-				if (strings.Contains(r, "/docs/content/pages") || strings.Contains(r, "/docs/public/pages")) && strings.Contains(r, "howto") {
-					score = max(score, 100-i)
-				}
-			case "examples":
-				if strings.Contains(r, "/docs/src/components") {
+				if containsSegment(r, "howto") {
 					score = max(score, 100-i)
 				}
 			case "source":
-				if strings.Contains(r, "/xmlui/src/components") {
+				if strings.Contains(r, "/src/components") {
+					score = max(score, 100-i)
+				}
+			case "blog":
+				if containsSegment(r, "blog") {
 					score = max(score, 100-i)
 				}
 			}
@@ -852,8 +844,15 @@ func max(a, b int) int {
 // SimpleClassifier returns a default path-based section classifier.
 // exampleRoots are optional paths outside homeDir that should be classified as "examples".
 func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, absPath string) string {
-	home := filepath.Clean(homeDir)
-	pagesDir := DetectPagesDir(homeDir)
+	paths := GetRepoPaths(homeDir)
+
+	// Normalize paths for prefix matching
+	componentDocs := strings.ReplaceAll(paths.ComponentDocs, "\\", "/") + "/"
+	componentSource := strings.ReplaceAll(paths.ComponentSource, "\\", "/") + "/"
+	pagesPath := strings.ReplaceAll(paths.Pages, "\\", "/") + "/"
+	howtoPath := strings.ReplaceAll(paths.Howto, "\\", "/") + "/"
+	blogPath := strings.ReplaceAll(paths.Blog, "\\", "/") + "/"
+	extensionDocs := strings.ReplaceAll(paths.ExtensionDocs, "\\", "/") + "/"
 
 	// Normalize example roots for comparison
 	normalizedExampleRoots := make([]string, len(exampleRoots))
@@ -862,39 +861,33 @@ func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, ab
 	}
 
 	return func(rel string, absPath string) string {
-		// First check relative path patterns (for paths within homeDir)
-		// This must come before example root check to catch blog/ paths correctly
 		r := strings.ReplaceAll(rel, "\\", "/")
 		switch {
-		case strings.HasPrefix(r, "docs/content/components/"):
-			return "components"
-		case strings.HasPrefix(r, pagesDir+"/howto/"):
+		case strings.HasPrefix(r, howtoPath):
 			return "howtos"
-		case strings.HasPrefix(r, pagesDir+"/"):
+		case strings.HasPrefix(r, componentDocs):
 			return "components"
-		case strings.HasPrefix(r, "docs/src/components/"):
-			return "examples"
-		case strings.HasPrefix(r, "xmlui/src/components/"):
+		case strings.HasPrefix(r, extensionDocs):
+			return "components"
+		case strings.HasPrefix(r, pagesPath):
+			return "components"
+		case strings.HasPrefix(r, componentSource):
 			return "source"
-		case strings.HasPrefix(r, "blog/"):
+		case strings.HasPrefix(r, blogPath):
 			return "blog"
 		}
 
-		// If not matched above, check if the absolute path is within any example root
-		// (for paths outside homeDir)
+		// Check if the absolute path is within any example root
 		if absPath != "" {
 			absPathClean := filepath.Clean(absPath)
 			for _, exampleRoot := range normalizedExampleRoots {
 				relToExample, err := filepath.Rel(exampleRoot, absPathClean)
 				if err == nil && !strings.HasPrefix(relToExample, "..") {
-					// Path is within this example root
 					return "examples"
 				}
 			}
 		}
 
-		// If we get here, we didn't match any pattern
-		_ = home // unused safeguard
 		return "unknown"
 	}
 }
@@ -1061,16 +1054,10 @@ func constructURLBase() string {
 }
 
 // constructDocumentationURL converts a file path to a clickable documentation URL.
-// It delegates to the URL registry to ensure only valid URLs are returned.
-// Returns empty string if no valid URL can be constructed.
+// Returns empty string if no URL can be constructed.
 func constructDocumentationURL(filePath string, lineNum int, baseURL string) string {
-	return constructValidatedDocURL(filePath, registryForMediator)
+	return constructDocURL(filePath)
 }
-
-// registryForMediator is set during search execution so constructDocumentationURL
-// can access it without changing signatures. This is safe because the mediator
-// is not used concurrently within a single request.
-var registryForMediator *URLRegistry
 
 // extractDocumentationURLs extracts URLs from found documentation sections
 func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) []DocumentationURL {

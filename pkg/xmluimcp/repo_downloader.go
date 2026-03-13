@@ -180,15 +180,19 @@ func isRepoValid(repoDir string) bool {
 		return false
 	}
 
-	// Check if essential directories exist
-	docsDir := filepath.Join(repoDir, "docs")
-	if _, err := os.Stat(docsDir); err != nil {
-		return false
-	}
-
+	// Check for xmlui source directory (always present)
 	xmluiDir := filepath.Join(repoDir, "xmlui")
 	if _, err := os.Stat(xmluiDir); err != nil {
 		return false
+	}
+
+	// Check for docs — either legacy "docs/" or new "website/" layout
+	docsDir := filepath.Join(repoDir, "docs")
+	websiteDir := filepath.Join(repoDir, "website")
+	if _, err := os.Stat(docsDir); err != nil {
+		if _, err := os.Stat(websiteDir); err != nil {
+			return false
+		}
 	}
 
 	return true
