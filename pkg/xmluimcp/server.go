@@ -24,6 +24,7 @@ type ServerConfig struct {
 	HTTPMode     bool     // Whether to run in HTTP mode
 	Port         string   // Port for HTTP mode (default: "8080")
 	XMLUIVersion string   // Specific XMLUI version to use (e.g. "0.11.4")
+	CLIVersion   string   // Version of the xmlui CLI (set via ldflags)
 }
 
 // MCPServer represents an XMLUI MCP server instance
@@ -105,6 +106,16 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 
 	if err := xmluiServer.setupPrompts(); err != nil {
 		return nil, fmt.Errorf("failed to setup prompts: %w", err)
+	}
+
+	// Auto-inject update notice (if available) before rules.
+	if _, exists := xmluiServer.promptHandlers["xmlui_update_notice"]; exists {
+		_, err = sessionManager.InjectPrompt("default", "xmlui_update_notice", xmluiServer.promptHandlers)
+		if err != nil {
+			mcpserver.WriteDebugLog("Failed to auto-inject xmlui_update_notice: %v\n", err)
+		} else {
+			mcpserver.WriteDebugLog("Auto-injected xmlui_update_notice into default session\n")
+		}
 	}
 
 	// Auto-inject XMLUI rules into default session
@@ -381,6 +392,11 @@ func (s *MCPServer) setupTools() error {
 
 // setupPrompts registers all XMLUI prompts with the MCP server
 func (s *MCPServer) setupPrompts() error {
+	updateNotice := checkForUpdate(s.config.CLIVersion)
+	if updateNotice != "" {
+		mcpserver.SetUpdateNotice(updateNotice)
+	}
+
 	// Define the xmlui_rules prompt handler
 	xmluiRulesHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return mcp.NewGetPromptResult(
@@ -432,6 +448,26 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 
 	// Register with MCP server
 	s.mcpServer.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
+
+	// Register update notice as a separate prompt if an update is available.
+	if updateNotice != "" {
+		updateHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return mcp.NewGetPromptResult(
+				"XMLUI CLI Update Notice",
+				[]mcp.PromptMessage{
+					mcp.NewPromptMessage(
+						mcp.RoleUser,
+						mcp.NewTextContent(updateNotice),
+					),
+				},
+			), nil
+		}
+		updatePrompt := mcp.NewPrompt("xmlui_update_notice",
+			mcp.WithPromptDescription("Notify user that a newer xmlui-cli is available"))
+		s.prompts = append(s.prompts, updatePrompt)
+		s.promptHandlers["xmlui_update_notice"] = updateHandler
+		s.mcpServer.AddPrompt(updatePrompt, updateHandler)
+	}
 
 	return nil
 }

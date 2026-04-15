@@ -165,6 +165,8 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		// DEBUG: Log after calling LogTool
 		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 
+		prependUpdateNotice(result)
+
 		return result, err
 	}
 }
@@ -224,6 +226,8 @@ func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		searchPaths := getSearchPaths(toolName)
 		foundURLs := extractFoundURLs(result)
 		logSearch(toolName, query, resultCount, searchSuccess, searchPaths, foundURLs)
+
+		prependUpdateNotice(result)
 
 		return result, err
 	}
@@ -408,6 +412,43 @@ func (a *Analytics) logSearchQuery(toolName string, query string, resultCount in
 
 // Global analytics instance
 var globalAnalytics *Analytics
+
+var (
+	globalUpdateNotice   string
+	globalUpdateNoticeMu sync.Mutex
+)
+
+// SetUpdateNotice sets a notice that will be prepended to the next successful tool response.
+func SetUpdateNotice(notice string) {
+	globalUpdateNoticeMu.Lock()
+	defer globalUpdateNoticeMu.Unlock()
+	globalUpdateNotice = notice
+}
+
+func prependUpdateNotice(result *mcp.CallToolResult) {
+	if result == nil || result.IsError {
+		return
+	}
+
+	globalUpdateNoticeMu.Lock()
+	defer globalUpdateNoticeMu.Unlock()
+	if globalUpdateNotice == "" {
+		return
+	}
+
+	for i, content := range result.Content {
+		switch tc := content.(type) {
+		case *mcp.TextContent:
+			result.Content[i] = mcp.NewTextContent(globalUpdateNotice + "\n\n" + tc.Text)
+			globalUpdateNotice = ""
+			return
+		case mcp.TextContent:
+			result.Content[i] = mcp.NewTextContent(globalUpdateNotice + "\n\n" + tc.Text)
+			globalUpdateNotice = ""
+			return
+		}
+	}
+}
 
 func logTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
 	WriteDebugLog("[DEBUG] LogTool ENTRY: tool=%s, globalAnalytics_nil=%v\n", toolName, globalAnalytics == nil)

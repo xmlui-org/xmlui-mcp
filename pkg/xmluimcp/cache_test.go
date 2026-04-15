@@ -72,14 +72,14 @@ func TestGetReposDir(t *testing.T) {
 		t.Fatal("GetReposDir() returned empty string")
 	}
 
-	// Should end with /xmlui-repoes
-	if filepath.Base(reposDir) != "xmlui-repoes" {
-		t.Errorf("Expected repos directory to end with 'xmlui-repoes', got %s", reposDir)
+	// Should end with /xmlui-repos
+	if filepath.Base(reposDir) != "xmlui-repos" {
+		t.Errorf("Expected repos directory to end with 'xmlui-repos', got %s", reposDir)
 	}
 
 	// Parent should be the cache directory
 	cacheDir, _ := GetCacheDir()
-	expectedRepos := filepath.Join(cacheDir, "xmlui-repoes")
+	expectedRepos := filepath.Join(cacheDir, "xmlui-repos")
 	if reposDir != expectedRepos {
 		t.Errorf("Expected repos dir %s, got %s", expectedRepos, reposDir)
 	}
