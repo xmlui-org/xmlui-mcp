@@ -154,6 +154,11 @@ func (s *MCPServer) setupTools() error {
 	s.mcpServer.AddTool(examplesTool, mcpserver.WithSearchAnalytics("xmlui_examples", examplesHandler))
 	s.tools = append(s.tools, examplesTool)
 
+	// Find trace tool
+	findTraceTool, findTraceHandler := mcpserver.NewFindTraceTool()
+	s.mcpServer.AddTool(findTraceTool, mcpserver.WithAnalytics("xmlui_find_trace", findTraceHandler))
+	s.tools = append(s.tools, findTraceTool)
+
 	// List howto tool
 	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(s.xmluiDir)
 	s.mcpServer.AddTool(listHowtoTool, mcpserver.WithAnalytics("xmlui_list_howto", listHowtoHandler))
