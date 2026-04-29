@@ -15,16 +15,17 @@ import (
 func NewDistillTraceTool() (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool("xmlui_distill_trace",
 		mcp.WithDescription(
-			"Distills an exported XMLUI Inspector trace into a structured per-step "+
-				"user-journey summary in JSON. Each step describes one user action "+
-				"(click, fill, dblclick, keydown, navigation, etc.) with the API calls "+
-				"it triggered, value changes, toasts, modals, validation errors, and "+
-				"state diffs. Use this output to narrate what happened in the trace, "+
-				"diagnose layout/behavior issues, or generate Playwright-style replays. "+
-				"If no path is given, finds the most recent xs-trace-*.json in "+
-				"~/Downloads."),
+			"Distills an exported XMLUI Inspector trace into compact JSON for "+
+				"analysis. By default it returns a concise summary of each user step, "+
+				"including API calls, value changes, toasts, modals, validation "+
+				"errors, and state-diff hints. Use summary=false only when you "+
+				"explicitly need the full detailed distillation. If no path is given, "+
+				"finds the most recent xs-trace-*.json in ~/Downloads."),
 		mcp.WithString("path",
 			mcp.Description("Absolute path to a trace JSON file. If omitted, uses the most recent xs-trace-*.json in ~/Downloads."),
+		),
+		mcp.WithBoolean("summary",
+			mcp.Description("When true (default), return compact analysis-oriented JSON. Set false to return the full detailed distillation."),
 		),
 	)
 
@@ -37,6 +38,12 @@ func NewDistillTraceTool() (mcp.Tool, func(context.Context, mcp.CallToolRequest)
 
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		path, _ := req.Params.Arguments["path"].(string)
+		summary := true
+		if req.Params.Arguments != nil {
+			if v, ok := req.Params.Arguments["summary"].(bool); ok {
+				summary = v
+			}
+		}
 		if path == "" {
 			resolved, err := latestTraceFile()
 			if err != nil {
@@ -53,7 +60,12 @@ func NewDistillTraceTool() (mcp.Tool, func(context.Context, mcp.CallToolRequest)
 			exe = resolved
 		}
 
-		cmd := exec.CommandContext(ctx, exe, "distill-trace", path)
+		args := []string{"distill-trace"}
+		if summary {
+			args = append(args, "--summary")
+		}
+		args = append(args, path)
+		cmd := exec.CommandContext(ctx, exe, args...)
 		out, err := cmd.Output()
 		if err != nil {
 			stderr := ""
