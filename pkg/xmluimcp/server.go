@@ -404,40 +404,41 @@ func (s *MCPServer) setupPrompts() error {
 
 	// Define the xmlui_rules prompt handler
 	xmluiRulesHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		rules := `You are assisting with XMLUI development. Follow these essential rules:
+
+0 always do the simplest thing possible
+
+1 don't write any code without the user's permission, always preview proposed changes, discuss, and only proceed with approval
+
+2 use this xmlui mcp server to list and show component docs but also search xmlui docs, especially howto articles, and if necessary xmlui source code
+
+3 do not invent any xmlui syntax, only use constructs for which you can cite working examples found by the mcp server
+
+4 always cite your sources
+
+5 don't add any xmlui styling unless necessary, let the theme and layout engine do its job
+
+6 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
+
+7 never touch the dom, we only work within xmlui abstractions inside the <App> realm
+
+8 use reactive global variables in Globals.xs for cross-component coordination
+
+9 keep complex functions and expressions out of xmlui properties, put them in Globals.xs or per-component .xs if they need access to XMLUI reactivity, or in index.html scripts if they need access to the wider ecosystem
+
+10 when working with a person who is developing/debugging an XMLUI app, check if Inspector is there, if not point them to the Inspector component doc and say it will help
+
+11 if Inspector is there then you can prompt for a trace to help you help them. "open Inspector, use your app, click Export"
+
+12 use the xmlui_find_trace tool to locate the downloaded trace file, then use xmlui_distill_trace to understand what happened. Traces capture interactions, API calls, state changes, and timing -- they are the best way to understand app behavior.
+
+These rules ensure clean, maintainable XMLUI applications that follow best practices.`
 		return mcp.NewGetPromptResult(
 			"XMLUI Development Rules and Guidelines",
 			[]mcp.PromptMessage{
 				mcp.NewPromptMessage(
 					mcp.RoleUser,
-					mcp.NewTextContent(`You are assisting with XMLUI development. Follow these essential rules:
-
-1 don't write any code without my permission, always preview proposed changes, discuss, and only proceed with approval
-
-2 don't add any xmlui styling, let the theme and layout engine do its job
-
-3 proceed in small increments, write the absolute minimum amount of xmlui markup necessary and no script if possible
-
-4 do not invent any xmlui syntax, only use constructs for which you can find examples in the docs and sample apps, and always cite your sources.
-
-5 never touch the dom, we only work within xmlui abstractions inside the <App> realm, with help from vars and functions defined on the window variable in index.html
-
-6 keep complex functions and expressions out of xmlui, then can live in index.html or (if scoping requires) in code-behind
-
-7 use this xmlui-mcp server to list and show component docs but also search xmlui source, docs, examples, and howto articles
-
-8 always do the simplest thing possible
-
-9 use a neutral tone, do not say "Perfect!" etc, in fact never use exclamation marks at all
-
-10 when creating examples for live playgrounds, observe the conventions for ---app, ---comp and --api
-
-11 VStack is the default, don't use it unless necessary
-
-12 prioritize XMLUI tools, especially xmlui_list_howto and xmlui_search_howto, and always cite the urls of found articles
-
-13 prioritize xmlui-pg examples in .md files under src/components
-
-These rules ensure clean, maintainable XMLUI applications that follow best practices.`),
+					mcp.NewTextContent(rules),
 				),
 			},
 		), nil
