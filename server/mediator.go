@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,6 +53,10 @@ type MediatorConfig struct {
 	// rel is relative to homeDir, absPath is the absolute file path.
 	Classifier func(rel string, absPath string) string
 
+	// Optional cached file catalog. When provided, search reuses the cached file
+	// contents instead of walking the filesystem on every call.
+	Corpus *RepoCatalog
+
 	// Optional: enable filename matches (per your legacy behavior). Default true.
 	EnableFilenameMatches bool
 }
@@ -104,11 +107,11 @@ type MediatorJSON struct {
 //  3. error if something goes wrong (I/O etc. are soft-failed inside).
 // scoredFile accumulates matches for a single file during search.
 type scoredFile struct {
-	RelPath    string
-	AbsPath    string
-	Section    string
-	Score      float64
-	Snippets   []scoredSnippet
+	RelPath         string
+	AbsPath         string
+	Section         string
+	Score           float64
+	Snippets        []scoredSnippet
 	Deprecated      bool   // true if file contains a [!WARNING] deprecation notice
 	ReplacementText string // e.g. "global variables"
 	ReplacementLink string // e.g. "/guides/markup#global-variables"
@@ -251,18 +254,17 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 
 		for _, root := range roots {
-			_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if d.IsDir() {
-					if d.Name() == "node_modules" || d.Name() == ".git" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if !hasAllowedExt(d.Name(), cfg.FileExtensions) {
-					return nil
+			var files []CatalogFile
+			if cfg.Corpus != nil {
+				files = cfg.Corpus.FilesForRoot(root)
+			}
+			if len(files) == 0 {
+				files = loadFilesForRoot(homeDir, root, cfg.FileExtensions)
+			}
+
+			for _, file := range files {
+				if !hasAllowedExt(file.Name, cfg.FileExtensions) {
+					continue
 				}
 
 				var matchFunc func(string, string) bool
@@ -274,26 +276,16 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 					matchFunc = fuzzyMatch
 				}
 
-				rel, _ := filepath.Rel(homeDir, path)
-
-				if cfg.EnableFilenameMatches && matchFunc(d.Name(), lq) {
-					addFileHit(rel, path, 0, "[filename match]", queryTerms)
+				if cfg.EnableFilenameMatches && matchFunc(file.Name, lq) {
+					addFileHit(file.RelPath, file.AbsPath, 0, "[filename match]", queryTerms)
 					hits++
 				}
 
-				f, err := os.Open(path)
-				if err != nil {
-					return nil
-				}
-				defer f.Close()
-
-				sc := bufio.NewScanner(f)
-				ln := 1
 				sawWarning := false
-				for sc.Scan() {
-					line := sc.Text()
+				for ln, line := range file.Lines {
+					lineNum := ln + 1
 					if matchFunc(line, lq) {
-						addFileHit(rel, path, ln, line, queryTerms)
+						addFileHit(file.RelPath, file.AbsPath, lineNum, line, queryTerms)
 						hits++
 					}
 					// Detect deprecation: [!WARNING] + "deprecated" nearby
@@ -301,14 +293,14 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 						sawWarning = true
 					}
 					if sawWarning && strings.Contains(strings.ToLower(line), "deprecated") {
-						if sf, ok := fileScores[path]; ok {
+						if sf, ok := fileScores[file.AbsPath]; ok {
 							sf.Deprecated = true
 						}
 					}
 					// Extract replacement link from deprecation block
 					if sawWarning {
 						if m := mdLinkRe.FindStringSubmatch(line); m != nil {
-							if sf, ok := fileScores[path]; ok && sf.ReplacementLink == "" {
+							if sf, ok := fileScores[file.AbsPath]; ok && sf.ReplacementLink == "" {
 								sf.ReplacementText = m[1]
 								sf.ReplacementLink = m[2]
 							}
@@ -318,10 +310,8 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 							sawWarning = false
 						}
 					}
-					ln++
 				}
-				return nil
-			})
+			}
 		}
 		jsonOut.QueryPlan = append(jsonOut.QueryPlan, stageHit{Stage: stageName, Query: lq, Hits: hits})
 		return hits
@@ -463,7 +453,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 
 	// Agent guidance
-	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
+	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir, cfg.Corpus)
 
 	// Inject topic URLs into guidance (only if they pass registry validation)
 	if len(topicMatches) > 0 && jsonOut.AgentGuidance != nil {
@@ -483,7 +473,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 	// "Did You Mean?" suggestions (Rec #5)
 	if len(ranked) == 0 || jsonOut.Confidence == "low" {
-		suggestions := suggestAlternatives(originalQuery, homeDir, 3)
+		suggestions := suggestAlternatives(originalQuery, homeDir, 3, cfg.Corpus)
 		if len(suggestions) > 0 {
 			jsonOut.Suggestions = suggestions
 			if jsonOut.AgentGuidance != nil {
@@ -707,6 +697,45 @@ func hasAllowedExt(name string, allowed []string) bool {
 		}
 	}
 	return false
+}
+
+func loadFilesForRoot(homeDir string, root string, allowedExts []string) []CatalogFile {
+	files := make([]CatalogFile, 0, 64)
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == "node_modules" || d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !hasAllowedExt(d.Name(), allowedExts) {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(homeDir, path)
+		if relErr != nil {
+			rel = path
+		}
+
+		content := string(data)
+		files = append(files, CatalogFile{
+			RelPath: rel,
+			AbsPath: path,
+			Name:    d.Name(),
+			Content: content,
+			Lines:   splitCatalogLines(content),
+		})
+		return nil
+	})
+	return files
 }
 
 type stageHit struct {
@@ -957,7 +986,7 @@ func detectSyntaxInventionRisk(queryTokens []string, facets map[string]FacetCoun
 
 // generateAgentGuidance provides focused guidance prioritizing tool redirection
 // Provides concise, actionable guidance without excessive repetition
-func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
+func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string, corpus *RepoCatalog) *AgentGuidance {
 	// Concise base guidance - always included
 	baseGuidance := []string{
 		"Cite sources with file paths and URLs",

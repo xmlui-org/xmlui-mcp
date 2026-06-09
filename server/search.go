@@ -10,7 +10,7 @@ import (
 
 // NewSearchTool wires xmlui_search to the shared search mediator.
 // exampleRoots are optional paths outside homeDir that should be classified as "examples".
-func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewSearchTool(homeDir string, exampleRoots []string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_search",
 		mcp.WithDescription("Searches XMLUI source, docs, and examples using a staged search mediator. Returns human-readable matches plus a JSON summary."),
@@ -49,6 +49,7 @@ func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(contex
 			Stopwords:             DefaultStopwords(),
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            SimpleClassifier(homeDir, exampleRoots),
+			Corpus:                corpus,
 			EnableFilenameMatches: true,
 		}
 

@@ -20,11 +20,12 @@ import (
 
 // ServerConfig holds configuration for the XMLUI MCP server
 type ServerConfig struct {
-	ExampleDirs  []string // Optional: directories for examples
-	HTTPMode     bool     // Whether to run in HTTP mode
-	Port         string   // Port for HTTP mode (default: "8080")
-	XMLUIVersion string   // Specific XMLUI version to use (e.g. "0.11.4")
-	CLIVersion   string   // Version of the xmlui CLI (set via ldflags)
+	ExampleDirs    []string // Optional: directories for examples
+	HTTPMode       bool     // Whether to run in HTTP mode
+	Port           string   // Port for HTTP mode (default: "8080")
+	XMLUIVersion   string   // Specific XMLUI version to use (e.g. "0.11.4")
+	CLIVersion     string   // Version of the xmlui CLI (set via ldflags)
+	EnableFastMode bool     // Use cached catalogs for faster tool calls
 }
 
 // MCPServer represents an XMLUI MCP server instance
@@ -33,6 +34,8 @@ type MCPServer struct {
 	xmluiDir       string // Path to cached XMLUI repository (set automatically)
 	mcpServer      *server.MCPServer
 	sessionManager *SessionManager
+	repoCatalog    *mcpserver.RepoCatalog
+	exampleCatalog *mcpserver.RepoCatalog
 	prompts        []mcp.Prompt
 	tools          []mcp.Tool
 	promptHandlers map[string]PromptHandler
@@ -94,9 +97,43 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 		xmluiDir:       cachedRepo,
 		mcpServer:      mcpServer,
 		sessionManager: sessionManager,
+		repoCatalog:    nil,
+		exampleCatalog: nil,
 		prompts:        []mcp.Prompt{},
 		tools:          []mcp.Tool{},
 		promptHandlers: make(map[string]PromptHandler),
+	}
+
+	exampleRoots := []string{}
+	for _, d := range config.ExampleDirs {
+		trimmed := strings.TrimSpace(d)
+		if trimmed != "" {
+			exampleRoots = append(exampleRoots, trimmed)
+		}
+	}
+	if isFastModeEnabled(config) {
+		paths := mcpserver.GetRepoPaths(cachedRepo)
+		repoRoots := []string{
+			filepath.Join(cachedRepo, paths.ComponentDocs),
+			filepath.Join(cachedRepo, paths.Pages),
+			filepath.Join(cachedRepo, paths.ComponentSource),
+			filepath.Join(cachedRepo, paths.Blog),
+		}
+		repoCatalog, err := mcpserver.BuildRepoCatalog(cachedRepo, repoRoots, []string{".mdx", ".md", ".tsx", ".scss"})
+		if err != nil {
+			return nil, fmt.Errorf("failed to build XMLUI repository catalog: %w", err)
+		}
+		xmluiServer.repoCatalog = repoCatalog
+
+		if len(exampleRoots) > 0 {
+			exampleHome := mcpserver.CommonParent(exampleRoots)
+			exampleCatalog, catalogErr := mcpserver.BuildRepoCatalog(exampleHome, exampleRoots, []string{".tsx", ".xmlui", ".mdx", ".md"})
+			if catalogErr != nil {
+				mcpserver.WriteDebugLog("WARNING: failed to build example catalog: %v\n", catalogErr)
+			} else {
+				xmluiServer.exampleCatalog = exampleCatalog
+			}
+		}
 	}
 
 	// Setup all tools and prompts
@@ -129,6 +166,20 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 	return xmluiServer, nil
 }
 
+func isFastModeEnabled(config ServerConfig) bool {
+	if config.EnableFastMode {
+		return true
+	}
+
+	value := strings.TrimSpace(os.Getenv("XMLUI_MCP_FAST_MODE"))
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // setupTools registers all XMLUI tools with the MCP server
 func (s *MCPServer) setupTools() error {
 	// Build example roots from configuration
@@ -141,27 +192,27 @@ func (s *MCPServer) setupTools() error {
 	}
 
 	// List components tool
-	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(s.xmluiDir)
+	listComponentsTool, listComponentsHandler := mcpserver.NewListComponentsTool(s.xmluiDir, s.repoCatalog)
 	s.mcpServer.AddTool(listComponentsTool, mcpserver.WithAnalytics("xmlui_list_components", listComponentsHandler))
 	s.tools = append(s.tools, listComponentsTool)
 
 	// Component docs tool
-	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(s.xmluiDir)
+	componentDocsTool, componentDocsHandler := mcpserver.NewComponentDocsTool(s.xmluiDir, s.repoCatalog)
 	s.mcpServer.AddTool(componentDocsTool, mcpserver.WithAnalytics("xmlui_component_docs", componentDocsHandler))
 	s.tools = append(s.tools, componentDocsTool)
 
 	// Search docs tool
-	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.xmluiDir, exampleRoots)
+	searchDocsTool, searchDocsHandler := mcpserver.NewSearchTool(s.xmluiDir, exampleRoots, s.repoCatalog)
 	s.mcpServer.AddTool(searchDocsTool, mcpserver.WithSearchAnalytics("xmlui_search", searchDocsHandler))
 	s.tools = append(s.tools, searchDocsTool)
 
 	// Read file tool
-	readFileTool, readFileHandler := mcpserver.NewReadFileTool(s.xmluiDir)
+	readFileTool, readFileHandler := mcpserver.NewReadFileTool(s.xmluiDir, s.repoCatalog)
 	s.mcpServer.AddTool(readFileTool, mcpserver.WithAnalytics("xmlui_read_file", readFileHandler))
 	s.tools = append(s.tools, readFileTool)
 
 	// Examples tool
-	examplesTool, examplesHandler := mcpserver.NewExamplesTool(exampleRoots)
+	examplesTool, examplesHandler := mcpserver.NewExamplesTool(exampleRoots, s.exampleCatalog)
 	s.mcpServer.AddTool(examplesTool, mcpserver.WithSearchAnalytics("xmlui_examples", examplesHandler))
 	s.tools = append(s.tools, examplesTool)
 
@@ -170,18 +221,17 @@ func (s *MCPServer) setupTools() error {
 	s.mcpServer.AddTool(findTraceTool, mcpserver.WithAnalytics("xmlui_find_trace", findTraceHandler))
 	s.tools = append(s.tools, findTraceTool)
 
-
 	// Distill trace tool
 	distillTraceTool, distillTraceHandler := mcpserver.NewDistillTraceTool()
 	s.mcpServer.AddTool(distillTraceTool, mcpserver.WithAnalytics("xmlui_distill_trace", distillTraceHandler))
 	s.tools = append(s.tools, distillTraceTool)
 	// List howto tool
-	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(s.xmluiDir)
+	listHowtoTool, listHowtoHandler := mcpserver.NewListHowtoTool(s.xmluiDir, s.repoCatalog)
 	s.mcpServer.AddTool(listHowtoTool, mcpserver.WithAnalytics("xmlui_list_howto", listHowtoHandler))
 	s.tools = append(s.tools, listHowtoTool)
 
 	// Search howto tool
-	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(s.xmluiDir)
+	searchHowtoTool, searchHowtoHandler := mcpserver.NewSearchHowtoTool(s.xmluiDir, s.repoCatalog)
 	s.mcpServer.AddTool(searchHowtoTool, mcpserver.WithSearchAnalytics("xmlui_search_howto", searchHowtoHandler))
 	s.tools = append(s.tools, searchHowtoTool)
 

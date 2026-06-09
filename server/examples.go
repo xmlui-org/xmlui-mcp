@@ -8,7 +8,7 @@ import (
 )
 
 // NewExamplesTool wires xmlui_examples to the shared search mediator.
-func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewExamplesTool(exampleRoots []string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	WriteDebugLog("Example roots configured: %v\n", exampleRoots)
 
 	tool := mcp.NewTool("xmlui_examples",
@@ -44,6 +44,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			Stopwords:             DefaultStopwords(),
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            ExamplesClassifier(),
+			Corpus:                corpus,
 			EnableFilenameMatches: true,
 		}
 

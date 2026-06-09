@@ -57,3 +57,9 @@ func commonParent(paths []string) string {
 	}
 	return result
 }
+
+// CommonParent is the exported form used by the MCP package when building
+// cached example corpora.
+func CommonParent(paths []string) string {
+	return commonParent(paths)
+}
