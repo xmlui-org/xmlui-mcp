@@ -10,7 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewReadFileTool(homeDir string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool("xmlui_read_file",
 		mcp.WithDescription("Reads a .mdx, .tsx, .scss, or .md file from the XMLUI source or docs tree."),
 		mcp.WithString("path",
@@ -38,6 +38,15 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 			!strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.ExtensionDocs)) &&
 			!strings.HasPrefix(fullPath, filepath.Join(homeDir, paths.Pages)) {
 			return mcp.NewToolResultError(fmt.Sprintf("Path not allowed. Must be under %s, %s, %s, or %s.", paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages)), nil
+		}
+
+		if corpus != nil {
+			if file, ok := corpus.FindByAbs(fullPath); ok {
+				return mcp.NewToolResultText(file.Content), nil
+			}
+			if file, ok := corpus.FindByRel(relPath); ok {
+				return mcp.NewToolResultText(file.Content), nil
+			}
 		}
 
 		content, err := os.ReadFile(fullPath)

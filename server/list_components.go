@@ -11,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewListComponentsTool(homeDir string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_list_components",
 		mcp.WithDescription("Lists all available XMLUI components."),
@@ -24,48 +24,70 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 		OpenWorldHint:   false,
 	}
 
-
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		paths := GetRepoPaths(homeDir)
 		componentRoot := filepath.Join(homeDir, paths.ComponentDocs)
 		components := []string{}
 
-		err := filepath.WalkDir(componentRoot, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
+		if corpus != nil {
+			for _, file := range corpus.FilesForRoot(componentRoot) {
+				if !strings.HasSuffix(file.Name, ".md") {
+					continue
+				}
+				rel, err := filepath.Rel(componentRoot, file.AbsPath)
+				if err != nil {
+					continue
+				}
 
-			// Skip node_modules
-			if d.IsDir() && d.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
+				parts := strings.Split(rel, string(filepath.Separator))
+				base := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
 
-			// Only include .md files
-			if d.IsDir() || !strings.HasSuffix(path, ".md") {
+				var component string
+				if len(parts) == 2 && parts[0] == base {
+					component = parts[0]
+				} else {
+					component = strings.TrimSuffix(rel, filepath.Ext(rel))
+				}
+				components = append(components, component)
+			}
+		} else {
+			err := filepath.WalkDir(componentRoot, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				// Skip node_modules
+				if d.IsDir() && d.Name() == "node_modules" {
+					return filepath.SkipDir
+				}
+
+				// Only include .md files
+				if d.IsDir() || !strings.HasSuffix(path, ".md") {
+					return nil
+				}
+
+				rel, err := filepath.Rel(componentRoot, path)
+				if err != nil {
+					return err
+				}
+
+				parts := strings.Split(rel, string(filepath.Separator))
+				base := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+
+				var component string
+				if len(parts) == 2 && parts[0] == base {
+					// Collapse "App/App" → "App"
+					component = parts[0]
+				} else {
+					component = strings.TrimSuffix(rel, filepath.Ext(rel))
+				}
+
+				components = append(components, component)
 				return nil
-			}
-
-			rel, err := filepath.Rel(componentRoot, path)
+			})
 			if err != nil {
-				return err
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to scan components: %v", err)), nil
 			}
-
-			parts := strings.Split(rel, string(filepath.Separator))
-			base := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-
-			var component string
-			if len(parts) == 2 && parts[0] == base {
-				// Collapse "App/App" → "App"
-				component = parts[0]
-			} else {
-				component = strings.TrimSuffix(rel, filepath.Ext(rel))
-			}
-
-			components = append(components, component)
-			return nil
-		})
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to scan components: %v", err)), nil
 		}
 
 		sort.Strings(components)
