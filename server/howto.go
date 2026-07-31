@@ -26,7 +26,7 @@ func titleToAnchor(title string) string {
 }
 
 // NewListHowtoTool returns the MCP tool and handler for listing howto titles
-func NewListHowtoTool(xmluiDir string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_list_howto",
 		mcp.WithDescription("List all 'How To' entry titles from the howto directory."),
@@ -37,12 +37,7 @@ func NewListHowtoTool(xmluiDir string, corpus *RepoCatalog) (mcp.Tool, func(cont
 		howtoDir := filepath.Join(xmluiDir, paths.Howto)
 		WriteDebugLog("xmlui_list_howto: xmluiDir=%s, howtoDir=%s\n", xmluiDir, howtoDir)
 		var docs []string
-		if corpus != nil {
-			for _, file := range corpus.FilesForRoot(howtoDir) {
-				docs = append(docs, file.Content)
-			}
-			WriteDebugLog("xmlui_list_howto: found %d docs from cache\n", len(docs))
-		} else if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
+		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
 			docs = append(docs, moreDocs...)
 			WriteDebugLog("xmlui_list_howto: found %d docs\n", len(docs))
 		} else {
@@ -56,7 +51,7 @@ func NewListHowtoTool(xmluiDir string, corpus *RepoCatalog) (mcp.Tool, func(cont
 }
 
 // NewSearchHowtoTool wires xmlui_search_howto to the shared search mediator.
-func NewSearchHowtoTool(xmluiDir string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 	tool := mcp.NewTool(
 		"xmlui_search_howto",
 		mcp.WithDescription("Search for 'How To' entries using a staged search mediator. Returns human-readable matches plus a JSON summary."),
@@ -92,7 +87,6 @@ func NewSearchHowtoTool(xmluiDir string, corpus *RepoCatalog) (mcp.Tool, func(co
 			Stopwords:             DefaultStopwords(),
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            HowtoClassifier(xmluiDir),
-			Corpus:                corpus,
 			EnableFilenameMatches: true,
 		}
 

@@ -27,7 +27,7 @@ var parentComponentMap = map[string]string{
 	"SearchBox":      "TextBox",
 }
 
-func NewComponentDocsTool(homeDir string, corpus *RepoCatalog) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
+func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_component_docs",
 		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component."),
@@ -53,23 +53,16 @@ func NewComponentDocsTool(homeDir string, corpus *RepoCatalog) (mcp.Tool, func(c
 		paths := GetRepoPaths(homeDir)
 		mdxPath := filepath.Join(homeDir, paths.ComponentDocs, componentName+".md")
 
-		contentStr := ""
-		if corpus != nil {
-			if file, ok := corpus.FindByRel(filepath.Join(paths.ComponentDocs, componentName+".md")); ok {
-				contentStr = file.Content
-			}
+		content, err := os.ReadFile(mdxPath)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to read %s: %v", componentName, err)), nil
 		}
-		if contentStr == "" {
-			content, err := os.ReadFile(mdxPath)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to read %s: %v", componentName, err)), nil
-			}
-			contentStr = string(content)
-		}
+
+		contentStr := string(content)
 
 		// Supplement thin docs (Rec #3)
 		if len(contentStr) < 500 {
-			supplement := getComponentSupplement(homeDir, componentName, corpus)
+			supplement := getComponentSupplement(homeDir, componentName)
 			if supplement != "" {
 				contentStr += "\n\n---\n## Additional Context\n\n" + supplement
 			}
@@ -86,7 +79,7 @@ func NewComponentDocsTool(homeDir string, corpus *RepoCatalog) (mcp.Tool, func(c
 }
 
 // getComponentSupplement finds additional documentation for thin component docs.
-func getComponentSupplement(homeDir string, componentName string, corpus *RepoCatalog) string {
+func getComponentSupplement(homeDir string, componentName string) string {
 	var supplement strings.Builder
 	maxSupplement := 2000
 	paths := GetRepoPaths(homeDir)
@@ -96,23 +89,11 @@ func getComponentSupplement(homeDir string, componentName string, corpus *RepoCa
 
 	// Check parent component map
 	if parent, ok := parentComponentMap[baseName]; ok {
-		parentPath := filepath.Join(paths.ComponentDocs, parent+".md")
-		var parentContent string
-		if corpus != nil {
-			if file, ok := corpus.FindByRel(parentPath); ok {
-				parentContent = file.Content
-			}
-		}
-		if parentContent == "" {
-			fullParentPath := filepath.Join(homeDir, parentPath)
-			parentBytes, err := os.ReadFile(fullParentPath)
-			if err == nil {
-				parentContent = string(parentBytes)
-			}
-		}
-		if parentContent != "" {
+		parentPath := filepath.Join(homeDir, paths.ComponentDocs, parent+".md")
+		parentContent, err := os.ReadFile(parentPath)
+		if err == nil {
 			// Extract Properties and Events sections from parent
-			extracted := extractSections(parentContent, []string{"Properties", "Events", "Props"})
+			extracted := extractSections(string(parentContent), []string{"Properties", "Events", "Props"})
 			if extracted != "" {
 				supplement.WriteString(fmt.Sprintf("*From parent component %s:*\n\n", parent))
 				supplement.WriteString(extracted)
@@ -123,25 +104,7 @@ func getComponentSupplement(homeDir string, componentName string, corpus *RepoCa
 	// Check for source .md or .tsx in xmlui/src/components/<Name>/
 	if supplement.Len() < maxSupplement {
 		srcDir := filepath.Join(homeDir, paths.ComponentSource, baseName)
-		if corpus != nil {
-			if entries := corpus.FilesForRoot(filepath.Join(homeDir, paths.ComponentSource)); len(entries) > 0 {
-				for _, file := range entries {
-					if !strings.HasPrefix(file.RelPath, filepath.Join(paths.ComponentSource, baseName)+string(filepath.Separator)) {
-						continue
-					}
-					name := file.Name
-					if strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".tsx") {
-						content := file.Content
-						if len(content) > maxSupplement-supplement.Len() {
-							content = content[:maxSupplement-supplement.Len()]
-						}
-						supplement.WriteString(fmt.Sprintf("\n*From source %s:*\n\n", name))
-						supplement.WriteString(content)
-						break
-					}
-				}
-			}
-		} else if entries, err := os.ReadDir(srcDir); err == nil {
+		if entries, err := os.ReadDir(srcDir); err == nil {
 			for _, entry := range entries {
 				if entry.IsDir() {
 					continue

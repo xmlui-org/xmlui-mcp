@@ -28,7 +28,6 @@ func main() {
 		httpMode     = flag.Bool("http", false, "Run in HTTP mode instead of stdio")
 		port         = flag.String("port", "8080", "Port to listen on in HTTP mode")
 		xmluiVersion = flag.String("xmlui-version", "", "Specific XMLUI version to use (e.g. 0.11.4)")
-		fastMode     = flag.Bool("fast", false, "Enable the cached fast-path for tool calls")
 		exampleDirs  stringSlice
 	)
 
@@ -42,11 +41,10 @@ func main() {
 	// Create server configuration
 	// The XMLUI repository will be automatically downloaded and cached by NewServer
 	config := xmluimcp.ServerConfig{
-		ExampleDirs:    exampleDirs,
-		HTTPMode:       *httpMode,
-		Port:           *port,
-		XMLUIVersion:   *xmluiVersion,
-		EnableFastMode: *fastMode,
+		ExampleDirs:  exampleDirs,
+		HTTPMode:     *httpMode,
+		Port:         *port,
+		XMLUIVersion: *xmluiVersion,
 	}
 
 	// Create and start the server

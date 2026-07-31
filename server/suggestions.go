@@ -10,8 +10,8 @@ import (
 // suggestAlternatives returns up to maxN suggestions for a query that produced
 // zero or low-confidence results. It uses Levenshtein distance and substring
 // containment against known components and topic names.
-func suggestAlternatives(query string, homeDir string, maxN int, corpus *RepoCatalog) []string {
-	candidates := buildCandidateList(homeDir, corpus)
+func suggestAlternatives(query string, homeDir string, maxN int) []string {
+	candidates := buildCandidateList(homeDir)
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -80,31 +80,13 @@ func suggestAlternatives(query string, homeDir string, maxN int, corpus *RepoCat
 }
 
 // buildCandidateList constructs the list of known component names and topic names.
-func buildCandidateList(homeDir string, corpus *RepoCatalog) []string {
+func buildCandidateList(homeDir string) []string {
 	var candidates []string
 
 	// Scan component docs
 	paths := GetRepoPaths(homeDir)
 	componentRoot := filepath.Join(homeDir, paths.ComponentDocs)
-	if corpus != nil {
-		for _, file := range corpus.FilesForRoot(componentRoot) {
-			if !strings.HasSuffix(file.Name, ".md") {
-				continue
-			}
-			rel, err := filepath.Rel(componentRoot, file.AbsPath)
-			if err != nil {
-				candidates = append(candidates, strings.TrimSuffix(file.Name, ".md"))
-				continue
-			}
-			parts := strings.Split(rel, string(filepath.Separator))
-			base := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-			if len(parts) == 2 && parts[0] == base {
-				candidates = append(candidates, parts[0])
-			} else {
-				candidates = append(candidates, strings.TrimSuffix(rel, filepath.Ext(rel)))
-			}
-		}
-	} else if entries, err := os.ReadDir(componentRoot); err == nil {
+	if entries, err := os.ReadDir(componentRoot); err == nil {
 		for _, entry := range entries {
 			name := entry.Name()
 			if entry.IsDir() {
@@ -159,8 +141,8 @@ func levenshtein(a, b string) int {
 				cost = 0
 			}
 			curr[j] = minOf3(
-				curr[j-1]+1,    // insertion
-				prev[j]+1,      // deletion
+				curr[j-1]+1,   // insertion
+				prev[j]+1,     // deletion
 				prev[j-1]+cost, // substitution
 			)
 		}
