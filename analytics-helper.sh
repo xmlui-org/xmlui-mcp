@@ -5,7 +5,8 @@
 
 # Determine cache directory based on OS
 get_cache_dir() {
-    local os=$(uname -s)
+    local os
+    os=$(uname -s)
     local home_dir="$HOME"
 
     case "$os" in
@@ -30,9 +31,14 @@ get_cache_dir() {
     esac
 }
 
-# Get the analytics file path
-CACHE_DIR=$(get_cache_dir)
-ANALYTICS_FILE="$CACHE_DIR/xmlui-mcp-analytics.json"
+# Get the analytics file path. The override supports fixture-based verification
+# without writing test observations into the user's live analytics log.
+if [ -n "${XMLUI_MCP_ANALYTICS_FILE:-}" ]; then
+    ANALYTICS_FILE="$XMLUI_MCP_ANALYTICS_FILE"
+else
+    CACHE_DIR=$(get_cache_dir)
+    ANALYTICS_FILE="$CACHE_DIR/xmlui-mcp-analytics.json"
+fi
 
 # Check if analytics file exists
 if [ ! -f "$ANALYTICS_FILE" ]; then
@@ -55,8 +61,8 @@ Commands:
     tools       Show tool usage statistics
     searches    Show search query analysis
     xmlui_search Show xmlui_search queries and results analysis
-    xmlui_search_fail Show failed xmlui_search queries (no results found)
-    xmlui_search_success Show successful xmlui_search terms only
+    xmlui_search_fail Show completed v2 xmlui_search queries with no results
+    xmlui_search_success Show completed v2 xmlui_search queries with results
 
     server      Show server analytics endpoints (when running in HTTP mode)
     help        Show this help message
@@ -89,8 +95,22 @@ show_summary() {
     if check_jq; then
         echo "Overall Statistics:"
         jq -c 'select(.type != null)' "$ANALYTICS_FILE" | jq -s '
+            (map(select(.type == "search_query"))) as $searches |
+            ($searches | map(select(.schema_version == 2))) as $v2 |
+            ($searches | map(select(.schema_version != 2))) as $legacy |
+            ($v2 | map(select(.execution_success == true))) as $executed |
+            ($executed | map(select(.yielded_results == true))) as $hits |
+            ($executed | map(select(.yielded_results == false))) as $misses |
             "• Total tool invocations: " + (map(select(.type == "tool_invocation")) | length | tostring),
-            "• Total search queries: " + (map(select(.type == "search_query")) | length | tostring)
+            "• Total search queries: " + ($searches | length | tostring),
+            "• Schema-v2 search queries: " + ($v2 | length | tostring),
+            "• Legacy search queries (excluded from v2 rates): " + ($legacy | length | tostring),
+            "• V2 execution success rate: " +
+                (if ($v2 | length) > 0 then (($executed | length) * 100 / ($v2 | length) | floor | tostring) + "%" else "n/a" end),
+            "• V2 retrieval hit rate (completed searches): " +
+                (if ($executed | length) > 0 then (($hits | length) * 100 / ($executed | length) | floor | tostring) + "%" else "n/a" end),
+            "• V2 zero-result queries: " + ($misses | length | tostring),
+            "• V2 operational failures: " + (($v2 | map(select(.execution_success != true)) | length) | tostring)
         '
 
         echo
@@ -104,23 +124,23 @@ show_summary() {
         '
 
         echo
-        echo "Popular Search Terms:"
-        jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
+        echo "Popular Schema-v2 Search Terms:"
+        jq -c 'select(.type == "search_query" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
             group_by(.query) |
             map(
                 . as $group |
                 {
                     query: $group[0].query,
                     count: ($group | length),
-                    avg_results: (
-                        ($group | map(.result_count // 0) | add)
+                    avg_matched_files: (
+                        ($group | map(.matched_file_count // 0) | add)
                         / ($group | length)
                     )
                 }
             ) |
             sort_by(.count) | reverse |
             .[:10] |
-            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_results | floor | tostring) + " results)"
+            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_matched_files | floor | tostring) + " matched files)"
         '
     else
         cat "$ANALYTICS_FILE"
@@ -172,42 +192,54 @@ show_searches() {
     echo
 
     if check_jq; then
-        echo "Search Patterns:"
+        echo "Schema-v2 Search Outcomes:"
         jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
-            "Total searches: " + (length | tostring),
-            "Unique queries: " + (group_by(.query) | length | tostring),
-            "Average results per search: " + ((map(.result_count // 0) | add) / length | floor | tostring),
-            "Success rate: " + ((map(select(.success == true)) | length) * 100 / length | floor | tostring) + "%",
+            (map(select(.schema_version == 2))) as $v2 |
+            (map(select(.schema_version != 2))) as $legacy |
+            ($v2 | map(select(.execution_success == true))) as $executed |
+            ($executed | map(select(.yielded_results == true))) as $hits |
+            "V2 searches: " + ($v2 | length | tostring),
+            "Legacy searches (excluded): " + ($legacy | length | tostring),
+            "Unique v2 queries: " + ($v2 | group_by(.query) | length | tostring),
+            "Average matched files per completed v2 search: " +
+                (if ($executed | length) > 0 then (($executed | map(.matched_file_count // 0) | add) / ($executed | length) | floor | tostring) else "n/a" end),
+            "Average matched lines per completed v2 search: " +
+                (if ($executed | length) > 0 then (($executed | map(.matched_line_count // 0) | add) / ($executed | length) | floor | tostring) else "n/a" end),
+            "Execution success rate: " +
+                (if ($v2 | length) > 0 then (($executed | length) * 100 / ($v2 | length) | floor | tostring) + "%" else "n/a" end),
+            "Retrieval hit rate (completed searches): " +
+                (if ($executed | length) > 0 then (($hits | length) * 100 / ($executed | length) | floor | tostring) + "%" else "n/a" end),
+            "Zero-result completed searches: " + (($executed | map(select(.yielded_results == false)) | length) | tostring),
             "",
-            "Most frequent searches:"
+            "Most frequent v2 searches:"
         '
 
-        jq -c 'select(.type == "search_query")' "$ANALYTICS_FILE" | jq -s '
+        jq -c 'select(.type == "search_query" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
             group_by(.query) |
             map(
                 . as $group |
                 {
                     query: $group[0].query,
                     count: ($group | length),
-                    avg_results: (
-                        ($group | map(.result_count // 0) | add)
+                    avg_matched_files: (
+                        ($group | map(.matched_file_count // 0) | add)
                         / ($group | length)
                     )
                 }
             ) |
             sort_by(.count) | reverse |
             .[:10] |
-            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_results | floor | tostring) + " results)"
+            .[] | "• " + .query + " (" + (.count | tostring) + " times, avg " + (.avg_matched_files | floor | tostring) + " matched files)"
         '
 
         echo
-        echo "Most Found URLs (by frequency):"
-        jq -c 'select(.type == "search_query" and .found_urls != null)' "$ANALYTICS_FILE" | jq -s '
-            map(.found_urls // []) | flatten | group_by(.) |
-            map({url: .[0], count: length}) |
+        echo "Most Matched Paths in Schema-v2 Records:"
+        jq -c 'select(.type == "search_query" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
+            map(.matched_paths // []) | flatten | group_by(.) |
+            map({path: .[0], count: length}) |
             sort_by(.count) | reverse |
             .[:15] |
-            .[] | "• " + .url + " (" + (.count | tostring) + " times)"
+            .[] | "• " + .path + " (" + (.count | tostring) + " times)"
         '
     else
         echo "Raw search query data:"
@@ -221,82 +253,92 @@ show_xmlui() {
     echo
 
     if check_jq; then
-        echo "XMLUI Search Overview:"
+        echo "Schema-v2 XMLUI Search Overview:"
         jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
-            "Total xmlui_search queries: " + (length | tostring),
-            "Unique queries: " + (group_by(.query) | length | tostring),
-            "Successful searches: " + (map(select(.success == true)) | length | tostring),
-            "Failed searches: " + (map(select(.success == false)) | length | tostring),
-            "Average results per search: " + ((map(.result_count // 0) | add) / length | floor | tostring),
+            (map(select(.schema_version == 2))) as $v2 |
+            (map(select(.schema_version != 2))) as $legacy |
+            ($v2 | map(select(.execution_success == true))) as $executed |
+            ($executed | map(select(.yielded_results == true))) as $hits |
+            "V2 xmlui_search queries: " + ($v2 | length | tostring),
+            "Legacy xmlui_search queries (excluded): " + ($legacy | length | tostring),
+            "Unique v2 queries: " + ($v2 | group_by(.query) | length | tostring),
+            "Execution successes: " + ($executed | length | tostring),
+            "Operational failures: " + (($v2 | map(select(.execution_success != true)) | length) | tostring),
+            "Retrieval hits: " + ($hits | length | tostring),
+            "Zero-result searches: " + (($executed | map(select(.yielded_results == false)) | length) | tostring),
+            "Retrieval hit rate (completed searches): " +
+                (if ($executed | length) > 0 then (($hits | length) * 100 / ($executed | length) | floor | tostring) + "%" else "n/a" end),
             ""
         '
 
-        echo "Search Query Details:"
-        echo "===================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+        echo "Schema-v2 Search Query Details:"
+        echo "==============================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
             sort_by(.timestamp) |
             .[] |
             "Query: " + .query,
             "  Time: " + .timestamp,
-            "  Success: " + (.success | tostring),
-            "  Results: " + (.result_count | tostring),
-            "  Search Paths: " + (.search_paths | join(", ")),
-            (if .found_urls and (.found_urls | length) > 0 then
-                "  Found Files (" + (.found_urls | length | tostring) + "):",
-                (.found_urls | .[] | "    • " + .)
+            "  Invocation ID: " + (.invocation_id // ""),
+            "  Execution success: " + (.execution_success | tostring),
+            "  Yielded results: " + (.yielded_results | tostring),
+            "  Matched files: " + ((.matched_file_count // 0) | tostring),
+            "  Matched lines: " + ((.matched_line_count // 0) | tostring),
+            "  Confidence: " + (.confidence // ""),
+            "  Corpus version: " + (.corpus_version // ""),
+            (if .matched_paths and (.matched_paths | length) > 0 then
+                "  Matched paths (ranked):",
+                (.matched_paths | .[] | "    • " + .)
             else
-                "  No files found"
+                "  No matched paths"
             end),
             ""
         '
 
         echo
-        echo "Most Frequent XMLUI Search Queries:"
-        echo "==================================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
+        echo "Most Frequent Schema-v2 XMLUI Search Queries:"
+        echo "=============================================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
             group_by(.query) |
             map(
                 . as $group |
                 {
                     query: $group[0].query,
                     count: ($group | length),
-                    success_count: (map(select(.success == true)) | length),
-                    avg_results: (
-                        ($group | map(.result_count // 0) | add)
+                    execution_success_count: ($group | map(select(.execution_success == true)) | length),
+                    hit_count: ($group | map(select(.execution_success == true and .yielded_results == true)) | length),
+                    avg_matched_files: (
+                        ($group | map(.matched_file_count // 0) | add)
                         / ($group | length)
-                    ),
-                    total_results: ($group | map(.result_count // 0) | add)
+                    )
                 }
             ) |
             sort_by(.count) | reverse |
             .[] |
             "• " + .query,
             "  Searched " + (.count | tostring) + " times",
-            "  Successful: " + (.success_count | tostring) + "/" + (.count | tostring),
-            "  Avg results: " + (.avg_results | floor | tostring),
-            "  Total results found: " + (.total_results | tostring),
+            "  Execution successes: " + (.execution_success_count | tostring) + "/" + (.count | tostring),
+            "  Retrieval hits: " + (.hit_count | tostring),
+            "  Avg matched files: " + (.avg_matched_files | floor | tostring),
             ""
         '
 
         echo
-        echo "Most Found Files in XMLUI Searches:"
-        echo "==================================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .found_urls != null)' "$ANALYTICS_FILE" | jq -s '
-            map(.found_urls // []) | flatten | group_by(.) |
-            map({url: .[0], count: length}) |
+        echo "Most Matched Paths in Schema-v2 XMLUI Searches:"
+        echo "================================================"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
+            map(.matched_paths // []) | flatten | group_by(.) |
+            map({path: .[0], count: length}) |
             sort_by(.count) | reverse |
             .[:20] |
-            .[] | "• " + .url + " (" + (.count | tostring) + " times)"
+            .[] | "• " + .path + " (" + (.count | tostring) + " times)"
         '
 
         echo
-        echo "Search Path Analysis:"
-        echo "===================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search")' "$ANALYTICS_FILE" | jq -s '
-            map(.search_paths // []) | flatten | group_by(.) |
-            map({path: .[0], count: length}) |
-            sort_by(.count) | reverse |
-            .[] | "• " + .path + " (" + (.count | tostring) + " searches)"
+        echo "Legacy XMLUI Search Context:"
+        echo "============================"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version != 2)' "$ANALYTICS_FILE" | jq -s '
+            "Legacy records: " + (length | tostring),
+            "Legacy success values are text-derived and are not comparable to v2 retrieval outcomes."
         '
 
     else
@@ -307,40 +349,49 @@ show_xmlui() {
 
 # Function to show failed xmlui_search queries
 show_xmlui_search_fail() {
-    echo "=== Failed XMLUI Search Queries ==="
+    echo "=== Schema-v2 Zero-result XMLUI Search Queries ==="
     echo
 
     if check_jq; then
-        echo "Search terms that returned no results (case-insensitive alphabetical order):"
-        echo "============================================================================="
+        echo "Completed searches that returned no results (case-insensitive alphabetical order):"
+        echo "=================================================================================="
 
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE" | jq -s '
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == false)' "$ANALYTICS_FILE" | jq -s '
             map(.query) | unique | sort_by(ascii_downcase) |
             .[] | "• " + .
         '
 
         echo
         echo "Summary:"
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE" | jq -s '
-            "Total failed searches: " + (length | tostring),
-            "Unique failed search terms: " + (map(.query) | unique | length | tostring)
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2)' "$ANALYTICS_FILE" | jq -s '
+            (map(select(.execution_success == true and .yielded_results == false))) as $misses |
+            "Total zero-result searches: " + ($misses | length | tostring),
+            "Unique zero-result terms: " + ($misses | map(.query) | unique | length | tostring),
+            "Operational failures excluded: " + (map(select(.execution_success != true)) | length | tostring)
+        '
+
+        echo
+        echo "Legacy schema-v1 records with success=false (historical, text-derived):"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version != 2 and .success == false)' "$ANALYTICS_FILE" | jq -s '
+            map(.query) | unique | sort_by(ascii_downcase) |
+            .[] | "• " + .
         '
 
     else
-        echo "Raw failed xmlui_search data:"
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == false)' "$ANALYTICS_FILE"
+        echo "Raw schema-v2 zero-result xmlui_search data:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == false)' "$ANALYTICS_FILE"
     fi
 }
 
 # Function to show successful xmlui_search terms
 show_xmlui_search_success() {
-    echo "=== Successful XMLUI Search Terms ==="
+    echo "=== Schema-v2 XMLUI Search Hits ==="
     echo
 
     if check_jq; then
-        echo "All successful search queries (alphabetical):"
-        echo "============================================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
+        echo "Completed search queries that yielded results (alphabetical):"
+        echo "============================================================"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == true)' "$ANALYTICS_FILE" | jq -s '
             map(.query) |
             unique |
             sort |
@@ -349,9 +400,9 @@ show_xmlui_search_success() {
         '
 
         echo
-        echo "Successful queries by frequency:"
-        echo "==============================="
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
+        echo "Retrieval-hit queries by frequency:"
+        echo "==================================="
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == true)' "$ANALYTICS_FILE" | jq -s '
             group_by(.query) |
             map({query: .[0].query, count: length}) |
             sort_by(-.count) |
@@ -361,14 +412,21 @@ show_xmlui_search_success() {
 
         echo
         echo "Summary:"
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE" | jq -s '
-            "Total successful searches: " + (length | tostring),
-            "Unique successful search terms: " + (map(.query) | unique | length | tostring)
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == true)' "$ANALYTICS_FILE" | jq -s '
+            "Total retrieval hits: " + (length | tostring),
+            "Unique retrieval-hit terms: " + (map(.query) | unique | length | tostring)
+        '
+
+        echo
+        echo "Legacy schema-v1 records with success=true (historical, text-derived):"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version != 2 and .success == true)' "$ANALYTICS_FILE" | jq -s '
+            map(.query) | unique | sort_by(ascii_downcase) |
+            .[] | "• " + .
         '
 
     else
-        echo "Raw successful xmlui_search data:"
-        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .success == true)' "$ANALYTICS_FILE"
+        echo "Raw schema-v2 retrieval-hit xmlui_search data:"
+        jq -c 'select(.type == "search_query" and .tool_name == "xmlui_search" and .schema_version == 2 and .execution_success == true and .yielded_results == true)' "$ANALYTICS_FILE"
     fi
 }
 

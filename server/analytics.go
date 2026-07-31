@@ -2,8 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,24 +18,40 @@ import (
 
 // Analytics structures for tracking agent usage
 type ToolInvocation struct {
-	Type       string                 `json:"type"`
-	Timestamp  time.Time              `json:"timestamp"`
-	ToolName   string                 `json:"tool_name"`
-	Arguments  map[string]interface{} `json:"arguments"`
-	Success    bool                   `json:"success"`
-	ResultSize int                    `json:"result_size_chars"`
-	ErrorMsg   string                 `json:"error_msg,omitempty"`
+	InvocationID string                 `json:"invocation_id,omitempty"`
+	Type         string                 `json:"type"`
+	Timestamp    time.Time              `json:"timestamp"`
+	ToolName     string                 `json:"tool_name"`
+	Arguments    map[string]interface{} `json:"arguments"`
+	Success      bool                   `json:"success"`
+	ResultSize   int                    `json:"result_size_chars"`
+	ErrorMsg     string                 `json:"error_msg,omitempty"`
 }
 
 type SearchQuery struct {
-	Type        string    `json:"type"`
-	Timestamp   time.Time `json:"timestamp"`
-	ToolName    string    `json:"tool_name"`
-	Query       string    `json:"query"`
-	ResultCount int       `json:"result_count"`
-	Success     bool      `json:"success"`
-	SearchPaths []string  `json:"search_paths,omitempty"`
-	FoundURLs   []string  `json:"found_urls,omitempty"`
+	SchemaVersion int       `json:"schema_version,omitempty"`
+	InvocationID  string    `json:"invocation_id,omitempty"`
+	Type          string    `json:"type"`
+	Timestamp     time.Time `json:"timestamp"`
+	ToolName      string    `json:"tool_name"`
+	Query         string    `json:"query"`
+
+	ExecutionSuccess *bool    `json:"execution_success,omitempty"`
+	YieldedResults   *bool    `json:"yielded_results,omitempty"`
+	MatchedFileCount *int     `json:"matched_file_count,omitempty"`
+	MatchedLineCount *int     `json:"matched_line_count,omitempty"`
+	MatchedPaths     []string `json:"matched_paths"`
+	Confidence       string   `json:"confidence"`
+	KeptTokens       []string `json:"kept_tokens"`
+	RemovedTokens    []string `json:"removed_tokens"`
+	ExpandedTokens   []string `json:"expanded_tokens"`
+	CorpusVersion    string   `json:"corpus_version"`
+
+	// Deprecated schema-v1 fields. They remain solely so historical JSONL loads.
+	ResultCount int      `json:"result_count,omitempty"`
+	Success     bool     `json:"success,omitempty"`
+	SearchPaths []string `json:"search_paths,omitempty"`
+	FoundURLs   []string `json:"found_urls,omitempty"`
 }
 
 type AnalyticsData struct {
@@ -84,29 +105,54 @@ func (a *Analytics) GetSummary() map[string]interface{} {
 		}
 	}
 
-	// Search query analysis
+	// Search query analysis. Schema-v1 records are intentionally excluded from
+	// v2 rates because their text-derived success values are ambiguous.
 	searchTerms := make(map[string]int)
-	searchSuccessRate := 0.0
-	if len(a.data.SearchQueries) > 0 {
-		successCount := 0
-		for _, sq := range a.data.SearchQueries {
-			searchTerms[sq.Query]++
-			if sq.Success {
-				successCount++
+	v2Count := 0
+	legacyCount := 0
+	executionSuccessCount := 0
+	retrievalHitCount := 0
+	zeroResultCount := 0
+	for _, sq := range a.data.SearchQueries {
+		searchTerms[sq.Query]++
+		if sq.SchemaVersion != 2 || sq.ExecutionSuccess == nil || sq.YieldedResults == nil {
+			legacyCount++
+			continue
+		}
+		v2Count++
+		if *sq.ExecutionSuccess {
+			executionSuccessCount++
+			if *sq.YieldedResults {
+				retrievalHitCount++
+			} else {
+				zeroResultCount++
 			}
 		}
-		searchSuccessRate = float64(successCount) / float64(len(a.data.SearchQueries)) * 100
 	}
 
+	executionSuccessRate := percentage(executionSuccessCount, v2Count)
+	retrievalHitRate := percentage(retrievalHitCount, executionSuccessCount)
+
 	return map[string]interface{}{
-		"total_tool_invocations": len(a.data.ToolInvocations),
-		"total_search_queries":   len(a.data.SearchQueries),
-		"tool_usage_counts":      toolCounts,
-		"tool_success_rates":     successRates,
-		"tool_avg_result_sizes":  avgResultSizes,
-		"search_success_rate":    searchSuccessRate,
-		"popular_search_terms":   searchTerms,
+		"total_tool_invocations":        len(a.data.ToolInvocations),
+		"total_search_queries":          len(a.data.SearchQueries),
+		"tool_usage_counts":             toolCounts,
+		"tool_success_rates":            successRates,
+		"tool_avg_result_sizes":         avgResultSizes,
+		"search_v2_query_count":         v2Count,
+		"legacy_search_query_count":     legacyCount,
+		"search_execution_success_rate": executionSuccessRate,
+		"search_retrieval_hit_rate":     retrievalHitRate,
+		"search_zero_result_count":      zeroResultCount,
+		"popular_search_terms":          searchTerms,
 	}
+}
+
+func percentage(numerator, denominator int) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator) * 100
 }
 
 // Wrapper function to add analytics to any tool handler
@@ -174,63 +220,156 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 // Special wrapper for search tools to capture additional search-specific metrics
 func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Extract search query
-		query := ""
-		if req.Params.Arguments != nil {
-			if q, ok := req.Params.Arguments["query"].(string); ok {
-				query = q
-			}
+		query := searchQueryArgument(req)
+		state := &searchAnalyticsState{
+			invocationID: newInvocationID(),
+			toolName:     toolName,
+			query:        query,
 		}
+		ctx = context.WithValue(ctx, searchAnalyticsContextKey{}, state)
 
-		// Call the original handler
 		result, err := handler(ctx, req)
+		toolSuccess, resultSize, errorMsg := toolResultMetrics(result, err)
+		logToolWithInvocation(state.invocationID, toolName, req.Params.Arguments, toolSuccess, resultSize, errorMsg)
 
-		// Calculate metrics
-		toolSuccess := err == nil && result != nil
-		resultSize := 0
-		errorMsg := ""
-		resultCount := 0
-
-		if result != nil {
-			// Estimate result size and count matches
-			for _, content := range result.Content {
-				switch c := content.(type) {
-				case *mcp.TextContent:
-					text := c.Text
-					resultSize += len(text)
-					// Rough estimate of result count based on line breaks
-					if text != "No matches found." && text != "No examples found." {
-						resultCount = len(splitLines(text))
-					}
-				case mcp.TextContent:
-					text := c.Text
-					resultSize += len(text)
-					if text != "No matches found." && text != "No examples found." {
-						resultCount = len(splitLines(text))
-					}
-				}
-			}
+		// Invalid input and failures before mediation still receive a v2 search
+		// observation, but they are operational failures rather than misses.
+		if !state.observationLogged {
+			recordSearchObservation(ctx, toolName, query, toolSuccess, MediatorJSON{}, "")
 		}
-
-		if err != nil {
-			errorMsg = err.Error()
-		}
-
-		// For search tools, success should reflect whether results were found
-		searchSuccess := toolSuccess && resultCount > 0
-
-		// Log both general tool usage and specific search metrics
-		logTool(toolName, req.Params.Arguments, toolSuccess, resultSize, errorMsg)
-
-		// Log search-specific data with search-specific success metric
-		searchPaths := getSearchPaths(toolName)
-		foundURLs := extractFoundURLs(result)
-		logSearch(toolName, query, resultCount, searchSuccess, searchPaths, foundURLs)
 
 		prependUpdateNotice(result)
 
 		return result, err
 	}
+}
+
+type searchAnalyticsContextKey struct{}
+
+type searchAnalyticsState struct {
+	invocationID      string
+	toolName          string
+	query             string
+	observationLogged bool
+}
+
+func searchQueryArgument(req mcp.CallToolRequest) string {
+	if req.Params.Arguments == nil {
+		return ""
+	}
+	query, _ := req.Params.Arguments["query"].(string)
+	return strings.TrimSpace(query)
+}
+
+func newInvocationID() string {
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err == nil {
+		return hex.EncodeToString(bytes[:])
+	}
+	return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+}
+
+func toolResultMetrics(result *mcp.CallToolResult, err error) (bool, int, string) {
+	resultSize := 0
+	if result != nil {
+		for _, content := range result.Content {
+			switch c := content.(type) {
+			case *mcp.TextContent:
+				resultSize += len(c.Text)
+			case mcp.TextContent:
+				resultSize += len(c.Text)
+			}
+		}
+	}
+
+	switch {
+	case err != nil:
+		return false, resultSize, err.Error()
+	case result == nil:
+		return false, resultSize, "Tool returned no result"
+	case result.IsError:
+		return false, resultSize, "Tool returned error result"
+	default:
+		return true, resultSize, ""
+	}
+}
+
+// ExecuteMediatedSearchWithAnalytics keeps presentation and retrieval metrics
+// separate: the human string is returned to the caller, while the structured
+// mediator summary is the sole source of search-quality analytics.
+func ExecuteMediatedSearchWithAnalytics(
+	ctx context.Context,
+	toolName string,
+	homeDir string,
+	cfg MediatorConfig,
+	query string,
+) (string, error) {
+	human, summary, err := ExecuteMediatedSearch(homeDir, cfg, query)
+	recordSearchObservation(ctx, toolName, query, err == nil, summary, corpusVersionForDir(homeDir))
+	return human, err
+}
+
+func corpusVersionForDir(homeDir string) string {
+	cleaned := filepath.Clean(homeDir)
+	if cleaned == "." || cleaned == string(filepath.Separator) {
+		return ""
+	}
+	return filepath.Base(cleaned)
+}
+
+func recordSearchObservation(
+	ctx context.Context,
+	toolName string,
+	query string,
+	executionSuccess bool,
+	summary MediatorJSON,
+	corpusVersion string,
+) {
+	invocationID := newInvocationID()
+	if state, ok := ctx.Value(searchAnalyticsContextKey{}).(*searchAnalyticsState); ok {
+		invocationID = state.invocationID
+		state.toolName = toolName
+		state.query = query
+		state.observationLogged = true
+	}
+	logSearchV2(invocationID, toolName, query, executionSuccess, summary, corpusVersion)
+}
+
+type rankedMatchedPath struct {
+	path  string
+	score float64
+}
+
+func searchMetricsFromSummary(summary MediatorJSON) (int, int, []string) {
+	pathScores := make(map[string]float64)
+	matchedLineCount := 0
+	for _, facet := range summary.Facets {
+		matchedLineCount += facet.Matches
+	}
+	for _, items := range summary.Sections {
+		for _, item := range items {
+			if current, exists := pathScores[item.Path]; !exists || item.Score > current {
+				pathScores[item.Path] = item.Score
+			}
+		}
+	}
+
+	ranked := make([]rankedMatchedPath, 0, len(pathScores))
+	for path, score := range pathScores {
+		ranked = append(ranked, rankedMatchedPath{path: path, score: score})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].score == ranked[j].score {
+			return ranked[i].path < ranked[j].path
+		}
+		return ranked[i].score > ranked[j].score
+	})
+
+	paths := make([]string, 0, len(ranked))
+	for _, item := range ranked {
+		paths = append(paths, item.path)
+	}
+	return len(paths), matchedLineCount, paths
 }
 
 func newAnalytics(logFile string) *Analytics {
@@ -348,20 +487,21 @@ func (a *Analytics) writeLine(data interface{}) {
 	WriteDebugLog("[DEBUG] writeLine SUCCESS: wrote %d total bytes\n", bytesWritten+newlineBytes)
 }
 
-func (a *Analytics) logToolInvocation(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
+func (a *Analytics) logToolInvocation(invocationID string, toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
 	WriteDebugLog("[DEBUG] LogToolInvocation ENTRY: tool=%s\n", toolName)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	invocation := ToolInvocation{
-		Type:       "tool_invocation",
-		Timestamp:  time.Now(),
-		ToolName:   toolName,
-		Arguments:  args,
-		Success:    success,
-		ResultSize: resultSize,
-		ErrorMsg:   errorMsg,
+		InvocationID: invocationID,
+		Type:         "tool_invocation",
+		Timestamp:    time.Now(),
+		ToolName:     toolName,
+		Arguments:    args,
+		Success:      success,
+		ResultSize:   resultSize,
+		ErrorMsg:     errorMsg,
 	}
 
 	WriteDebugLog("[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
@@ -380,22 +520,35 @@ func (a *Analytics) logToolInvocation(toolName string, args map[string]interface
 	WriteDebugLog("[DEBUG] LogToolInvocation AFTER_WRITELINE: writeLine completed\n")
 }
 
-func (a *Analytics) logSearchQuery(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
+func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query string, executionSuccess bool, summary MediatorJSON, corpusVersion string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Debug to server.log instead of analytics file
 	WriteDebugLog("[DEBUG] LogSearchQuery ENTRY: tool=%s, query=%s\n", toolName, query)
 
+	matchedFileCount, matchedLineCount, matchedPaths := searchMetricsFromSummary(summary)
+	yieldedResults := matchedFileCount > 0
+	executionSuccessValue := executionSuccess
+	yieldedResultsValue := yieldedResults
+	matchedFileCountValue := matchedFileCount
+	matchedLineCountValue := matchedLineCount
 	searchQuery := SearchQuery{
-		Type:        "search_query",
-		Timestamp:   time.Now(),
-		ToolName:    toolName,
-		Query:       query,
-		ResultCount: resultCount,
-		Success:     success,
-		SearchPaths: searchPaths,
-		FoundURLs:   foundURLs,
+		SchemaVersion:    2,
+		InvocationID:     invocationID,
+		Type:             "search_query",
+		Timestamp:        time.Now(),
+		ToolName:         toolName,
+		Query:            query,
+		ExecutionSuccess: &executionSuccessValue,
+		YieldedResults:   &yieldedResultsValue,
+		MatchedFileCount: &matchedFileCountValue,
+		MatchedLineCount: &matchedLineCountValue,
+		MatchedPaths:     matchedPaths,
+		Confidence:       summary.Confidence,
+		KeptTokens:       append([]string{}, summary.Tokens["kept"]...),
+		RemovedTokens:    append([]string{}, summary.Tokens["removed"]...),
+		ExpandedTokens:   append([]string{}, summary.Tokens["expanded"]...),
+		CorpusVersion:    corpusVersion,
 	}
 
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)
@@ -451,21 +604,25 @@ func prependUpdateNotice(result *mcp.CallToolResult) {
 }
 
 func logTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
+	logToolWithInvocation("", toolName, args, success, resultSize, errorMsg)
+}
+
+func logToolWithInvocation(invocationID string, toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
 	WriteDebugLog("[DEBUG] LogTool ENTRY: tool=%s, globalAnalytics_nil=%v\n", toolName, globalAnalytics == nil)
 
 	if globalAnalytics != nil {
 		WriteDebugLog("[DEBUG] LogTool CALLING_LogToolInvocation: tool=%s\n", toolName)
-		globalAnalytics.logToolInvocation(toolName, args, success, resultSize, errorMsg)
+		globalAnalytics.logToolInvocation(invocationID, toolName, args, success, resultSize, errorMsg)
 		WriteDebugLog("[DEBUG] LogTool AFTER_LogToolInvocation: tool=%s\n", toolName)
 	} else {
 		WriteDebugLog("[DEBUG] LogTool SKIPPED: globalAnalytics is nil for tool=%s\n", toolName)
 	}
 }
 
-func logSearch(toolName string, query string, resultCount int, success bool, searchPaths []string, foundURLs []string) {
+func logSearchV2(invocationID string, toolName string, query string, executionSuccess bool, summary MediatorJSON, corpusVersion string) {
 	if globalAnalytics != nil {
 		WriteDebugLog("[DEBUG] LogSearch ENTRY: tool=%s, query=%s\n", toolName, query)
-		globalAnalytics.logSearchQuery(toolName, query, resultCount, success, searchPaths, foundURLs)
+		globalAnalytics.logSearchQueryV2(invocationID, toolName, query, executionSuccess, summary, corpusVersion)
 		WriteDebugLog("[DEBUG] LogSearch AFTER_LogSearchQuery: tool=%s\n", toolName)
 	}
 }
@@ -475,103 +632,4 @@ func GetAnalyticsSummary() map[string]interface{} {
 		return globalAnalytics.GetSummary()
 	}
 	return map[string]interface{}{}
-}
-
-// Helper function to split text into lines for counting results
-func splitLines(text string) []string {
-	if text == "" {
-		return []string{}
-	}
-
-	lines := []string{}
-	current := ""
-
-	for _, char := range text {
-		if char == '\n' {
-			if current != "" {
-				lines = append(lines, current)
-				current = ""
-			}
-		} else {
-			current += string(char)
-		}
-	}
-
-	if current != "" {
-		lines = append(lines, current)
-	}
-
-	return lines
-}
-
-// Helper to get search paths for different tools
-func getSearchPaths(toolName string) []string {
-	// Return generic labels — actual paths come from the manifest
-	switch toolName {
-	case "xmlui_search":
-		return []string{"componentDocs", "pages", "componentSource", "blog"}
-	case "xmlui_examples":
-		return []string{"example_roots"}
-	case "xmlui_search_howto":
-		return []string{"howto"}
-	default:
-		return []string{}
-	}
-}
-
-// extractFoundURLs parses the text result and returns a unique list of file-like URLs/paths
-func extractFoundURLs(result *mcp.CallToolResult) []string {
-	if result == nil {
-		return []string{}
-	}
-
-	// Collect lines from text content
-	lines := []string{}
-	for _, content := range result.Content {
-		switch c := content.(type) {
-		case *mcp.TextContent:
-			lines = append(lines, splitLines(c.Text)...)
-		case mcp.TextContent:
-			lines = append(lines, splitLines(c.Text)...)
-		}
-	}
-
-	// Extract before ':' as path for lines like "path:line: text" or "path: [filename match]"
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, line := range lines {
-		// Skip obvious non-matches
-		if line == "" || line == "No matches found." || line == "No examples found." {
-			continue
-		}
-		// Find first ':'
-		idx := -1
-		for i, ch := range line {
-			if ch == ':' {
-				idx = i
-				break
-			}
-		}
-		if idx <= 0 {
-			continue
-		}
-		path := line[:idx]
-		// Basic sanity: must contain a path separator and a file extension-ish dot
-		if (containsRune(path, '/') || containsRune(path, '\\')) && containsRune(path, '.') {
-			if _, ok := seen[path]; !ok {
-				seen[path] = struct{}{}
-				out = append(out, path)
-			}
-		}
-	}
-	return out
-}
-
-func containsRune(s string, r rune) bool {
-	for _, c := range s {
-		if c == r {
-			return true
-		}
-	}
-	return false
 }

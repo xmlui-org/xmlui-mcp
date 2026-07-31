@@ -90,7 +90,7 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 			EnableFilenameMatches: true,
 		}
 
-		human, _, err := ExecuteMediatedSearch(xmluiDir, cfg, query)
+		human, err := ExecuteMediatedSearchWithAnalytics(ctx, "xmlui_search_howto", xmluiDir, cfg, query)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

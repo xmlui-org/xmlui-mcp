@@ -30,11 +30,6 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 		}
 		query := strings.TrimSpace(raw)
 
-		// If no example roots configured, fall back to simple message
-		if len(exampleRoots) == 0 {
-			return mcp.NewToolResultText("No example directories configured."), nil
-		}
-
 		cfg := MediatorConfig{
 			Roots:                 exampleRoots,
 			SectionKeys:           []string{"examples"},
@@ -49,7 +44,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 
 		// Use the common parent of example roots for relative paths
 		homeDir := commonParent(exampleRoots)
-		human, _, err := ExecuteMediatedSearch(homeDir, cfg, query)
+		human, err := ExecuteMediatedSearchWithAnalytics(ctx, "xmlui_examples", homeDir, cfg, query)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}

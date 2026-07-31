@@ -52,7 +52,7 @@ func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(contex
 			EnableFilenameMatches: true,
 		}
 
-		human, _, err := ExecuteMediatedSearch(homeDir, cfg, query)
+		human, err := ExecuteMediatedSearchWithAnalytics(ctx, "xmlui_search", homeDir, cfg, query)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
