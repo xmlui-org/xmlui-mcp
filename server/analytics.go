@@ -18,14 +18,15 @@ import (
 
 // Analytics structures for tracking agent usage
 type ToolInvocation struct {
-	InvocationID string                 `json:"invocation_id,omitempty"`
-	Type         string                 `json:"type"`
-	Timestamp    time.Time              `json:"timestamp"`
-	ToolName     string                 `json:"tool_name"`
-	Arguments    map[string]interface{} `json:"arguments"`
-	Success      bool                   `json:"success"`
-	ResultSize   int                    `json:"result_size_chars"`
-	ErrorMsg     string                 `json:"error_msg,omitempty"`
+	SchemaVersion int                    `json:"schema_version,omitempty"`
+	InvocationID  string                 `json:"invocation_id,omitempty"`
+	Type          string                 `json:"type"`
+	Timestamp     time.Time              `json:"timestamp"`
+	ToolName      string                 `json:"tool_name"`
+	Arguments     map[string]interface{} `json:"arguments"`
+	Success       bool                   `json:"success"`
+	ResultSize    int                    `json:"result_size_chars"`
+	ErrorMsg      string                 `json:"error_msg,omitempty"`
 }
 
 type SearchQuery struct {
@@ -494,14 +495,15 @@ func (a *Analytics) logToolInvocation(invocationID string, toolName string, args
 	defer a.mu.Unlock()
 
 	invocation := ToolInvocation{
-		InvocationID: invocationID,
-		Type:         "tool_invocation",
-		Timestamp:    time.Now(),
-		ToolName:     toolName,
-		Arguments:    args,
-		Success:      success,
-		ResultSize:   resultSize,
-		ErrorMsg:     errorMsg,
+		SchemaVersion: 2,
+		InvocationID:  invocationID,
+		Type:          "tool_invocation",
+		Timestamp:     time.Now(),
+		ToolName:      toolName,
+		Arguments:     args,
+		Success:       success,
+		ResultSize:    resultSize,
+		ErrorMsg:      errorMsg,
 	}
 
 	WriteDebugLog("[DEBUG] LogToolInvocation BEFORE_APPEND: tool=%s, current_count=%d\n", toolName, len(a.data.ToolInvocations))
