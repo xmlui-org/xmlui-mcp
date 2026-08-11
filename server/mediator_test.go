@@ -371,10 +371,12 @@ func TestSalienceSummaryClassifiesGapKinds(t *testing.T) {
 	if summary.Salience == nil {
 		t.Fatal("expected salience summary")
 	}
-	for _, term := range summary.Salience.Terms {
-		if term == "microphone" || term == "capture" {
-			t.Fatalf("unachievable term %q must not be salient: %+v", term, summary.Salience)
-		}
+	// Absent intent terms belong in the band (#14): their absence is the
+	// content-gap tell. (Generic-term exclusion needs >=3 candidates and is
+	// covered by TestSalientAggregatesConsistentWithTermCoverage.)
+	band := strings.Join(summary.Salience.Terms, ",")
+	if !strings.Contains(band, "microphone") || !strings.Contains(band, "capture") {
+		t.Fatalf("salient_terms = %v, want microphone and capture in band", summary.Salience.Terms)
 	}
 	unanswered := strings.Join(summary.Salience.UnansweredTerms, ",")
 	if !strings.Contains(unanswered, "microphone") || !strings.Contains(unanswered, "capture") {
@@ -460,5 +462,58 @@ func TestTermCoverageIncludesZeroCountIntentTerm(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("microphone missing from term_coverage: %+v", summary.Salience.TermCoverage)
+	}
+}
+
+// The #14 contradiction shape: a rare incidental term must not drive the
+// aggregates to zero when intent terms are strongly titled. Aggregates are
+// unions over the band, so they must agree with term_coverage.
+func TestSalientAggregatesConsistentWithTermCoverage(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "follow-a-list-to-the-bottom.md",
+		"# Follow a list to the bottom\nKeep the list scrolled with the bottom pinned as items arrive.\n")
+	writeHowtoFixture(t, howtoDir, "implement-infinite-scroll.md",
+		"# Implement infinite scroll\nScroll pagination for long lists.\n")
+	writeHowtoFixture(t, howtoDir, "virtualize-long-lists.md",
+		"# Virtualize long lists\nVirtualized scrolling for large data.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"scroll pinned bottom arrives")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil {
+		t.Fatal("expected salience summary")
+	}
+	band := strings.Join(summary.Salience.Terms, ",")
+	if !strings.Contains(band, "pinned") || !strings.Contains(band, "bottom") {
+		t.Fatalf("intent terms missing from band: %v", summary.Salience.Terms)
+	}
+	if summary.Salience.TitleMatchCount < 1 {
+		t.Fatalf("salient_title_match_count = %d, want >=1 (bottom-titled doc exists): %+v",
+			summary.Salience.TitleMatchCount, summary.Salience)
+	}
+	// Consistency invariant: a zero aggregate may not coexist with a nonzero
+	// per-term count for any band term.
+	inBand := map[string]bool{}
+	for _, term := range summary.Salience.Terms {
+		inBand[term] = true
+	}
+	for _, entry := range summary.Salience.TermCoverage {
+		if !inBand[entry.Term] {
+			continue
+		}
+		if entry.TitleMatches > 0 && summary.Salience.TitleMatchCount == 0 {
+			t.Fatalf("aggregate title=0 contradicts term_coverage %+v", entry)
+		}
+		if entry.ContentMatches > 0 && summary.Salience.ContentMatchCount == 0 {
+			t.Fatalf("aggregate content=0 contradicts term_coverage %+v", entry)
+		}
 	}
 }

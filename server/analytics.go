@@ -45,6 +45,9 @@ type SearchQuery struct {
 	ScoreGap         *float64 `json:"score_gap,omitempty"`
 	TitleMatchCount  *int     `json:"title_match_count,omitempty"`
 
+	// term_coverage is the authoritative per-term signal; the salient_*
+	// scalars are derived summaries of its distinctive band (all substantive
+	// terms minus in-corpus-generic ones) and cannot contradict it (#14).
 	SalientTerms             []string            `json:"salient_terms,omitempty"`
 	SalientTitleMatchCount   *int                `json:"salient_title_match_count,omitempty"`
 	SalientContentMatchCount *int                `json:"salient_content_match_count,omitempty"`

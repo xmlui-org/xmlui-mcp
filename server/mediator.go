@@ -80,12 +80,14 @@ type AgentGuidance struct {
 	SearchToolPreference string             `json:"search_tool_preference,omitempty"`
 }
 
-// SalienceSummary describes the query's distinctive terms — the tied-rarest
-// achievable terms from the high guard's document-frequency basis — and how
-// the ranked candidates answer them by title vs content. UnansweredTerms are
-// substantive query terms no candidate covers at all: when non-empty, the
-// query's real intent is unanswerable in the corpus and salience has fallen
-// back to a less specific term, the content-gap signature (#12).
+// SalienceSummary describes how the ranked candidates answer the query's
+// distinctive terms. TermCoverage is the authoritative per-term truth. Terms
+// is the distinctive band — all substantive query terms minus in-corpus-
+// generic ones, zero-coverage terms included (#14) — and the aggregate counts
+// are candidate-level unions over that band, derived from the same basis as
+// TermCoverage. UnansweredTerms are substantive query terms no candidate
+// covers at all: non-empty means the query's real intent is unanswerable in
+// the corpus, the content-gap signature (#12).
 type SalienceSummary struct {
 	Terms             []string            `json:"terms"`
 	TitleMatchCount   int                 `json:"title_match_count"`
@@ -1324,13 +1326,16 @@ func termDocumentFrequency(ranked []*scoredFile, queryTerms []string) (map[strin
 }
 
 // computeSalience summarizes how the ranked candidates answer the query's
-// distinctive terms — the tied-rarest achievable terms from the high guard's
-// document-frequency basis. Title vs content coverage of those terms is what
-// separates a discoverability gap (a doc answers, but no title says so) from
-// a content gap (nothing answers) in the analytics record (#12).
+// distinctive terms. TermCoverage is the authoritative per-term truth; Terms
+// is the distinctive band (all substantive terms minus in-corpus-generic
+// ones), and the aggregate counts are candidate-level unions over that band —
+// derived from the same per-term basis as TermCoverage, so they cannot
+// contradict it (#14). Title vs content coverage of the band separates a
+// discoverability gap (a doc answers, but no title says so) from a content
+// gap (nothing answers) in the analytics record (#12).
 func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary {
 	summary := SalienceSummary{Terms: []string{}, UnansweredTerms: []string{}, TermCoverage: []TermCoverageEntry{}}
-	df, minDF := termDocumentFrequency(ranked, queryTerms)
+	df, _ := termDocumentFrequency(ranked, queryTerms)
 	seenUnanswered := make(map[string]bool)
 	for _, term := range queryTerms {
 		if df[term] == 0 && len(termStem(term)) >= 4 && !seenUnanswered[term] {
@@ -1353,16 +1358,29 @@ func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary 
 		}
 		summary.TermCoverage = append(summary.TermCoverage, entry)
 	}
-	if minDF == 0 {
-		return summary
+	// Distinctive band: all substantive terms except in-corpus-generic ones
+	// (content coverage >= ~2/3 of the candidates, applied only when there
+	// are >=3 candidates so tiny result sets don't over-exclude). Zero-
+	// coverage terms are included — their absence is the content-gap tell,
+	// and the high guard does not read this list, so absent terms are safe
+	// here. Rarity is no longer the selection key (#14).
+	genericThreshold := -1
+	if len(ranked) >= 3 {
+		genericThreshold = (2*len(ranked) + 2) / 3
 	}
-	seen := make(map[string]bool)
+	seenBand := make(map[string]bool)
 	for _, term := range queryTerms {
-		if df[term] == minDF && !seen[term] {
-			seen[term] = true
-			summary.Terms = append(summary.Terms, term)
+		if len(termStem(term)) < 4 || seenBand[term] {
+			continue
 		}
+		seenBand[term] = true
+		if genericThreshold > 0 && df[term] >= genericThreshold {
+			continue
+		}
+		summary.Terms = append(summary.Terms, term)
 	}
+
+	// Aggregates are candidate-level unions over the band.
 	for _, sf := range ranked {
 		content := false
 		title := false
@@ -1371,7 +1389,7 @@ func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary 
 			if hitCoversTerm(sf, term) {
 				content = true
 			}
-			if stem := termStem(term); len(stem) >= 4 && strings.Contains(filenameLower, stem) {
+			if strings.Contains(filenameLower, termStem(term)) {
 				title = true
 			}
 		}
