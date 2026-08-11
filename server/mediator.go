@@ -80,6 +80,19 @@ type AgentGuidance struct {
 	SearchToolPreference string             `json:"search_tool_preference,omitempty"`
 }
 
+// SalienceSummary describes the query's distinctive terms — the tied-rarest
+// achievable terms from the high guard's document-frequency basis — and how
+// the ranked candidates answer them by title vs content. UnansweredTerms are
+// substantive query terms no candidate covers at all: when non-empty, the
+// query's real intent is unanswerable in the corpus and salience has fallen
+// back to a less specific term, the content-gap signature (#12).
+type SalienceSummary struct {
+	Terms             []string `json:"terms"`
+	TitleMatchCount   int      `json:"title_match_count"`
+	ContentMatchCount int      `json:"content_match_count"`
+	UnansweredTerms   []string `json:"unanswered_terms"`
+}
+
 // MediatorJSON is the machine-readable summary we append after the human block.
 type MediatorJSON struct {
 	QueryPlan           []stageHit              `json:"query_plan"`
@@ -87,6 +100,7 @@ type MediatorJSON struct {
 	Sections            map[string][]resultItem `json:"sections"`
 	Facets              map[string]FacetCounts  `json:"facets"`
 	Confidence          string                  `json:"confidence"`
+	Salience            *SalienceSummary        `json:"salience,omitempty"`
 	RelatedQueries      []string                `json:"related_queries"`
 	AgentGuidance       *AgentGuidance          `json:"agent_guidance,omitempty"`
 	Diagnostics         map[string]any          `json:"diagnostics,omitempty"`
@@ -461,6 +475,10 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// hit covers most query terms and stands out from the tail, not that many
 	// files contained common tokens (#10).
 	jsonOut.Confidence = confidenceFromRanked(ranked, queryTerms)
+
+	// Salience summary for gap classification downstream (#12).
+	salience := computeSalience(ranked, queryTerms)
+	jsonOut.Salience = &salience
 
 	// Set search tool hierarchy for howto/example queries
 	if isHowToQuery(originalQuery) || isExampleQuery(originalQuery) {
@@ -837,20 +855,7 @@ func confidenceFromRanked(ranked []*scoredFile, queryTerms []string) string {
 // the top hit yet answered elsewhere in the corpus (#11). Terms no candidate
 // matches don't gate; they already depress coverage.
 func topCoversDistinctiveTerms(ranked []*scoredFile, queryTerms []string) bool {
-	df := make(map[string]int, len(queryTerms))
-	minDF := 0
-	for _, term := range queryTerms {
-		count := 0
-		for _, sf := range ranked {
-			if hitCoversTerm(sf, term) {
-				count++
-			}
-		}
-		df[term] = count
-		if count > 0 && (minDF == 0 || count < minDF) {
-			minDF = count
-		}
-	}
+	df, minDF := termDocumentFrequency(ranked, queryTerms)
 	if minDF == 0 {
 		return true
 	}
@@ -1269,4 +1274,72 @@ func hitCoversTerm(sf *scoredFile, term string) bool {
 		}
 	}
 	return false
+}
+
+// termDocumentFrequency counts, per query term, how many ranked candidates
+// answer it (hitCoversTerm basis). minDF is the lowest nonzero count — the
+// document frequency of the query's most distinctive achievable term(s).
+func termDocumentFrequency(ranked []*scoredFile, queryTerms []string) (map[string]int, int) {
+	df := make(map[string]int, len(queryTerms))
+	minDF := 0
+	for _, term := range queryTerms {
+		count := 0
+		for _, sf := range ranked {
+			if hitCoversTerm(sf, term) {
+				count++
+			}
+		}
+		df[term] = count
+		if count > 0 && (minDF == 0 || count < minDF) {
+			minDF = count
+		}
+	}
+	return df, minDF
+}
+
+// computeSalience summarizes how the ranked candidates answer the query's
+// distinctive terms — the tied-rarest achievable terms from the high guard's
+// document-frequency basis. Title vs content coverage of those terms is what
+// separates a discoverability gap (a doc answers, but no title says so) from
+// a content gap (nothing answers) in the analytics record (#12).
+func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary {
+	summary := SalienceSummary{Terms: []string{}, UnansweredTerms: []string{}}
+	df, minDF := termDocumentFrequency(ranked, queryTerms)
+	seenUnanswered := make(map[string]bool)
+	for _, term := range queryTerms {
+		if df[term] == 0 && len(termStem(term)) >= 4 && !seenUnanswered[term] {
+			seenUnanswered[term] = true
+			summary.UnansweredTerms = append(summary.UnansweredTerms, term)
+		}
+	}
+	if minDF == 0 {
+		return summary
+	}
+	seen := make(map[string]bool)
+	for _, term := range queryTerms {
+		if df[term] == minDF && !seen[term] {
+			seen[term] = true
+			summary.Terms = append(summary.Terms, term)
+		}
+	}
+	for _, sf := range ranked {
+		content := false
+		title := false
+		filenameLower := strings.ToLower(filepath.Base(sf.RelPath))
+		for _, term := range summary.Terms {
+			if hitCoversTerm(sf, term) {
+				content = true
+			}
+			if stem := termStem(term); len(stem) >= 4 && strings.Contains(filenameLower, stem) {
+				title = true
+			}
+		}
+		if content {
+			summary.ContentMatchCount++
+		}
+		if title {
+			summary.TitleMatchCount++
+		}
+	}
+	return summary
 }

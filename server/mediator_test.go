@@ -309,3 +309,75 @@ func TestTitleMatchStampedOnResultItems(t *testing.T) {
 		}
 	}
 }
+
+// The three #12 gap classes, from the salience summary's title vs content
+// coverage of the query's distinctive terms.
+func TestSalienceSummaryClassifiesGapKinds(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// "clipboard" is the distinctive term. One doc answers it in content but
+	// not in its title; several docs title-match only scaffolding tokens.
+	writeHowtoFixture(t, howtoDir, "submit-form-custom-button.md",
+		"# Submit a form from a custom button\nWire a button to submit.\nCopy the form data text on submit.\n")
+	writeHowtoFixture(t, howtoDir, "style-text-variants.md",
+		"# Style text variants\nStyle button text with variants.\n")
+	writeHowtoFixture(t, howtoDir, "copy-values-between-fields.md",
+		"# Copy values between fields\nCopy button text to the clipboard on click.\n")
+
+	// Discoverability shape: content answers "clipboard", no title does.
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"copy text clipboard button")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil {
+		t.Fatal("expected salience summary")
+	}
+	if strings.Join(summary.Salience.Terms, ",") != "clipboard" {
+		t.Fatalf("salient terms = %v, want [clipboard]", summary.Salience.Terms)
+	}
+	if summary.Salience.TitleMatchCount != 0 {
+		t.Fatalf("salient title matches = %d, want 0", summary.Salience.TitleMatchCount)
+	}
+	if summary.Salience.ContentMatchCount != 1 {
+		t.Fatalf("salient content matches = %d, want 1", summary.Salience.ContentMatchCount)
+	}
+
+	// On-topic-titled shape: a doc titled on the distinctive term.
+	writeHowtoFixture(t, howtoDir, "copy-to-clipboard.md",
+		"# Copy to clipboard\nUse the clipboard API from a button.\n")
+	_, summary, err = ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"copy text clipboard button")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil || summary.Salience.TitleMatchCount < 1 {
+		t.Fatalf("expected salient title match after adding titled doc, got %+v", summary.Salience)
+	}
+
+	// Content-gap shape: distinctive concept absent everywhere. The query
+	// still matches scaffolding tokens, so results exist, but no achievable
+	// term is distinctive of the intent and title/content counts stay honest.
+	_, summary, err = ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"microphone capture button")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil {
+		t.Fatal("expected salience summary")
+	}
+	for _, term := range summary.Salience.Terms {
+		if term == "microphone" || term == "capture" {
+			t.Fatalf("unachievable term %q must not be salient: %+v", term, summary.Salience)
+		}
+	}
+	unanswered := strings.Join(summary.Salience.UnansweredTerms, ",")
+	if !strings.Contains(unanswered, "microphone") || !strings.Contains(unanswered, "capture") {
+		t.Fatalf("unanswered_terms = %v, want microphone and capture", summary.Salience.UnansweredTerms)
+	}
+}

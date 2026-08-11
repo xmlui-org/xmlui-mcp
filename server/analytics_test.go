@@ -381,3 +381,58 @@ func TestSearchAnalyticsGapSignalsOmittedOnMiss(t *testing.T) {
 		t.Fatalf("title_match_count = %d, want 0", got)
 	}
 }
+
+func TestSearchAnalyticsRecordsSalienceSignals(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	summary := MediatorJSON{
+		Sections: map[string][]resultItem{
+			"howtos": {{Path: "howto/copy-values.md", Score: 3.0}},
+		},
+		Facets:     map[string]FacetCounts{"howtos": {Files: 1, Matches: 1}},
+		Confidence: "medium",
+		Tokens:     map[string][]string{"kept": {"copy", "clipboard"}, "removed": {}, "expanded": {}},
+		Salience: &SalienceSummary{
+			Terms:             []string{"clipboard"},
+			TitleMatchCount:   0,
+			ContentMatchCount: 1,
+			UnansweredTerms:   []string{"paste"},
+		},
+	}
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "copy clipboard", "output", summary, true))
+
+	if _, err := handler(context.Background(), searchRequest("copy clipboard")); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	record := analytics.data.SearchQueries[0]
+	if strings.Join(record.SalientTerms, ",") != "clipboard" {
+		t.Fatalf("salient_terms = %v, want [clipboard]", record.SalientTerms)
+	}
+	if got := intValue(t, record.SalientTitleMatchCount); got != 0 {
+		t.Fatalf("salient_title_match_count = %d, want 0", got)
+	}
+	if got := intValue(t, record.SalientContentMatchCount); got != 1 {
+		t.Fatalf("salient_content_match_count = %d, want 1", got)
+	}
+	if strings.Join(record.UnansweredTerms, ",") != "paste" {
+		t.Fatalf("unanswered_terms = %v, want [paste]", record.UnansweredTerms)
+	}
+}
+
+func TestSearchAnalyticsSalienceOmittedWithoutSummaryBlock(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	summary := MediatorJSON{
+		Sections: map[string][]resultItem{"howtos": {}},
+		Facets:   map[string]FacetCounts{"howtos": {}},
+		Tokens:   map[string][]string{"kept": {}, "removed": {}, "expanded": {}},
+	}
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "q", "No matches found.", summary, true))
+
+	if _, err := handler(context.Background(), searchRequest("q")); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	record := analytics.data.SearchQueries[0]
+	if record.SalientTerms != nil || record.SalientTitleMatchCount != nil || record.SalientContentMatchCount != nil {
+		t.Fatalf("expected omitted salience fields, got %+v", record)
+	}
+}
