@@ -381,3 +381,84 @@ func TestSalienceSummaryClassifiesGapKinds(t *testing.T) {
 		t.Fatalf("unanswered_terms = %v, want microphone and capture", summary.Salience.UnansweredTerms)
 	}
 }
+
+// Playground fence lines are markup: their tokens must not count as content
+// coverage (#13's copy-inflation case).
+func TestFenceBoilerplateExcludedFromCoverage(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fence carries "copy"; body does not. The file is a candidate via
+	// "clipboard" in its body.
+	writeHowtoFixture(t, howtoDir, "paste-images.md",
+		"# Paste images\n```xmlui-pg copy display name=\"Demo\"\n<App/>\n```\nPaste from the clipboard into an image.\n")
+	// Body genuinely says "copy".
+	writeHowtoFixture(t, howtoDir, "duplicate-rows.md",
+		"# Duplicate rows\nCopy the clipboard contents into a new row.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"copy clipboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil {
+		t.Fatal("expected salience summary")
+	}
+	var copyEntry *TermCoverageEntry
+	for i := range summary.Salience.TermCoverage {
+		if summary.Salience.TermCoverage[i].Term == "copy" {
+			copyEntry = &summary.Salience.TermCoverage[i]
+		}
+	}
+	if copyEntry == nil {
+		t.Fatalf("no term_coverage entry for copy: %+v", summary.Salience.TermCoverage)
+	}
+	if copyEntry.ContentMatches != 1 {
+		t.Fatalf("copy content_matches = %d, want 1 (fence line must not count)", copyEntry.ContentMatches)
+	}
+	for _, items := range summary.Sections {
+		for _, item := range items {
+			if strings.Contains(item.Snippet, "```") {
+				t.Fatalf("fence line leaked into snippets: %q", item.Snippet)
+			}
+		}
+	}
+}
+
+// The record's per-term vector must include zero-count intent terms — the
+// selection-proof content-gap tell.
+func TestTermCoverageIncludesZeroCountIntentTerm(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "use-buttons.md",
+		"# Use buttons\nWire a button click handler.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"microphone button")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Salience == nil {
+		t.Fatal("expected salience summary")
+	}
+	found := false
+	for _, entry := range summary.Salience.TermCoverage {
+		if entry.Term == "microphone" {
+			found = true
+			if entry.TitleMatches != 0 || entry.ContentMatches != 0 {
+				t.Fatalf("microphone coverage = %+v, want zeros", entry)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("microphone missing from term_coverage: %+v", summary.Salience.TermCoverage)
+	}
+}

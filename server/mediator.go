@@ -87,10 +87,22 @@ type AgentGuidance struct {
 // query's real intent is unanswerable in the corpus and salience has fallen
 // back to a less specific term, the content-gap signature (#12).
 type SalienceSummary struct {
-	Terms             []string `json:"terms"`
-	TitleMatchCount   int      `json:"title_match_count"`
-	ContentMatchCount int      `json:"content_match_count"`
-	UnansweredTerms   []string `json:"unanswered_terms"`
+	Terms             []string            `json:"terms"`
+	TitleMatchCount   int                 `json:"title_match_count"`
+	ContentMatchCount int                 `json:"content_match_count"`
+	UnansweredTerms   []string            `json:"unanswered_terms"`
+	TermCoverage      []TermCoverageEntry `json:"term_coverage"`
+}
+
+// TermCoverageEntry reports how the ranked candidates answer one substantive
+// query term, zeros included. Unlike the salient aggregates it involves no
+// term selection, so a consumer sees the full vector — a zero-count intent
+// term on a prose query is the content-gap tell regardless of which terms
+// rarity crowned salient (#13).
+type TermCoverageEntry struct {
+	Term           string `json:"term"`
+	TitleMatches   int    `json:"title_matches"`
+	ContentMatches int    `json:"content_matches"`
 }
 
 // MediatorJSON is the machine-readable summary we append after the human block.
@@ -209,6 +221,14 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// -------- helpers --------
 
 	addFileHit := func(rel string, absPath string, lineNum int, line string, queryTermsForMatch []string) {
+		// Code-fence marker lines (```xmlui-pg copy display name="…") are
+		// markup, not content: 173 of 190 howto docs carry that literal
+		// playground fence, making its tokens read corpus-ubiquitous. They
+		// contribute neither term coverage nor snippets (#13).
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			return
+		}
+
 		// Truncate snippet
 		snippet := line
 		if len(snippet) > cfg.MaxSnippetLength {
@@ -426,6 +446,12 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		ranked = append(ranked, sf)
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
+		// Tie-break by path: the pre-sort order comes from map iteration, so
+		// without this, equal-score files shuffle run to run and the top-N
+		// cutoff (hence df, salience, and analytics records) is nondeterministic.
+		if ranked[i].Score == ranked[j].Score {
+			return ranked[i].RelPath < ranked[j].RelPath
+		}
 		return ranked[i].Score > ranked[j].Score
 	})
 
@@ -1303,7 +1329,7 @@ func termDocumentFrequency(ranked []*scoredFile, queryTerms []string) (map[strin
 // separates a discoverability gap (a doc answers, but no title says so) from
 // a content gap (nothing answers) in the analytics record (#12).
 func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary {
-	summary := SalienceSummary{Terms: []string{}, UnansweredTerms: []string{}}
+	summary := SalienceSummary{Terms: []string{}, UnansweredTerms: []string{}, TermCoverage: []TermCoverageEntry{}}
 	df, minDF := termDocumentFrequency(ranked, queryTerms)
 	seenUnanswered := make(map[string]bool)
 	for _, term := range queryTerms {
@@ -1311,6 +1337,21 @@ func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary 
 			seenUnanswered[term] = true
 			summary.UnansweredTerms = append(summary.UnansweredTerms, term)
 		}
+	}
+	seenCoverage := make(map[string]bool)
+	for _, term := range queryTerms {
+		stem := termStem(term)
+		if len(stem) < 4 || seenCoverage[term] {
+			continue
+		}
+		seenCoverage[term] = true
+		entry := TermCoverageEntry{Term: term, ContentMatches: df[term]}
+		for _, sf := range ranked {
+			if strings.Contains(strings.ToLower(filepath.Base(sf.RelPath)), stem) {
+				entry.TitleMatches++
+			}
+		}
+		summary.TermCoverage = append(summary.TermCoverage, entry)
 	}
 	if minDF == 0 {
 		return summary

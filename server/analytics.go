@@ -45,10 +45,11 @@ type SearchQuery struct {
 	ScoreGap         *float64 `json:"score_gap,omitempty"`
 	TitleMatchCount  *int     `json:"title_match_count,omitempty"`
 
-	SalientTerms             []string `json:"salient_terms,omitempty"`
-	SalientTitleMatchCount   *int     `json:"salient_title_match_count,omitempty"`
-	SalientContentMatchCount *int     `json:"salient_content_match_count,omitempty"`
-	UnansweredTerms          []string `json:"unanswered_terms,omitempty"`
+	SalientTerms             []string            `json:"salient_terms,omitempty"`
+	SalientTitleMatchCount   *int                `json:"salient_title_match_count,omitempty"`
+	SalientContentMatchCount *int                `json:"salient_content_match_count,omitempty"`
+	UnansweredTerms          []string            `json:"unanswered_terms,omitempty"`
+	TermCoverage             []TermCoverageEntry `json:"term_coverage,omitempty"`
 	MatchedPaths     []string `json:"matched_paths"`
 	Confidence       string   `json:"confidence"`
 	KeptTokens       []string `json:"kept_tokens"`
@@ -600,6 +601,7 @@ func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query
 		searchQuery.SalientTitleMatchCount = &salientTitleValue
 		searchQuery.SalientContentMatchCount = &salientContentValue
 		searchQuery.UnansweredTerms = append([]string{}, summary.Salience.UnansweredTerms...)
+		searchQuery.TermCoverage = append([]TermCoverageEntry{}, summary.Salience.TermCoverage...)
 	}
 
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)

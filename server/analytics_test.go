@@ -436,3 +436,36 @@ func TestSearchAnalyticsSalienceOmittedWithoutSummaryBlock(t *testing.T) {
 		t.Fatalf("expected omitted salience fields, got %+v", record)
 	}
 }
+
+func TestSearchAnalyticsRecordsTermCoverage(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	summary := MediatorJSON{
+		Sections: map[string][]resultItem{
+			"howtos": {{Path: "howto/duplicate-rows.md", Score: 2.0}},
+		},
+		Facets:     map[string]FacetCounts{"howtos": {Files: 1, Matches: 1}},
+		Confidence: "medium",
+		Tokens:     map[string][]string{"kept": {"copy", "clipboard"}, "removed": {}, "expanded": {}},
+		Salience: &SalienceSummary{
+			Terms:           []string{"clipboard"},
+			UnansweredTerms: []string{},
+			TermCoverage: []TermCoverageEntry{
+				{Term: "copy", TitleMatches: 0, ContentMatches: 1},
+				{Term: "clipboard", TitleMatches: 0, ContentMatches: 1},
+			},
+		},
+	}
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "copy clipboard", "output", summary, true))
+
+	if _, err := handler(context.Background(), searchRequest("copy clipboard")); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	record := analytics.data.SearchQueries[0]
+	if len(record.TermCoverage) != 2 {
+		t.Fatalf("term_coverage = %+v, want 2 entries", record.TermCoverage)
+	}
+	if record.TermCoverage[1].Term != "clipboard" || record.TermCoverage[1].ContentMatches != 1 {
+		t.Fatalf("clipboard entry = %+v", record.TermCoverage[1])
+	}
+}
