@@ -450,8 +450,10 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 	}
 
-	// Confidence heuristic
-	jsonOut.Confidence = confidenceHeuristicV2(jsonOut.Facets, totalHits)
+	// Confidence from the top of the score distribution: "high" means the best
+	// hit covers most query terms and stands out from the tail, not that many
+	// files contained common tokens (#10).
+	jsonOut.Confidence = confidenceFromRanked(ranked, queryTerms)
 
 	// Set search tool hierarchy for howto/example queries
 	if isHowToQuery(originalQuery) || isExampleQuery(originalQuery) {
@@ -465,20 +467,13 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	// Agent guidance
 	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
 
-	// Inject topic URLs into guidance (only if they pass registry validation)
+	// Inject topic URLs into guidance only for topics corroborated by the
+	// ranked results, deduplicated and capped: an uncorroborated flat dump of
+	// every trigger-matched topic repeats the ranked list while dominating the
+	// payload (#10).
 	if len(topicMatches) > 0 && jsonOut.AgentGuidance != nil {
 		registry := GetURLRegistry(homeDir)
-		for _, tm := range topicMatches {
-			for _, u := range tm.URLs {
-				if registry.ValidateURL(u) != "" {
-					jsonOut.AgentGuidance.DocumentationURLs = append(jsonOut.AgentGuidance.DocumentationURLs, DocumentationURL{
-						Title: tm.Name,
-						URL:   u,
-						Type:  "topic",
-					})
-				}
-			}
-		}
+		jsonOut.AgentGuidance.DocumentationURLs = corroboratedTopicURLs(topicMatches, ranked, registry.ValidateURL, maxDocumentationURLs)
 	}
 
 	// "Did You Mean?" suggestions (Rec #5)
@@ -803,22 +798,75 @@ func reorderRootsByPreference(roots []string, preferredSections []string) []stri
 	return out
 }
 
-// Updated confidence heuristic for new facet structure
-func confidenceHeuristicV2(facets map[string]FacetCounts, total int) string {
-	if total == 0 {
+// maxDocumentationURLs bounds the topic-URL block appended to guidance.
+const maxDocumentationURLs = 5
+
+// confidenceFromRanked derives confidence from the best-ranked hit rather than
+// match volume. Coverage is the fraction of query terms the top hit contains;
+// volume alone can no longer produce "high" (#10).
+func confidenceFromRanked(ranked []*scoredFile, queryTerms []string) string {
+	if len(ranked) == 0 {
 		return "low"
 	}
-	// weight docs (components/howtos) higher based on both files and matches
-	compFiles := facets["components"].Files
-	compMatches := facets["components"].Matches
-	howtoFiles := facets["howtos"].Files
-	howtoMatches := facets["howtos"].Matches
-
-	// High confidence if we have multiple files OR many matches in docs
-	if (compFiles+howtoFiles) >= 2 || (compMatches+howtoMatches) > 5 {
-		return "high"
+	coverage := 1.0
+	if len(queryTerms) > 0 {
+		coverage = float64(len(ranked[0].TermsFound)) / float64(len(queryTerms))
 	}
-	return "medium"
+	switch {
+	case coverage < 0.34:
+		return "low"
+	case coverage >= 0.75 && topStandsOut(ranked):
+		return "high"
+	default:
+		return "medium"
+	}
+}
+
+// topStandsOut reports whether the best score is clearly separated from the
+// middle of the ranked tail. One or two results are specific by construction.
+func topStandsOut(ranked []*scoredFile) bool {
+	if len(ranked) <= 2 {
+		return true
+	}
+	median := ranked[len(ranked)/2].Score
+	if median <= 0 {
+		return true
+	}
+	return ranked[0].Score >= 1.5*median
+}
+
+// corroboratedTopicURLs returns validated URLs for topics whose canonical docs
+// appear among the ranked results, deduplicated and capped to maxURLs.
+func corroboratedTopicURLs(topicMatches []TopicEntry, ranked []*scoredFile, validate func(string) string, maxURLs int) []DocumentationURL {
+	var out []DocumentationURL
+	seen := make(map[string]bool)
+	for _, tm := range topicMatches {
+		if !topicCorroborated(tm, ranked) {
+			continue
+		}
+		for _, u := range tm.URLs {
+			if len(out) >= maxURLs {
+				return out
+			}
+			if seen[u] || validate(u) == "" {
+				continue
+			}
+			seen[u] = true
+			out = append(out, DocumentationURL{Title: tm.Name, URL: u, Type: "topic"})
+		}
+	}
+	return out
+}
+
+func topicCorroborated(tm TopicEntry, ranked []*scoredFile) bool {
+	for _, doc := range tm.CanonicalDocs {
+		for _, sf := range ranked {
+			if strings.Contains(sf.RelPath, doc) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func keysSortedV2(m map[string]FacetCounts) []string {

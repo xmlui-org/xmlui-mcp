@@ -178,16 +178,26 @@ func matchTopics(queryTokens []string) []TopicEntry {
 		tokenSet[strings.ToLower(t)] = true
 	}
 
+	// Multi-token queries must overlap at least two trigger terms; a single
+	// common token otherwise fans out to much of the topic index (#10).
+	minMatches := 1
+	if len(queryTokens) >= 2 {
+		minMatches = 2
+	}
+
 	var matches []TopicEntry
 	for _, topic := range topicIndex {
+		required := minMatches
+		if len(topic.TriggerTerms) < required {
+			required = len(topic.TriggerTerms)
+		}
 		matchCount := 0
 		for _, trigger := range topic.TriggerTerms {
 			if tokenSet[strings.ToLower(trigger)] {
 				matchCount++
 			}
 		}
-		// Require at least one trigger match
-		if matchCount > 0 {
+		if matchCount >= required && matchCount > 0 {
 			matches = append(matches, topic)
 		}
 	}
