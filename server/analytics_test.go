@@ -319,3 +319,65 @@ func TestV2JSONIncludesExplicitZeroValues(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchAnalyticsRecordsGapClassificationSignals(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	summary := MediatorJSON{
+		Sections: map[string][]resultItem{
+			"howtos": {
+				{Path: "howto/format-values.md", Score: 4.5, TitleMatch: true},
+				{Path: "howto/format-values.md", Score: 4.5, TitleMatch: true},
+				{Path: "howto/style-text.md", Score: 3.0},
+			},
+		},
+		Facets:     map[string]FacetCounts{"howtos": {Files: 2, Matches: 3}},
+		Confidence: "medium",
+		Tokens: map[string][]string{
+			"kept":     {"relative", "timestamp"},
+			"removed":  {},
+			"expanded": {"relative", "timestamp"},
+		},
+	}
+	human := "Query: ...\n## howto/format-values.md\n"
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "relative timestamp", human, summary, true))
+
+	if _, err := handler(context.Background(), searchRequest("relative timestamp")); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(analytics.data.SearchQueries) != 1 {
+		t.Fatalf("got %d search records, want 1", len(analytics.data.SearchQueries))
+	}
+	record := analytics.data.SearchQueries[0]
+	if record.TopScore == nil || *record.TopScore != 4.5 {
+		t.Fatalf("top_score = %v, want 4.5", record.TopScore)
+	}
+	if record.ScoreGap == nil || math.Abs(*record.ScoreGap-1.5) > 1e-9 {
+		t.Fatalf("score_gap = %v, want 1.5", record.ScoreGap)
+	}
+	if got := intValue(t, record.TitleMatchCount); got != 1 {
+		t.Fatalf("title_match_count = %d, want 1", got)
+	}
+}
+
+func TestSearchAnalyticsGapSignalsOmittedOnMiss(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	summary := MediatorJSON{
+		Sections:   map[string][]resultItem{"howtos": {}},
+		Facets:     map[string]FacetCounts{"howtos": {}},
+		Confidence: "low",
+		Tokens:     map[string][]string{"kept": {}, "removed": {}, "expanded": {}},
+	}
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "voice input", "No matches found.\n", summary, true))
+
+	if _, err := handler(context.Background(), searchRequest("voice input")); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	record := analytics.data.SearchQueries[0]
+	if record.TopScore != nil || record.ScoreGap != nil {
+		t.Fatalf("expected omitted score signals on miss, got top=%v gap=%v", record.TopScore, record.ScoreGap)
+	}
+	if got := intValue(t, record.TitleMatchCount); got != 0 {
+		t.Fatalf("title_match_count = %d, want 0", got)
+	}
+}

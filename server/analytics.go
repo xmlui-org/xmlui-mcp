@@ -41,6 +41,9 @@ type SearchQuery struct {
 	YieldedResults   *bool    `json:"yielded_results,omitempty"`
 	MatchedFileCount *int     `json:"matched_file_count,omitempty"`
 	MatchedLineCount *int     `json:"matched_line_count,omitempty"`
+	TopScore         *float64 `json:"top_score,omitempty"`
+	ScoreGap         *float64 `json:"score_gap,omitempty"`
+	TitleMatchCount  *int     `json:"title_match_count,omitempty"`
 	MatchedPaths     []string `json:"matched_paths"`
 	Confidence       string   `json:"confidence"`
 	KeptTokens       []string `json:"kept_tokens"`
@@ -341,16 +344,33 @@ type rankedMatchedPath struct {
 	score float64
 }
 
-func searchMetricsFromSummary(summary MediatorJSON) (int, int, []string) {
+// searchSummaryMetrics carries the per-record search-quality signals derived
+// from a mediator summary. topScore/scoreGap/titleMatchCount let a downstream
+// miner separate content gaps from discoverability gaps without re-running
+// the search (#11).
+type searchSummaryMetrics struct {
+	matchedFileCount int
+	matchedLineCount int
+	matchedPaths     []string
+	topScore         float64
+	scoreGap         float64
+	titleMatchCount  int
+}
+
+func searchMetricsFromSummary(summary MediatorJSON) searchSummaryMetrics {
 	pathScores := make(map[string]float64)
-	matchedLineCount := 0
+	pathTitleMatch := make(map[string]bool)
+	metrics := searchSummaryMetrics{}
 	for _, facet := range summary.Facets {
-		matchedLineCount += facet.Matches
+		metrics.matchedLineCount += facet.Matches
 	}
 	for _, items := range summary.Sections {
 		for _, item := range items {
 			if current, exists := pathScores[item.Path]; !exists || item.Score > current {
 				pathScores[item.Path] = item.Score
+			}
+			if item.TitleMatch {
+				pathTitleMatch[item.Path] = true
 			}
 		}
 	}
@@ -366,11 +386,19 @@ func searchMetricsFromSummary(summary MediatorJSON) (int, int, []string) {
 		return ranked[i].score > ranked[j].score
 	})
 
-	paths := make([]string, 0, len(ranked))
+	metrics.matchedPaths = make([]string, 0, len(ranked))
 	for _, item := range ranked {
-		paths = append(paths, item.path)
+		metrics.matchedPaths = append(metrics.matchedPaths, item.path)
 	}
-	return len(paths), matchedLineCount, paths
+	metrics.matchedFileCount = len(ranked)
+	metrics.titleMatchCount = len(pathTitleMatch)
+	if len(ranked) > 0 {
+		metrics.topScore = ranked[0].score
+	}
+	if len(ranked) > 1 {
+		metrics.scoreGap = ranked[0].score - ranked[1].score
+	}
+	return metrics
 }
 
 func newAnalytics(logFile string) *Analytics {
@@ -528,12 +556,13 @@ func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query
 
 	WriteDebugLog("[DEBUG] LogSearchQuery ENTRY: tool=%s, query=%s\n", toolName, query)
 
-	matchedFileCount, matchedLineCount, matchedPaths := searchMetricsFromSummary(summary)
-	yieldedResults := matchedFileCount > 0
+	metrics := searchMetricsFromSummary(summary)
+	yieldedResults := metrics.matchedFileCount > 0
 	executionSuccessValue := executionSuccess
 	yieldedResultsValue := yieldedResults
-	matchedFileCountValue := matchedFileCount
-	matchedLineCountValue := matchedLineCount
+	matchedFileCountValue := metrics.matchedFileCount
+	matchedLineCountValue := metrics.matchedLineCount
+	titleMatchCountValue := metrics.titleMatchCount
 	searchQuery := SearchQuery{
 		SchemaVersion:    2,
 		InvocationID:     invocationID,
@@ -545,12 +574,19 @@ func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query
 		YieldedResults:   &yieldedResultsValue,
 		MatchedFileCount: &matchedFileCountValue,
 		MatchedLineCount: &matchedLineCountValue,
-		MatchedPaths:     matchedPaths,
+		TitleMatchCount:  &titleMatchCountValue,
+		MatchedPaths:     metrics.matchedPaths,
 		Confidence:       summary.Confidence,
 		KeptTokens:       append([]string{}, summary.Tokens["kept"]...),
 		RemovedTokens:    append([]string{}, summary.Tokens["removed"]...),
 		ExpandedTokens:   append([]string{}, summary.Tokens["expanded"]...),
 		CorpusVersion:    corpusVersion,
+	}
+	if yieldedResults {
+		topScoreValue := metrics.topScore
+		scoreGapValue := metrics.scoreGap
+		searchQuery.TopScore = &topScoreValue
+		searchQuery.ScoreGap = &scoreGapValue
 	}
 
 	a.data.SearchQueries = append(a.data.SearchQueries, searchQuery)

@@ -224,3 +224,88 @@ func TestNoFlatURLDumpWithoutCorroboration(t *testing.T) {
 		t.Fatalf("expected no documentation_urls in summary, got %+v", summary.AgentGuidance.DocumentationURLs)
 	}
 }
+
+// The #11 reproducer shape: the top hit covers the query's generic tokens
+// while a lower-ranked candidate holds the distinctive term. Aggregate
+// coverage alone must not read "high".
+func TestConfidenceNotHighWhenDistinctiveTermUnanswered(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "disable-save-button-validation.md",
+		"# Disable the save button during validation\nDisable the save button while the form validates.\nThe form field state drives the save button.\n")
+	writeHowtoFixture(t, howtoDir, "other-notes.md",
+		"# Other notes\nTrack changed form field values.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"disable save button form field changed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence == "high" {
+		t.Fatalf("expected confidence below high when distinctive term is unanswered, got %q", summary.Confidence)
+	}
+}
+
+func TestConfidenceHighWhenDistinctiveTermCovered(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "disable-save-button-validation.md",
+		"# Disable the save button during validation\nDisable the save button while the form validates.\n")
+	writeHowtoFixture(t, howtoDir, "other-notes.md",
+		"# Other notes\nTrack changed form field values.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"disable save button validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence != "high" {
+		t.Fatalf("expected high confidence when the distinctive term is covered, got %q", summary.Confidence)
+	}
+}
+
+func TestTitleMatchStampedOnResultItems(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "sync-selection.md",
+		"# Sync selection\nKeep the selection in sync.\n")
+	writeHowtoFixture(t, howtoDir, "unrelated-name.md",
+		"# Unrelated name\nAlso about selection sync details.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"sync selection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]bool{}
+	for _, items := range summary.Sections {
+		for _, item := range items {
+			if item.TitleMatch {
+				byPath[item.Path] = true
+			}
+		}
+	}
+	if len(byPath) != 1 {
+		t.Fatalf("expected exactly one title-matched path, got %#v", byPath)
+	}
+	for path := range byPath {
+		if !strings.Contains(path, "sync-selection") {
+			t.Fatalf("title match stamped on wrong path: %s", path)
+		}
+	}
+}

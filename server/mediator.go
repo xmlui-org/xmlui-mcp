@@ -112,6 +112,7 @@ type scoredFile struct {
 	Deprecated      bool   // true if file contains a [!WARNING] deprecation notice
 	ReplacementText string // e.g. "global variables"
 	ReplacementLink string // e.g. "/guides/markup#global-variables"
+	TitleMatch      bool   // filename contains a query term (the scoring bonus fired)
 	// tracking which query terms were found in this file
 	TermsFound map[string]bool
 }
@@ -374,11 +375,16 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 		sf.Score *= weight
 
-		// (c) Filename match bonus
+		// (c) Filename match bonus. Only substantive terms count (stemmed,
+		// >=4 chars): ubiquitous short tokens like "a"/"the" otherwise match
+		// nearly every filename, inflating every score and saturating the
+		// title-match signal (#11).
 		filenameLower := strings.ToLower(filepath.Base(sf.RelPath))
 		for _, term := range queryTerms {
-			if strings.Contains(filenameLower, term) {
+			stem := termStem(term)
+			if len(stem) >= 4 && strings.Contains(filenameLower, stem) {
 				sf.Score += 2.0
+				sf.TitleMatch = true
 				break
 			}
 		}
@@ -432,12 +438,13 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
 		for _, snip := range bestSnippets {
 			jsonOut.Sections[section] = append(jsonOut.Sections[section], resultItem{
-				Type:    section,
-				Path:    sf.RelPath,
-				AbsPath: sf.AbsPath,
-				Line:    snip.Line,
-				Snippet: snip.Text,
-				Score:   sf.Score,
+				Type:       section,
+				Path:       sf.RelPath,
+				AbsPath:    sf.AbsPath,
+				Line:       snip.Line,
+				Snippet:    snip.Text,
+				Score:      sf.Score,
+				TitleMatch: sf.TitleMatch,
 			})
 		}
 	}
@@ -711,12 +718,13 @@ type stageHit struct {
 }
 
 type resultItem struct {
-	Type    string  `json:"type"` // section key
-	Path    string  `json:"path"`
-	AbsPath string  `json:"abs_path,omitempty"`
-	Line    int     `json:"line"`
-	Snippet string  `json:"snippet"`
-	Score   float64 `json:"score,omitempty"`
+	Type       string  `json:"type"` // section key
+	Path       string  `json:"path"`
+	AbsPath    string  `json:"abs_path,omitempty"`
+	Line       int     `json:"line"`
+	Snippet    string  `json:"snippet"`
+	Score      float64 `json:"score,omitempty"`
+	TitleMatch bool    `json:"title_match,omitempty"`
 }
 
 // normalizeTokens: lowercase, strip simple punctuation/sigils, drop stopwords.
@@ -815,11 +823,56 @@ func confidenceFromRanked(ranked []*scoredFile, queryTerms []string) string {
 	switch {
 	case coverage < 0.34:
 		return "low"
-	case coverage >= 0.75 && topStandsOut(ranked):
+	case coverage >= 0.75 && topStandsOut(ranked) && topCoversDistinctiveTerms(ranked, queryTerms):
 		return "high"
 	default:
 		return "medium"
 	}
+}
+
+// topCoversDistinctiveTerms requires the best hit (or a near-tied co-top hit)
+// to cover every achievable query term: every term at least one ranked
+// candidate answers, stem-aware. Aggregate coverage of generic tokens can
+// otherwise read "high" while the query's salient concept goes unanswered in
+// the top hit yet answered elsewhere in the corpus (#11). Terms no candidate
+// matches don't gate; they already depress coverage.
+func topCoversDistinctiveTerms(ranked []*scoredFile, queryTerms []string) bool {
+	df := make(map[string]int, len(queryTerms))
+	minDF := 0
+	for _, term := range queryTerms {
+		count := 0
+		for _, sf := range ranked {
+			if hitCoversTerm(sf, term) {
+				count++
+			}
+		}
+		df[term] = count
+		if count > 0 && (minDF == 0 || count < minDF) {
+			minDF = count
+		}
+	}
+	if minDF == 0 {
+		return true
+	}
+	// Rank order inside a narrow score band is noise (live corpus: 4.20 vs
+	// 4.10 for a query-params doc vs the answering deep-link doc), so any
+	// near-tied co-top hit may satisfy the guard, not just ranked[0].
+	for _, sf := range ranked {
+		if sf.Score < 0.9*ranked[0].Score {
+			break
+		}
+		covers := true
+		for _, term := range queryTerms {
+			if df[term] > 0 && !hitCoversTerm(sf, term) {
+				covers = false
+				break
+			}
+		}
+		if covers {
+			return true
+		}
+	}
+	return false
 }
 
 // topStandsOut reports whether the best score is clearly separated from the
@@ -942,9 +995,26 @@ func SimpleClassifier(homeDir string, exampleRoots []string) func(rel string, ab
 
 // DefaultStopwords provides a conservative set; you can override in cfg.
 func DefaultStopwords() map[string]struct{} {
-	return map[string]struct{}{
+	stopwords := map[string]struct{}{
 		"example": {}, "examples": {}, "usage": {}, "working": {}, "actual": {}, "real": {}, "when": {},
 	}
+	// English function words. Left in queries they saturate term coverage,
+	// document frequency, and the filename-match signal (#11): "a"/"the"/
+	// "with"/"from" match nearly every document and many filenames.
+	for _, w := range []string{
+		"a", "an", "the", "and", "or", "but",
+		"with", "without", "from", "into", "onto", "until", "while", "where",
+		"how", "what", "which", "that", "this", "these", "those",
+		"is", "are", "was", "were", "be", "been", "being",
+		"has", "have", "had", "do", "does", "did",
+		"can", "could", "should", "would", "will", "shall", "may", "might", "must",
+		"to", "of", "in", "on", "at", "by", "for", "as",
+		"it", "its", "i", "we", "you", "they",
+		"my", "our", "your", "their", "me", "us", "them", "like",
+	} {
+		stopwords[w] = struct{}{}
+	}
+	return stopwords
 }
 
 // DefaultSynonyms provides minimal, generic expansions; override if desired.
@@ -1165,4 +1235,38 @@ func generateFailureGuidance(originalQuery string, queryPlan []stageHit, kept []
 	// General guidance for other failed searches
 	guidance.SuggestedApproach = "Try simpler search terms or use xmlui_examples/xmlui_search_howto"
 	return guidance
+}
+
+// termStem trims common English suffixes so morphological variants corroborate
+// a term ("linking" matches a doc that says "deep link"). Conservative: only
+// applies when the stem keeps at least 4 characters.
+func termStem(term string) string {
+	for _, suffix := range []string{"ing", "ed", "es", "s"} {
+		if strings.HasSuffix(term, suffix) && len(term)-len(suffix) >= 4 {
+			return term[:len(term)-len(suffix)]
+		}
+	}
+	return term
+}
+
+// hitCoversTerm reports whether a ranked hit answers a query term, either via
+// the exact-term tracking from scoring or via the term's stem appearing in the
+// hit's filename or snippets.
+func hitCoversTerm(sf *scoredFile, term string) bool {
+	if sf.TermsFound[term] {
+		return true
+	}
+	stem := termStem(term)
+	if stem == term {
+		return false
+	}
+	if strings.Contains(strings.ToLower(filepath.Base(sf.RelPath)), stem) {
+		return true
+	}
+	for _, snip := range sf.Snippets {
+		if strings.Contains(strings.ToLower(snip.Text), stem) {
+			return true
+		}
+	}
+	return false
 }
