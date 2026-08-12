@@ -27,6 +27,15 @@ const (
 // downloadMutex prevents concurrent downloads within the same process
 var downloadMutex sync.Mutex
 
+// Injectable for tests (#15): production values are the real implementations.
+var (
+	fetchLatestXMLUITag = getLatestXMLUITag
+	downloadArchive     = downloadFile
+	// onBackgroundRefreshDone is called when a background refresh finishes;
+	// tests use it to observe the outcome. Never nil.
+	onBackgroundRefreshDone = func(tag string, err error) {}
+)
+
 // ErrVersionNotFound is returned when the requested version does not exist
 var ErrVersionNotFound = errors.New("version not found")
 
@@ -301,13 +310,17 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get repos directory: %w", err)
 	}
+	return ensureXMLUIRepoIn(reposDir, version)
+}
 
+func ensureXMLUIRepoIn(reposDir, version string) (string, error) {
 	var tagName string
 	var zipURL string
 
-	if version == "" {
+	latestMode := version == ""
+	if latestMode {
 		// Fetch latest
-		t, url, err := getLatestXMLUITag()
+		t, url, err := fetchLatestXMLUITag()
 		if err == nil {
 			tagName = t
 			zipURL = url
@@ -343,6 +356,45 @@ func EnsureXMLUIRepo(version string) (string, error) {
 		return repoDir, nil
 	}
 
+	// Serve-cache-first (#15): in latest mode, startup must not block on an
+	// archive download when a complete cached version can answer immediately.
+	// The newer release is fetched in the background through the same locked,
+	// atomic path; the next launch picks it up. A pinned version is never
+	// silently substituted, and a first run (no cache) still blocks below —
+	// there is nothing to serve.
+	if latestMode && zipURL != "" {
+		if latestCached, cacheErr := getLatestCachedTag(reposDir); cacheErr == nil && latestCached != "" {
+			cachedDir := filepath.Join(reposDir, latestCached)
+			fmt.Fprintf(os.Stderr, "Warning: Serving cached xmlui version %s; downloading %s in the background for the next start.\n", latestCached, tagName)
+			mcpserver.WriteDebugLog("Serving cached version %s; refreshing %s in background\n", latestCached, tagName)
+			go func() {
+				_, bgErr := downloadAndInstallRepo(reposDir, tagName, zipURL)
+				if bgErr != nil {
+					mcpserver.WriteDebugLog("Background refresh of %s failed: %v\n", tagName, bgErr)
+				} else {
+					mcpserver.WriteDebugLog("Background refresh of %s complete\n", tagName)
+				}
+				onBackgroundRefreshDone(tagName, bgErr)
+			}()
+			updateMetadata(reposDir, latestCached)
+			cleanupCache(reposDir)
+			return cachedDir, nil
+		}
+	}
+
+	if zipURL == "" {
+		return "", fmt.Errorf("cannot download repository: expected to read it from cache, but it was invalidated while processing")
+	}
+
+	return downloadAndInstallRepo(reposDir, tagName, zipURL)
+}
+
+// downloadAndInstallRepo downloads and atomically installs one repo version
+// under a per-version file lock. Used by both the blocking first-run path and
+// the background refresh.
+func downloadAndInstallRepo(reposDir, tagName, zipURL string) (string, error) {
+	repoDir := filepath.Join(reposDir, tagName)
+
 	// Ensure parent dir exists
 	if err := os.MkdirAll(reposDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create repos directory: %w", err)
@@ -359,16 +411,16 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	}
 	defer lock.Close()
 
-	// Acquire exclusive lock
+	// Acquire exclusive lock. The lock file is deliberately never unlinked:
+	// removing it after unlock lets one process flock the orphaned inode while
+	// another flocks a fresh file at the same path — two "holders" at once,
+	// corrupting each other's tmp dirs (#15). Lock files are zero-byte and
+	// stable per version.
 	unlock, err := acquireFileLock(lock)
 	if err != nil {
-		os.Remove(lockFile)
 		return "", fmt.Errorf("failed to acquire file lock: %w", err)
 	}
-	defer func() {
-		unlock()
-		os.Remove(lockFile)
-	}()
+	defer unlock()
 
 	mcpserver.WriteDebugLog("File-based download lock acquired\n")
 
@@ -381,10 +433,6 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	}
 
 	mcpserver.WriteDebugLog("Downloading XMLUI repo version %s...\n", tagName)
-
-	if zipURL == "" {
-		return "", fmt.Errorf("Cannot download repository. Expected to read it from cache, but it was invalidated while processing")
-	}
 
 	// Use a temporary directory for atomic download
 	tempDir := repoDir + ".tmp"
@@ -409,7 +457,7 @@ func EnsureXMLUIRepo(version string) (string, error) {
 	// Download zip
 	zipPath := filepath.Join(tempDir, "xmlui.zip")
 	mcpserver.WriteDebugLog("Downloading from: %s\n", zipURL)
-	if err := downloadFile(zipURL, zipPath); err != nil {
+	if err := downloadArchive(zipURL, zipPath); err != nil {
 		return "", fmt.Errorf("failed to download XMLUI repository: %w", err)
 	}
 
