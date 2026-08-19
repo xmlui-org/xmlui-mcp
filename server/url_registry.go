@@ -6,7 +6,11 @@ import (
 	"sync"
 )
 
-const baseURL = "https://docs.xmlui.org"
+// baseURL is the root of the live XMLUI documentation. docs.xmlui.org is NOT
+// it (that host serves the ModelContextProtocol site; deep paths are hard
+// 404s) — see #16. Note the live site returns SPA shells with a 404 status on
+// some real pages, so never "validate" these URLs by status code.
+const baseURL = "https://www.xmlui.org/docs"
 
 // URLRegistry maps file paths to documentation URLs.
 // URLs are derived directly from file names — if a .md file exists, the page exists.
@@ -40,12 +44,12 @@ func ResetURLRegistry() {
 
 // ComponentURL returns the documentation URL for a component name.
 func ComponentURL(name string) string {
-	return baseURL + "/components/" + name
+	return baseURL + "/reference/components/" + name
 }
 
 // ExtensionURL returns the documentation URL for an extension component.
 func ExtensionURL(pkg, name string) string {
-	return baseURL + "/extensions/" + pkg + "/" + name
+	return baseURL + "/reference/extensions/" + pkg + "/" + name
 }
 
 // HowtoURL returns the documentation URL for a howto article.

@@ -1201,7 +1201,7 @@ func isExampleQuery(query string) bool {
 }
 
 func constructURLBase() string {
-	return "https://docs.xmlui.org"
+	return baseURL
 }
 
 // constructDocumentationURL converts a file path to a clickable documentation URL.
