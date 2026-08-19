@@ -469,3 +469,71 @@ func TestSearchAnalyticsRecordsTermCoverage(t *testing.T) {
 		t.Fatalf("clipboard entry = %+v", record.TermCoverage[1])
 	}
 }
+
+// The update notice re-arms every Nth successful call instead of firing once:
+// a skimmed notice gets more chances, identical text dedupes naturally.
+func TestUpdateNoticeRearmsEveryNthCall(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() { SetUpdateNotice("") })
+	SetUpdateNotice("UPDATE-NOTICE")
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("payload"), nil
+	})
+
+	var carried []int
+	for i := 1; i <= 2*updateNoticeRearmInterval+1; i++ {
+		result, err := handler(context.Background(), searchRequest("q"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := result.Content[0].(mcp.TextContent).Text
+		if strings.Contains(text, "UPDATE-NOTICE") {
+			carried = append(carried, i)
+		}
+	}
+	want := []int{1, updateNoticeRearmInterval + 1, 2*updateNoticeRearmInterval + 1}
+	if len(carried) != len(want) || carried[0] != want[0] || carried[1] != want[1] || carried[2] != want[2] {
+		t.Fatalf("notice carried on calls %v, want %v", carried, want)
+	}
+}
+
+func TestUpdateNoticeSkipsErrorResults(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() { SetUpdateNotice("") })
+	SetUpdateNotice("UPDATE-NOTICE")
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError("boom"), nil
+	})
+	result, err := handler(context.Background(), searchRequest("q"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content[0].(mcp.TextContent).Text, "UPDATE-NOTICE") {
+		t.Fatal("notice must not ride error results")
+	}
+}
+
+func TestSetUpdateNoticeIdenticalTextKeepsCycle(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() { SetUpdateNotice("") })
+	SetUpdateNotice("UPDATE-NOTICE")
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("payload"), nil
+	})
+	if result, _ := handler(context.Background(), searchRequest("q")); !strings.Contains(result.Content[0].(mcp.TextContent).Text, "UPDATE-NOTICE") {
+		t.Fatal("first call must carry the notice")
+	}
+	// Re-setting the same text (periodic re-check) must not restart the cycle.
+	SetUpdateNotice("UPDATE-NOTICE")
+	if result, _ := handler(context.Background(), searchRequest("q")); strings.Contains(result.Content[0].(mcp.TextContent).Text, "UPDATE-NOTICE") {
+		t.Fatal("identical re-set must not re-arm immediately")
+	}
+	// A changed notice restarts the cycle.
+	SetUpdateNotice("NEW-NOTICE")
+	if result, _ := handler(context.Background(), searchRequest("q")); !strings.Contains(result.Content[0].(mcp.TextContent).Text, "NEW-NOTICE") {
+		t.Fatal("changed notice must ride the next response")
+	}
+}

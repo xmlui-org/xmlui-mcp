@@ -75,10 +75,27 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 	}
 	// AnalyticsFile is already set above
 
-	// Create MCP server
-	mcpServer := server.NewMCPServer("XMLUI", "0.1.0",
+	// Update check runs before the MCP server is constructed so an available
+	// update can ride the initialize response as server instructions — the
+	// channel Claude Code injects into model context for the whole session.
+	// Codex does not dependably surface instructions; the re-arming
+	// tool-result prepend (SetUpdateNotice below) is the floor that reaches
+	// both clients.
+	updateNotice := refreshUpdateState(config.CLIVersion)
+
+	serverOptions := []server.ServerOption{
 		server.WithPromptCapabilities(true),
-	)
+	}
+	if updateNotice != "" {
+		serverOptions = append(serverOptions, server.WithInstructions(updateNotice))
+		mcpserver.SetUpdateNotice(updateNotice)
+	}
+
+	// Create MCP server
+	mcpServer := server.NewMCPServer("XMLUI", "0.1.0", serverOptions...)
+
+	// Long-lived sessions learn about releases cut after startup.
+	startPeriodicUpdateCheck(config.CLIVersion, 6*time.Hour)
 
 	// Initialize analytics
 	mcpserver.InitializeAnalytics(analyticsFile)
@@ -392,15 +409,24 @@ func (s *MCPServer) setupTools() error {
 	s.mcpServer.AddTool(getSessionContextTool, mcpserver.WithAnalytics("xmlui_get_session_context", getSessionContextHandler))
 	s.tools = append(s.tools, getSessionContextTool)
 
+	// xmlui_status: the pull channel for update state, usable from any MCP
+	// client (Codex included, where initialize instructions and prompts are
+	// not dependably surfaced). Also serves xmlui doctor and humans.
+	statusTool := mcp.NewTool("xmlui_status",
+		mcp.WithDescription("Report the installed XMLUI CLI version, the latest available release, whether an update is available, and the docs corpus in use."))
+
+	statusHandler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(buildStatusText(s.config.CLIVersion, s.xmluiDir)), nil
+	}
+
+	s.mcpServer.AddTool(statusTool, mcpserver.WithAnalytics("xmlui_status", statusHandler))
+	s.tools = append(s.tools, statusTool)
+
 	return nil
 }
 
 // setupPrompts registers all XMLUI prompts with the MCP server
 func (s *MCPServer) setupPrompts() error {
-	updateNotice := checkForUpdate(s.config.CLIVersion)
-	if updateNotice != "" {
-		mcpserver.SetUpdateNotice(updateNotice)
-	}
 
 	// Define the xmlui_rules prompt handler
 	xmluiRulesHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
@@ -433,6 +459,12 @@ func (s *MCPServer) setupPrompts() error {
 12 use the xmlui_find_trace tool to locate the downloaded trace file, then use xmlui_distill_trace to understand what happened. Traces capture interactions, API calls, state changes, and timing -- they are the best way to understand app behavior.
 
 These rules ensure clean, maintainable XMLUI applications that follow best practices.`
+		// The rules prompt is the text agents in this workflow treat as law:
+		// an available-update notice appended here reaches Claude reliably.
+		// Read at fetch time so a mid-session periodic check is reflected.
+		if notice := currentUpdateNotice(); notice != "" {
+			rules += "\n\n" + notice
+		}
 		return mcp.NewGetPromptResult(
 			"XMLUI Development Rules and Guidelines",
 			[]mcp.PromptMessage{
@@ -455,25 +487,29 @@ These rules ensure clean, maintainable XMLUI applications that follow best pract
 	// Register with MCP server
 	s.mcpServer.AddPrompt(xmluiRulesPrompt, xmluiRulesHandler)
 
-	// Register update notice as a separate prompt if an update is available.
-	if updateNotice != "" {
-		updateHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-			return mcp.NewGetPromptResult(
-				"XMLUI CLI Update Notice",
-				[]mcp.PromptMessage{
-					mcp.NewPromptMessage(
-						mcp.RoleUser,
-						mcp.NewTextContent(updateNotice),
-					),
-				},
-			), nil
+	// The update-notice prompt is always registered (the prompt list is fixed
+	// at setup, so a mid-session release could not add it later); its body is
+	// read from the current update state at fetch time.
+	updateHandler := func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		body := currentUpdateNotice()
+		if body == "" {
+			body = "No XMLUI CLI update is currently known to be available. Use the xmlui_status tool for version details."
 		}
-		updatePrompt := mcp.NewPrompt("xmlui_update_notice",
-			mcp.WithPromptDescription("Notify user that a newer xmlui-cli is available"))
-		s.prompts = append(s.prompts, updatePrompt)
-		s.promptHandlers["xmlui_update_notice"] = updateHandler
-		s.mcpServer.AddPrompt(updatePrompt, updateHandler)
+		return mcp.NewGetPromptResult(
+			"XMLUI CLI Update Notice",
+			[]mcp.PromptMessage{
+				mcp.NewPromptMessage(
+					mcp.RoleUser,
+					mcp.NewTextContent(body),
+				),
+			},
+		), nil
 	}
+	updatePrompt := mcp.NewPrompt("xmlui_update_notice",
+		mcp.WithPromptDescription("Notify user that a newer xmlui-cli is available"))
+	s.prompts = append(s.prompts, updatePrompt)
+	s.promptHandlers["xmlui_update_notice"] = updateHandler
+	s.mcpServer.AddPrompt(updatePrompt, updateHandler)
 
 	return nil
 }

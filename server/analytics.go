@@ -622,16 +622,29 @@ func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query
 // Global analytics instance
 var globalAnalytics *Analytics
 
+// updateNoticeRearmInterval controls how often the notice re-rides a tool
+// response: on the first successful call after (re)arming, then every Nth.
+// One shot proved lossy — agents skim tool-result preambles — while every
+// response would be nagging; identical text lets an agent that already
+// relayed it dedupe naturally.
+const updateNoticeRearmInterval = 10
+
 var (
-	globalUpdateNotice   string
-	globalUpdateNoticeMu sync.Mutex
+	globalUpdateNotice    string
+	updateNoticeCallCount int
+	globalUpdateNoticeMu  sync.Mutex
 )
 
-// SetUpdateNotice sets a notice that will be prepended to the next successful tool response.
+// SetUpdateNotice sets the notice prepended to successful tool responses.
+// Setting a changed notice resets the re-arm cycle so the new text rides the
+// next response; re-setting identical text is a no-op on the cycle.
 func SetUpdateNotice(notice string) {
 	globalUpdateNoticeMu.Lock()
 	defer globalUpdateNoticeMu.Unlock()
-	globalUpdateNotice = notice
+	if notice != globalUpdateNotice {
+		globalUpdateNotice = notice
+		updateNoticeCallCount = 0
+	}
 }
 
 func prependUpdateNotice(result *mcp.CallToolResult) {
@@ -645,18 +658,24 @@ func prependUpdateNotice(result *mcp.CallToolResult) {
 		return
 	}
 
+	due := updateNoticeCallCount%updateNoticeRearmInterval == 0
+	updateNoticeCallCount++
+	if !due {
+		return
+	}
+
 	for i, content := range result.Content {
 		switch tc := content.(type) {
 		case *mcp.TextContent:
 			result.Content[i] = mcp.NewTextContent(globalUpdateNotice + "\n\n" + tc.Text)
-			globalUpdateNotice = ""
 			return
 		case mcp.TextContent:
 			result.Content[i] = mcp.NewTextContent(globalUpdateNotice + "\n\n" + tc.Text)
-			globalUpdateNotice = ""
 			return
 		}
 	}
+	// No text content to carry the notice: don't consume this slot.
+	updateNoticeCallCount--
 }
 
 func logTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
