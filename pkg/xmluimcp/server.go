@@ -68,6 +68,7 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 		return nil, fmt.Errorf("Failed to ensure the presence of XMLUI repository: %w\nFor more information, check the logs at: %s", err, logPath)
 	}
 	mcpserver.WriteDebugLog("Using cached XMLUI repository at: %s\n", cachedRepo)
+	mcpserver.SetCorpusStamp(corpusStamp(cachedRepo))
 
 	// Set defaults
 	if config.Port == "" {
@@ -793,4 +794,25 @@ func (s *MCPServer) PrintStartupInfo() {
 // GetSessionManager returns the session manager
 func (s *MCPServer) GetSessionManager() *SessionManager {
 	return s.sessionManager
+}
+
+// corpusStamp renders the provenance line appended to every tool response:
+// a stale answer names the snapshot it came from (#24).
+func corpusStamp(cachedRepo string) string {
+	version := filepath.Base(cachedRepo)
+	count := 0
+	paths := mcpserver.GetRepoPaths(cachedRepo)
+	entries, err := os.ReadDir(filepath.Join(cachedRepo, paths.Howto))
+	if err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if !e.IsDir() && strings.HasSuffix(name, ".md") && !strings.HasPrefix(name, "_") {
+				count++
+			}
+		}
+	}
+	if count > 0 {
+		return fmt.Sprintf("[corpus: %s, %d how-tos]", version, count)
+	}
+	return fmt.Sprintf("[corpus: %s]", version)
 }

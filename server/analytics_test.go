@@ -537,3 +537,80 @@ func TestSetUpdateNoticeIdenticalTextKeepsCycle(t *testing.T) {
 		t.Fatal("changed notice must ride the next response")
 	}
 }
+
+func TestCorpusStampAppendedToSuccess(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() { SetCorpusStamp("") })
+	stamp := "[corpus: xmlui@0.0.1, 2 how-tos]"
+	SetCorpusStamp(stamp)
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("payload"), nil
+	})
+
+	result, err := handler(context.Background(), searchRequest("q"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.HasSuffix(text, stamp) {
+		t.Fatalf("result text %q does not end with stamp %q", text, stamp)
+	}
+	if !strings.Contains(text, "payload") {
+		t.Fatalf("result text %q lost the payload", text)
+	}
+
+	// A second call must not double-append the stamp within one response.
+	result2, err := handler(context.Background(), searchRequest("q"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text2 := result2.Content[0].(mcp.TextContent).Text
+	if strings.Count(text2, stamp) != 1 {
+		t.Fatalf("stamp appeared %d times, want 1: %q", strings.Count(text2, stamp), text2)
+	}
+}
+
+func TestCorpusStampSkipsErrors(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() { SetCorpusStamp("") })
+	SetCorpusStamp("[corpus: xmlui@0.0.1, 2 how-tos]")
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError("boom"), nil
+	})
+	result, err := handler(context.Background(), searchRequest("q"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content[0].(mcp.TextContent).Text, "[corpus:") {
+		t.Fatal("stamp must not ride error results")
+	}
+}
+
+func TestCorpusStampCoexistsWithUpdateNotice(t *testing.T) {
+	useTestAnalytics(t)
+	t.Cleanup(func() {
+		SetUpdateNotice("")
+		SetCorpusStamp("")
+	})
+	SetUpdateNotice("UPDATE-NOTICE")
+	stamp := "[corpus: xmlui@0.0.1, 2 how-tos]"
+	SetCorpusStamp(stamp)
+
+	handler := WithAnalytics("xmlui_list_components", func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("payload"), nil
+	})
+
+	result, err := handler(context.Background(), searchRequest("q"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.HasPrefix(text, "UPDATE-NOTICE") {
+		t.Fatalf("result text %q does not start with update notice", text)
+	}
+	if !strings.HasSuffix(text, stamp) {
+		t.Fatalf("result text %q does not end with stamp", text)
+	}
+}

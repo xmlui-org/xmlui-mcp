@@ -225,6 +225,7 @@ func WithAnalytics(toolName string, handler func(context.Context, mcp.CallToolRe
 		WriteDebugLog("[DEBUG] withAnalytics AFTER_LOGGING: tool=%s\n", toolName)
 
 		prependUpdateNotice(result)
+		appendCorpusStamp(result)
 
 		return result, err
 	}
@@ -252,6 +253,7 @@ func WithSearchAnalytics(toolName string, handler func(context.Context, mcp.Call
 		}
 
 		prependUpdateNotice(result)
+		appendCorpusStamp(result)
 
 		return result, err
 	}
@@ -676,6 +678,53 @@ func prependUpdateNotice(result *mcp.CallToolResult) {
 	}
 	// No text content to carry the notice: don't consume this slot.
 	updateNoticeCallCount--
+}
+
+// globalCorpusStamp is the provenance line appended to every successful tool
+// response so a stale answer names the snapshot it came from (#24).
+var (
+	globalCorpusStamp   string
+	globalCorpusStampMu sync.Mutex
+)
+
+// SetCorpusStamp sets the provenance line appended to successful tool responses.
+func SetCorpusStamp(stamp string) {
+	globalCorpusStampMu.Lock()
+	defer globalCorpusStampMu.Unlock()
+	globalCorpusStamp = stamp
+}
+
+// appendCorpusStamp appends the corpus provenance line to the last text
+// content item of a successful result (#24). Never double-appends.
+func appendCorpusStamp(result *mcp.CallToolResult) {
+	if result == nil || result.IsError {
+		return
+	}
+
+	globalCorpusStampMu.Lock()
+	stamp := globalCorpusStamp
+	globalCorpusStampMu.Unlock()
+	if stamp == "" {
+		return
+	}
+
+	for i := len(result.Content) - 1; i >= 0; i-- {
+		content := result.Content[i]
+		switch tc := content.(type) {
+		case *mcp.TextContent:
+			if strings.HasSuffix(tc.Text, stamp) {
+				return
+			}
+			result.Content[i] = mcp.NewTextContent(tc.Text + "\n\n" + stamp)
+			return
+		case mcp.TextContent:
+			if strings.HasSuffix(tc.Text, stamp) {
+				return
+			}
+			result.Content[i] = mcp.NewTextContent(tc.Text + "\n\n" + stamp)
+			return
+		}
+	}
 }
 
 func logTool(toolName string, args map[string]interface{}, success bool, resultSize int, errorMsg string) {
