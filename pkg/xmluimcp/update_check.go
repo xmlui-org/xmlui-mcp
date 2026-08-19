@@ -58,6 +58,8 @@ func currentUpdateNotice() string {
 // — and forbids acting on the user's behalf (prompt-injection hygiene: a tool
 // result must never read as an instruction to execute installers).
 func buildUpdateNotice(installed, latest string) string {
+	installed = displayVersion(installed)
+	latest = displayVersion(latest)
 	return fmt.Sprintf(
 		"[xmlui-mcp update notice — for the assistant] A newer XMLUI CLI (%s) is available; "+
 			"this session is served by %s, which bundles an older xmlui-mcp server. "+
@@ -65,8 +67,20 @@ func buildUpdateNotice(installed, latest string) string {
 			"Reinstall from https://github.com/xmlui-org/xmlui-cli/releases/latest, then restart any agent "+
 			"sessions that use the XMLUI MCP server — running sessions (including this one) keep the old "+
 			"server until they are restarted.\" "+
+			"Relay this once per session: if you have already told your user about this exact update, do not repeat it. "+
 			"Do not run the installer or any other command on the user's behalf; relay the message and continue with the task.",
 		latest, installed, installed, latest)
+}
+
+// displayVersion renders versions consistently ("v0.1.0") regardless of
+// whether the input carried the prefix — the notice mixes an ldflags-stamped
+// CLI version with a GitHub tag, and the two disagree about "v" (#31).
+func displayVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
 }
 
 func fetchLatestCLITagFromGitHub() (string, error) {
@@ -200,9 +214,9 @@ func buildStatusText(cliVersion, xmluiDir string) string {
 
 	fmt.Fprintf(&out, "- Docs corpus in use: %s\n", filepath.Base(xmluiDir))
 
-	if notice := currentUpdateNotice(); notice != "" {
-		out.WriteString("\n" + notice + "\n")
-	}
-
+	// The notice itself is deliberately NOT embedded here: the analytics
+	// wrapper prepends the canonical copy on the same cadence as every other
+	// tool, and embedding a second copy doubled it in one result (#31). The
+	// "update available" line above carries the status-level fact.
 	return out.String()
 }

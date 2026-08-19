@@ -1,9 +1,14 @@
 package xmluimcp
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/mark3labs/mcp-go/mcp"
+
+	mcpserver "xmlui-mcp/server"
 )
 
 func TestSemverLessThan(t *testing.T) {
@@ -59,6 +64,7 @@ func TestUpdateNoticeCarriesRelayInstruction(t *testing.T) {
 		"Tell your user",
 		"restart any agent",
 		"keep the old",
+		"Relay this once per session",
 		"Do not run the installer",
 		"v0.1.0",
 		"v0.2.0",
@@ -106,10 +112,45 @@ func TestBuildStatusText(t *testing.T) {
 		"Installed CLI version: v0.1.0",
 		"v0.2.0 (update available)",
 		"Docs corpus in use: xmlui@0.14.9",
-		"Tell your user",
 	} {
 		if !strings.Contains(status, want) {
 			t.Fatalf("status missing %q:\n%s", want, status)
 		}
+	}
+	// The notice is NOT embedded: the analytics wrapper prepends the one
+	// canonical copy; embedding doubled it in a single result (#31).
+	if strings.Contains(status, "Tell your user") {
+		t.Fatalf("status must not embed the update notice:\n%s", status)
+	}
+}
+
+func TestUpdateNoticeVersionDisplayConsistent(t *testing.T) {
+	notice := buildUpdateNotice("0.0.9", "v0.1.0")
+	if !strings.Contains(notice, "v0.0.9 → v0.1.0") {
+		t.Fatalf("mixed version display not normalized:\n%s", notice)
+	}
+}
+
+// A wrapped status call must carry exactly one copy of the notice — the
+// wrapper's prepend — not a second embedded one (#31).
+func TestStatusResultCarriesSingleNoticeCopy(t *testing.T) {
+	stubUpdateCheck(t, func() (string, error) { return "v0.2.0", nil })
+	notice := refreshUpdateState("v0.1.0")
+	if notice == "" {
+		t.Fatal("expected notice")
+	}
+	mcpserver.SetUpdateNotice(notice)
+	t.Cleanup(func() { mcpserver.SetUpdateNotice("") })
+
+	handler := mcpserver.WithAnalytics("xmlui_status", func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(buildStatusText("v0.1.0", "/cache/xmlui-repos/xmlui@0.14.9")), nil
+	})
+	result, err := handler(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if got := strings.Count(text, "Tell your user"); got != 1 {
+		t.Fatalf("notice copies = %d, want exactly 1:\n%s", got, text)
 	}
 }
