@@ -755,3 +755,68 @@ func TestReadFirstHeadingStripsAnchorMarkup(t *testing.T) {
 		t.Fatalf("anchor markup not stripped: %q", got)
 	}
 }
+
+// The gap-vs-bad-query evidence must reach the agent in-band (#18).
+func TestSalienceLinesRenderedInHumanOutput(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "use-buttons.md",
+		"# Use buttons\nWire a button click handler.\n")
+
+	// Medium/low path with an absent intent term: both lines render.
+	// (Three tokens so the partial stage can match the button fixture.)
+	human, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"microphone button click")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence == "high" {
+		t.Fatalf("fixture unexpectedly high confidence")
+	}
+	if !strings.Contains(human, "Terms absent from all results: microphone") {
+		t.Fatalf("absent-terms line missing:\n%s", human)
+	}
+	if !strings.Contains(human, "Term coverage: ") || !strings.Contains(human, "microphone(absent)") {
+		t.Fatalf("coverage vector missing:\n%s", human)
+	}
+	if !strings.Contains(human, "button(c:") {
+		t.Fatalf("covered term missing from vector:\n%s", human)
+	}
+
+	// No-results path renders the absence evidence too.
+	human, _, err = ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"zebra quantum flux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(human, "No matches found.") || !strings.Contains(human, "Terms absent from all results:") {
+		t.Fatalf("no-results path missing absence line:\n%s", human)
+	}
+}
+
+func TestSalienceLinesSuppressedOnHigh(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "sync-tilegrid-selection-across-grids.md",
+		"# Sync tilegrid selection across grids\nKeep tilegrid selection in sync across grids.\n")
+
+	human, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"sync tilegrid selection across grids")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence != "high" {
+		t.Fatalf("fixture must be high confidence, got %q", summary.Confidence)
+	}
+	if strings.Contains(human, "Term coverage: ") {
+		t.Fatalf("coverage vector must be suppressed at high:\n%s", human)
+	}
+}

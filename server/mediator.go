@@ -561,6 +561,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	var out strings.Builder
 	if len(ranked) == 0 {
 		out.WriteString("No matches found.\n")
+		writeSalienceLines(&out, jsonOut)
 
 		hasGuidance := false
 		if jsonOut.AgentGuidance != nil {
@@ -598,6 +599,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 	fmt.Fprintf(&out, "Query: %q  (files=%d, total_hits=%d, confidence=%s)\n",
 		originalQuery, len(ranked), totalHits, jsonOut.Confidence)
+	writeSalienceLines(&out, jsonOut)
 
 	// Show topic matches
 	if len(jsonOut.TopicMatches) > 0 {
@@ -647,6 +649,34 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	writeGuidanceBlock(&out, jsonOut)
 
 	return out.String(), jsonOut, nil
+}
+
+// writeSalienceLines renders the in-band gap-vs-bad-query evidence (#18):
+// the absent-terms line whenever any substantive term matched nothing, and
+// the compact per-term coverage vector below high confidence — presentation
+// of fields the salience work (#12/#13) already computes on every search.
+func writeSalienceLines(out *strings.Builder, jsonOut MediatorJSON) {
+	if jsonOut.Salience == nil {
+		return
+	}
+	if len(jsonOut.Salience.UnansweredTerms) > 0 {
+		fmt.Fprintf(out, "Terms absent from all results: %s\n", strings.Join(jsonOut.Salience.UnansweredTerms, ", "))
+	}
+	if jsonOut.Confidence == "high" || len(jsonOut.Salience.TermCoverage) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(jsonOut.Salience.TermCoverage))
+	for _, entry := range jsonOut.Salience.TermCoverage {
+		switch {
+		case entry.ContentMatches == 0 && entry.TitleMatches == 0:
+			parts = append(parts, entry.Term+"(absent)")
+		case entry.TitleMatches > 0:
+			parts = append(parts, fmt.Sprintf("%s(c:%d t:%d)", entry.Term, entry.ContentMatches, entry.TitleMatches))
+		default:
+			parts = append(parts, fmt.Sprintf("%s(c:%d)", entry.Term, entry.ContentMatches))
+		}
+	}
+	fmt.Fprintf(out, "Term coverage: %s\n", strings.Join(parts, " "))
 }
 
 // writeGuidanceBlock appends agent guidance and documentation URLs
