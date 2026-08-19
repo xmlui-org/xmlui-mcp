@@ -40,6 +40,7 @@ func NewExamplesTool(exampleRoots []string) (mcp.Tool, func(context.Context, mcp
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            ExamplesClassifier(),
 			EnableFilenameMatches: true,
+			ToolName:              "xmlui_examples",
 		}
 
 		// Use the common parent of example roots for relative paths

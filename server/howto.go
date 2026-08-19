@@ -114,6 +114,7 @@ func NewSearchHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Ca
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            HowtoClassifier(xmluiDir),
 			EnableFilenameMatches: true,
+			ToolName:              "xmlui_search_howto",
 		}
 
 		human, err := ExecuteMediatedSearchWithAnalytics(ctx, "xmlui_search_howto", xmluiDir, cfg, query)

@@ -58,6 +58,10 @@ type MediatorConfig struct {
 
 	// Optional: enable filename matches (per your legacy behavior). Default true.
 	EnableFilenameMatches bool
+
+	// Optional: the MCP tool name this search serves (e.g. "xmlui_search_howto").
+	// Guidance excludes the producing tool from pivot suggestions (#23 polish).
+	ToolName string
 }
 
 // FacetCounts represents both match counts and unique file counts for a section
@@ -150,9 +154,10 @@ type scoredFile struct {
 }
 
 type scoredSnippet struct {
-	Line    int
-	Text    string
-	IsTitle bool // filename match or heading
+	Line     int
+	Text     string
+	IsTitle  bool // filename match or heading
+	TermHits int  // distinct query terms on this line, set at hit time
 }
 
 func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery string) (string, MediatorJSON, error) {
@@ -255,9 +260,11 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 
 		// Track which query terms this hit covers
 		snippetLower := strings.ToLower(snippet)
+		termHits := 0
 		for _, term := range queryTermsForMatch {
 			if strings.Contains(snippetLower, term) {
 				sf.TermsFound[term] = true
+				termHits++
 			}
 		}
 
@@ -270,12 +277,27 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 			}
 		}
 
-		// Add snippet (capped loosely to avoid unbounded growth)
-		if !isDuplicate && len(sf.Snippets) < 20 {
+		// Add snippet. The pool is capped, but by term density rather than
+		// first-seen order: a match-dense doc otherwise fills its pool with
+		// early lines and the one line answering the query's distinctive term
+		// never reaches snippet selection (#28: the answering L79 sat beyond
+		// the cap while the lede monopolized the pool).
+		if !isDuplicate {
 			isTitle := lineNum == 0 || strings.HasPrefix(strings.TrimSpace(line), "#")
-			sf.Snippets = append(sf.Snippets, scoredSnippet{
-				Line: lineNum, Text: snippet, IsTitle: isTitle,
-			})
+			snip := scoredSnippet{Line: lineNum, Text: snippet, IsTitle: isTitle, TermHits: termHits}
+			if len(sf.Snippets) < 20 {
+				sf.Snippets = append(sf.Snippets, snip)
+			} else {
+				weakest, weakestHits := -1, termHits
+				for i, existing := range sf.Snippets {
+					if !existing.IsTitle && existing.TermHits < weakestHits {
+						weakest, weakestHits = i, existing.TermHits
+					}
+				}
+				if weakest >= 0 {
+					sf.Snippets[weakest] = snip
+				}
+			}
 		}
 	}
 
@@ -491,6 +513,10 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		ranked = ranked[:cfg.MaxFileResults]
 	}
 
+	// Salience is computed before sections are built so snippet selection can
+	// prefer lines covering the query's distinctive terms (#28).
+	salience := computeSalience(ranked, queryTerms)
+
 	// Build sections and facets from ranked files
 	uniqueFiles := make(map[string]map[string]struct{})
 	for _, k := range cfg.SectionKeys {
@@ -506,7 +532,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		uniqueFiles[section][sf.RelPath] = struct{}{}
 
 		// Pick best snippets: prefer title/heading lines, then first N
-		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
+		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile, queryTerms)
 		for _, snip := range bestSnippets {
 			jsonOut.Sections[section] = append(jsonOut.Sections[section], resultItem{
 				Type:       section,
@@ -534,7 +560,6 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	jsonOut.Confidence = confidenceFromRanked(ranked, queryTerms)
 
 	// Salience summary for gap classification downstream (#12).
-	salience := computeSalience(ranked, queryTerms)
 	jsonOut.Salience = &salience
 
 	// Set search tool hierarchy for howto/example queries
@@ -547,7 +572,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 	}
 
 	// Agent guidance
-	jsonOut.AgentGuidance = generateAgentGuidance(jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
+	jsonOut.AgentGuidance = generateAgentGuidance(cfg.ToolName, jsonOut.Confidence, jsonOut.Facets, jsonOut.Sections, originalQuery, kept, homeDir)
 
 	// Inject topic URLs into guidance only for topics corroborated by the
 	// ranked results, deduplicated and capped: an uncorroborated flat dump of
@@ -568,15 +593,16 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		jsonOut.OutOfScopePointers = outOfScopePointers(homeDir, topicMatches, ranked, jsonOut.AgentGuidance)
 	}
 
-	// "Did You Mean?" suggestions (Rec #5)
+	// "Did You Mean?" suggestions (Rec #5). Deduplicated before the cap — the
+	// same name can arrive by two paths — and NOT mirrored into RuleReminders:
+	// that mirror printed the line twice on the zero-hit path (#21, #23).
 	if len(ranked) == 0 || jsonOut.Confidence == "low" {
-		suggestions := suggestAlternatives(originalQuery, homeDir, 3)
+		suggestions := dedupeStrings(suggestAlternatives(originalQuery, homeDir, 6))
+		if len(suggestions) > 3 {
+			suggestions = suggestions[:3]
+		}
 		if len(suggestions) > 0 {
 			jsonOut.Suggestions = suggestions
-			if jsonOut.AgentGuidance != nil {
-				jsonOut.AgentGuidance.RuleReminders = append(jsonOut.AgentGuidance.RuleReminders,
-					fmt.Sprintf("Did you mean: %s?", strings.Join(suggestions, ", ")))
-			}
 		}
 	}
 
@@ -657,7 +683,7 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 				out.WriteString("  **DEPRECATED**\n")
 			}
 		}
-		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile)
+		bestSnippets := pickBestSnippets(sf.Snippets, cfg.MaxSnippetsPerFile, queryTerms)
 		for _, snip := range bestSnippets {
 			if snip.Line == 0 {
 				fmt.Fprintf(&out, "  %s\n", snip.Text)
@@ -737,39 +763,138 @@ func writeGuidanceBlock(out *strings.Builder, jsonOut MediatorJSON) {
 	}
 }
 
-// pickBestSnippets selects the best N snippets from a file's matches.
-// Prefers title/heading lines, then picks by line order.
-func pickBestSnippets(snippets []scoredSnippet, maxN int) []scoredSnippet {
+// pickBestSnippets selects the best N snippets from a file's matches. The
+// first title line is kept for identity; remaining slots go to the lines
+// covering the most distinctive query terms, so a doc cannot be shown only
+// through lines its own body contradicts (#28: an explicitly vertical query
+// surfaced just the "Row"/"HStack" lede while the answering VStack line sat
+// unshown at L79). Pure cross-reference lines never stand in for content.
+func pickBestSnippets(snippets []scoredSnippet, maxN int, distinctiveTerms []string) []scoredSnippet {
 	if len(snippets) <= maxN {
 		return snippets
 	}
 
-	// Partition into title and non-title
-	var titles, others []scoredSnippet
-	for _, s := range snippets {
-		if s.IsTitle {
-			titles = append(titles, s)
-		} else {
-			others = append(others, s)
+	lineTerms := func(s scoredSnippet) map[string]bool {
+		text := strings.ToLower(s.Text)
+		covered := make(map[string]bool)
+		for _, term := range distinctiveTerms {
+			t := strings.ToLower(term)
+			if strings.Contains(text, termStem(t)) {
+				covered[t] = true
+			}
 		}
+		return covered
 	}
 
 	result := make([]scoredSnippet, 0, maxN)
-	// Add titles first (up to maxN)
-	for _, t := range titles {
-		if len(result) >= maxN {
+	used := make(map[int]bool)
+	covered := make(map[string]bool)
+	// The identity slot goes to a real heading when one exists: the
+	// "[filename match]" pseudo-snippet is also IsTitle but carries no
+	// information, and it must not displace the document's own title.
+	titleIdx := -1
+	for i, s := range snippets {
+		if s.IsTitle && strings.HasPrefix(strings.TrimSpace(s.Text), "#") {
+			titleIdx = i
 			break
 		}
-		result = append(result, t)
 	}
-	// Fill remainder with others
-	for _, o := range others {
-		if len(result) >= maxN {
+	if titleIdx < 0 {
+		for i, s := range snippets {
+			if s.IsTitle {
+				titleIdx = i
+				break
+			}
+		}
+	}
+	if titleIdx >= 0 {
+		result = append(result, snippets[titleIdx])
+		used[titleIdx] = true
+		for t := range lineTerms(snippets[titleIdx]) {
+			covered[t] = true
+		}
+	}
+
+	// Greedy marginal coverage: each slot goes to the line adding the most
+	// query terms not yet shown, so the visible snippets collectively answer
+	// the query instead of restating the lede's terms. Prose outranks markup
+	// boilerplate (verticalAlignment="center" adds tokens but no information —
+	// the consumer-verified #28 failure), and cross-reference lines are last;
+	// remaining ties break on total term density, then file order.
+	for len(result) < maxN {
+		bestIdx, bestMarginal, bestHits, bestTier := -1, -1, -1, 3
+		for i, s := range snippets {
+			if used[i] {
+				continue
+			}
+			tier := 0
+			if isMarkupLine(s.Text) {
+				tier = 1
+			}
+			if isCrossReferenceLine(s.Text) {
+				tier = 2
+			}
+			marginal := 0
+			for t := range lineTerms(s) {
+				if !covered[t] {
+					marginal++
+				}
+			}
+			better := false
+			switch {
+			case bestIdx < 0:
+				better = true
+			case tier != bestTier:
+				better = tier < bestTier
+			case marginal != bestMarginal:
+				better = marginal > bestMarginal
+			case s.TermHits != bestHits:
+				better = s.TermHits > bestHits
+			}
+			if better {
+				bestIdx, bestMarginal, bestHits, bestTier = i, marginal, s.TermHits, tier
+			}
+		}
+		if bestIdx < 0 {
 			break
 		}
-		result = append(result, o)
+		used[bestIdx] = true
+		result = append(result, snippets[bestIdx])
+		for t := range lineTerms(snippets[bestIdx]) {
+			covered[t] = true
+		}
 	}
+	// Selection order optimized coverage; presentation restores document order.
+	sort.SliceStable(result, func(i, j int) bool { return result[i].Line < result[j].Line })
 	return result
+}
+
+// isMarkupLine reports whether a line is code or attribute boilerplate rather
+// than prose: XML/markup tags, attribute="value" fragments, braces, or fence
+// residue. Such lines can cover query tokens without carrying any answer.
+var attrLineRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*\s*=\s*["'{]`)
+
+func isMarkupLine(text string) bool {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return true
+	}
+	switch s[0] {
+	case '<', '{', '}', '`':
+		return true
+	}
+	return attrLineRe.MatchString(s)
+}
+
+// isCrossReferenceLine reports whether a line opens with a markdown link
+// (after any list marker) — the see-also shape, not this doc's own content
+// (#28: a doc that merely links to the answer must not be represented by that
+// line). Prose with an inline link mid-sentence is content and stays eligible.
+func isCrossReferenceLine(text string) bool {
+	s := strings.TrimSpace(text)
+	s = strings.TrimLeft(s, "-*•0123456789. \t")
+	loc := mdLinkRe.FindStringIndex(s)
+	return loc != nil && loc[0] == 0
 }
 
 //
@@ -1223,7 +1348,7 @@ func detectSyntaxInventionRisk(queryTokens []string, facets map[string]FacetCoun
 
 // generateAgentGuidance provides focused guidance prioritizing tool redirection
 // Provides concise, actionable guidance without excessive repetition
-func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
+func generateAgentGuidance(toolName string, confidence string, facets map[string]FacetCounts, sections map[string][]resultItem, originalQuery string, queryTokens []string, homeDir string) *AgentGuidance {
 	// Concise base guidance - always included
 	baseGuidance := []string{
 		"Cite sources with file paths and URLs",
@@ -1239,7 +1364,7 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	// PRIORITY 1: No results at all - concise failure guidance only
 	// Don't include base guidance (cite sources/URLs) when there are no results to cite
 	if totalHits == 0 {
-		return generateFailureGuidance(originalQuery, nil, queryTokens)
+		return generateFailureGuidance(toolName, originalQuery, nil, queryTokens)
 	}
 
 	// PRIORITY 2: Feature Combination Risk
@@ -1457,27 +1582,55 @@ func extractTitleFromPath(filePath string) string {
 }
 
 // generateFailureGuidance provides specific guidance when no results are found
-func generateFailureGuidance(originalQuery string, queryPlan []stageHit, kept []string) *AgentGuidance {
+func generateFailureGuidance(toolName string, originalQuery string, queryPlan []stageHit, kept []string) *AgentGuidance {
 	guidance := &AgentGuidance{
 		RuleReminders: []string{"No documentation found for this query"},
 	}
 
-	// Special cases that should redirect to specific tools
-	if isHowToQuery(originalQuery) {
+	// Special cases that should redirect to specific tools — but never to the
+	// tool that produced this response (#23 polish).
+	if isHowToQuery(originalQuery) && toolName != "xmlui_search_howto" {
 		guidance.SuggestedApproach = "Try xmlui_list_howto or xmlui_search_howto"
 		guidance.SearchToolPreference = "xmlui_list_howto"
 		return guidance
 	}
 
-	if isExampleQuery(originalQuery) {
+	if isExampleQuery(originalQuery) && toolName != "xmlui_examples" {
 		guidance.SuggestedApproach = "Try xmlui_examples with simpler terms"
 		guidance.SearchToolPreference = "xmlui_examples"
 		return guidance
 	}
 
 	// General guidance for other failed searches
-	guidance.SuggestedApproach = "Try simpler search terms or use xmlui_examples/xmlui_search_howto"
+	guidance.SuggestedApproach = "Try simpler search terms or use " + strings.Join(otherSearchTools(toolName), "/")
 	return guidance
+}
+
+// dedupeStrings removes duplicates preserving first-seen order.
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// otherSearchTools lists the sibling search tools an agent can pivot to,
+// excluding the tool that produced this response — a tool advising the agent
+// to use itself reads as a dead end (#23 polish).
+func otherSearchTools(toolName string) []string {
+	all := []string{"xmlui_examples", "xmlui_search_howto", "xmlui_search"}
+	out := make([]string, 0, len(all))
+	for _, t := range all {
+		if t != toolName {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // termStem trims common English suffixes so morphological variants corroborate

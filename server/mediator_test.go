@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -949,5 +950,146 @@ func TestFilenameBonusKeepsExactSlugWin(t *testing.T) {
 	}
 	if summary.Confidence != "high" {
 		t.Fatalf("exact slug match must stay high, got %q", summary.Confidence)
+	}
+}
+
+// The #28 reproducer shape: a doc whose lede states the opposite axis must
+// surface the body line covering the query's distinctive term.
+func TestSnippetsPreferDistinctiveTermLines(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "align-items-to-row-ends-with-spacefiller.md",
+		"# Align Items to Opposite Ends of a Row\n"+
+			"Use SpaceFiller inside an HStack to push items to opposite ends of a row stack.\n"+
+			"Filler line one about spacing stack items.\n"+
+			"Filler line two about margins and stack widths.\n"+
+			"SpaceFiller in a VStack pushes content down: it grows vertically, pushing items to the bottom of the stack.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"push items to opposite ends of a stack vertical spacefiller")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, items := range summary.Sections {
+		for _, item := range items {
+			joined += item.Snippet + "\n"
+		}
+	}
+	if !strings.Contains(joined, "grows vertically") {
+		t.Fatalf("distinctive-term line (vertical) not surfaced:\n%s", joined)
+	}
+}
+
+func TestSnippetsDeprioritizeCrossReferenceLines(t *testing.T) {
+	if !isCrossReferenceLine("- [Run a one-time action on page load](/docs/howto/run-a-one-time-action) — trigger initialization logic") {
+		t.Fatal("see-also line not detected")
+	}
+	if isCrossReferenceLine("Use onMount, described in [the lifecycle guide](/docs/lifecycle), to run initialization logic once when the component mounts and set up your state") {
+		t.Fatal("content line with an inline link wrongly flagged")
+	}
+
+	snippets := []scoredSnippet{
+		{Line: 1, Text: "# Title", IsTitle: true},
+		{Line: 5, Text: "- [The answer](/docs/howto/answer) — see also"},
+		{Line: 9, Text: "Plain content line about initialization mounts"},
+		{Line: 12, Text: "Another plain line"},
+		{Line: 15, Text: "Third plain line"},
+	}
+	picked := pickBestSnippets(snippets, 3, []string{"initialization", "mounts"})
+	for _, s := range picked {
+		if strings.Contains(s.Text, "see also") {
+			t.Fatalf("cross-reference line selected over content: %+v", picked)
+		}
+	}
+}
+
+// Did-you-mean renders exactly once per output path, deduplicated (#21, #23).
+func TestDidYouMeanSingleAndDeduplicated(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "something.md", "# Something\nUnrelated content.\n")
+
+	human, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"zebra quantum flux capacitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(human, "Did you mean:"); n > 1 {
+		t.Fatalf("Did you mean printed %d times:\n%s", n, human)
+	}
+	seen := map[string]bool{}
+	for _, s := range summary.Suggestions {
+		if seen[s] {
+			t.Fatalf("duplicate suggestion %q in %v", s, summary.Suggestions)
+		}
+		seen[s] = true
+	}
+}
+
+// A tool must not advise the agent to use itself (#23 polish).
+func TestSuggestedApproachExcludesProducingTool(t *testing.T) {
+	guidance := generateFailureGuidance("xmlui_examples", "example of a widget", nil, []string{"widget"})
+	if strings.Contains(guidance.SuggestedApproach, "xmlui_examples") || guidance.SearchToolPreference == "xmlui_examples" {
+		t.Fatalf("xmlui_examples advised to use itself: %+v", guidance)
+	}
+	guidance = generateFailureGuidance("xmlui_search_howto", "how to do a thing", nil, []string{"thing"})
+	if strings.Contains(guidance.SuggestedApproach, "xmlui_search_howto") {
+		t.Fatalf("xmlui_search_howto advised to use itself: %+v", guidance)
+	}
+	guidance = generateFailureGuidance("xmlui_search", "arbitrary terms", nil, []string{"arbitrary"})
+	if strings.Contains(guidance.SuggestedApproach, "use xmlui_examples/xmlui_search_howto/xmlui_search") {
+		t.Fatalf("general suggestion includes producing tool: %+v", guidance)
+	}
+}
+
+// Consumer-verified #28 failure shape: attribute boilerplate that covers
+// query tokens must not displace the prose line carrying the answer, and the
+// filename-match pseudo-snippet must not displace the real heading.
+func TestSnippetsPreferProseOverMarkupBoilerplate(t *testing.T) {
+	snippets := []scoredSnippet{
+		{Line: 0, Text: "[filename match]", IsTitle: true, TermHits: 0},
+		{Line: 1, Text: "# Align Items to Opposite Ends of a Row", IsTitle: true, TermHits: 3},
+		{Line: 3, Text: "Use SpaceFiller inside an HStack to push items to opposite ends without explicit widths.", TermHits: 6},
+		{Line: 11, Text: `    verticalAlignment="center"`, TermHits: 2},
+		{Line: 79, Text: "SpaceFiller in a VStack pushes content down: it grows vertically, pushing an item to the bottom.", TermHits: 4},
+	}
+	terms := []string{"push", "items", "opposite", "ends", "stack", "space", "vertical", "alignment"}
+	picked := pickBestSnippets(snippets, 3, terms)
+
+	var lines []int
+	for _, s := range picked {
+		lines = append(lines, s.Line)
+	}
+	joined := fmt.Sprint(lines)
+	if !strings.Contains(joined, "79") {
+		t.Fatalf("prose answer line lost to markup boilerplate: picked %v", lines)
+	}
+	if strings.Contains(joined, "11") {
+		t.Fatalf("attribute boilerplate selected: picked %v", lines)
+	}
+	if !strings.Contains(joined, "1") || strings.Contains(joined, "0") && lines[0] == 0 {
+		t.Fatalf("real heading must hold the identity slot: picked %v", lines)
+	}
+}
+
+func TestIsMarkupLine(t *testing.T) {
+	for _, markup := range []string{`    verticalAlignment="center"`, "<VStack padding=\"$space-4\">", "}", "```xmlui-pg copy"} {
+		if !isMarkupLine(markup) {
+			t.Fatalf("not flagged as markup: %q", markup)
+		}
+	}
+	for _, prose := range []string{"SpaceFiller adapts to the orientation of its parent.", "Use `SpaceFiller` inside an `HStack` to push items."} {
+		if isMarkupLine(prose) {
+			t.Fatalf("prose wrongly flagged as markup: %q", prose)
+		}
 	}
 }

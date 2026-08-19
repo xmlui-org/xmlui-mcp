@@ -50,6 +50,7 @@ func NewSearchTool(homeDir string, exampleRoots []string) (mcp.Tool, func(contex
 			Synonyms:              DefaultSynonyms(),
 			Classifier:            SimpleClassifier(homeDir, exampleRoots),
 			EnableFilenameMatches: true,
+			ToolName:              "xmlui_search",
 		}
 
 		human, err := ExecuteMediatedSearchWithAnalytics(ctx, "xmlui_search", homeDir, cfg, query)
