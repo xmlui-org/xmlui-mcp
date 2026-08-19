@@ -614,3 +614,51 @@ func TestCorpusStampCoexistsWithUpdateNotice(t *testing.T) {
 		t.Fatalf("result text %q does not end with stamp", text)
 	}
 }
+
+// Both record types carry the build version so tape-derived analysis can
+// attribute records to the build that produced them (#32).
+func TestRecordsCarryCLIVersion(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	SetCLIVersion("v0.1.0-test")
+	t.Cleanup(func() { SetCLIVersion("") })
+
+	summary := MediatorJSON{
+		Sections: map[string][]resultItem{"howtos": {{Path: "howto/a.md", Score: 1}}},
+		Facets:   map[string]FacetCounts{"howtos": {Files: 1, Matches: 1}},
+		Tokens:   map[string][]string{"kept": {"a"}, "removed": {}, "expanded": {}},
+	}
+	handler := WithSearchAnalytics("xmlui_search_howto", syntheticSearchHandler("xmlui_search_howto", "a", "out", summary, true))
+	if _, err := handler(context.Background(), searchRequest("a")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := analytics.data.ToolInvocations[0].CLIVersion; got != "v0.1.0-test" {
+		t.Fatalf("tool_invocation cli_version = %q", got)
+	}
+	if got := analytics.data.SearchQueries[0].CLIVersion; got != "v0.1.0-test" {
+		t.Fatalf("search_query cli_version = %q", got)
+	}
+}
+
+func TestRecordsOmitCLIVersionWhenUnset(t *testing.T) {
+	analytics := useTestAnalytics(t)
+	SetCLIVersion("")
+
+	summary := MediatorJSON{Sections: map[string][]resultItem{}, Facets: map[string]FacetCounts{}, Tokens: map[string][]string{}}
+	handler := WithSearchAnalytics("xmlui_search", syntheticSearchHandler("xmlui_search", "q", "No matches found.", summary, true))
+	if _, err := handler(context.Background(), searchRequest("q")); err != nil {
+		t.Fatal(err)
+	}
+
+	record := analytics.data.SearchQueries[0]
+	if record.CLIVersion != "" || analytics.data.ToolInvocations[0].CLIVersion != "" {
+		t.Fatalf("cli_version must be empty when unset")
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "cli_version") {
+		t.Fatalf("unset cli_version must be omitted from JSON: %s", raw)
+	}
+}

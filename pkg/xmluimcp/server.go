@@ -100,6 +100,10 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 	}
 	mcpServer := server.NewMCPServer("XMLUI", serverVersion, serverOptions...)
 
+	// The same build version lands on every analytics record so tape-derived
+	// analysis can attribute records to the build that produced them (#32).
+	mcpserver.SetCLIVersion(serverVersion)
+
 	// Long-lived sessions learn about releases cut after startup.
 	startPeriodicUpdateCheck(config.CLIVersion, 6*time.Hour)
 

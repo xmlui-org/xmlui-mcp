@@ -20,6 +20,7 @@ import (
 type ToolInvocation struct {
 	SchemaVersion int                    `json:"schema_version,omitempty"`
 	InvocationID  string                 `json:"invocation_id,omitempty"`
+	CLIVersion    string                 `json:"cli_version,omitempty"`
 	Type          string                 `json:"type"`
 	Timestamp     time.Time              `json:"timestamp"`
 	ToolName      string                 `json:"tool_name"`
@@ -59,6 +60,7 @@ type SearchQuery struct {
 	RemovedTokens    []string `json:"removed_tokens"`
 	ExpandedTokens   []string `json:"expanded_tokens"`
 	CorpusVersion    string   `json:"corpus_version"`
+	CLIVersion       string   `json:"cli_version,omitempty"`
 
 	// Deprecated schema-v1 fields. They remain solely so historical JSONL loads.
 	ResultCount int      `json:"result_count,omitempty"`
@@ -536,6 +538,7 @@ func (a *Analytics) logToolInvocation(invocationID string, toolName string, args
 	invocation := ToolInvocation{
 		SchemaVersion: 2,
 		InvocationID:  invocationID,
+		CLIVersion:    currentCLIVersion(),
 		Type:          "tool_invocation",
 		Timestamp:     time.Now(),
 		ToolName:      toolName,
@@ -592,6 +595,7 @@ func (a *Analytics) logSearchQueryV2(invocationID string, toolName string, query
 		RemovedTokens:    append([]string{}, summary.Tokens["removed"]...),
 		ExpandedTokens:   append([]string{}, summary.Tokens["expanded"]...),
 		CorpusVersion:    corpusVersion,
+		CLIVersion:       currentCLIVersion(),
 	}
 	if yieldedResults {
 		topScoreValue := metrics.topScore
@@ -636,6 +640,27 @@ var (
 	updateNoticeCallCount int
 	globalUpdateNoticeMu  sync.Mutex
 )
+
+var (
+	globalCLIVersion   string
+	globalCLIVersionMu sync.Mutex
+)
+
+// SetCLIVersion records the server build version stamped on every analytics
+// record, so tape-derived analysis can attribute records to the build that
+// produced them instead of silently mixing builds (#32). Process-lifetime
+// constant; set once at startup.
+func SetCLIVersion(version string) {
+	globalCLIVersionMu.Lock()
+	defer globalCLIVersionMu.Unlock()
+	globalCLIVersion = version
+}
+
+func currentCLIVersion() string {
+	globalCLIVersionMu.Lock()
+	defer globalCLIVersionMu.Unlock()
+	return globalCLIVersion
+}
 
 // SetUpdateNotice sets the notice prepended to successful tool responses.
 // Setting a changed notice resets the re-arm cycle so the new text rides the
