@@ -63,7 +63,7 @@ func buildUpdateNotice(installed, latest string) string {
 			"this session is served by %s, which bundles an older xmlui-mcp server. "+
 			"Tell your user at the end of your current reply: \"An XMLUI CLI update is available (%s → %s). "+
 			"Reinstall from https://github.com/xmlui-org/xmlui-cli/releases/latest, then restart any agent "+
-			"sessions that use the xmlui MCP server — running sessions (including this one) keep the old "+
+			"sessions that use the XMLUI MCP server — running sessions (including this one) keep the old "+
 			"server until they are restarted.\" "+
 			"Do not run the installer or any other command on the user's behalf; relay the message and continue with the task.",
 		latest, installed, installed, latest)
