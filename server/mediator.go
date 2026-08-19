@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 // mdLinkRe matches markdown links like [text](path)
@@ -401,6 +402,35 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		"unknown":    0.5,
 	}
 
+	// Per-term document frequency over all candidates, computable here because
+	// scoring runs after hit collection. The filename bonus fires only for
+	// terms outside the in-corpus-generic band (the #14 rule): a slug hit on
+	// "component"/"input"-class tokens is coincidence, not relevance, and a
+	// flat +2.0 for them let eleven generic-slug docs outrank the doc whose
+	// body restates the query (#27). Small candidate sets skip the gate, as
+	// the salience band does.
+	bonusEligible := make(map[string]bool, len(queryTerms))
+	genericThreshold := -1
+	if len(fileScores) >= 3 {
+		genericThreshold = (2*len(fileScores) + 2) / 3
+	}
+	for _, term := range queryTerms {
+		if len(termStem(term)) < 4 {
+			continue
+		}
+		if genericThreshold < 0 {
+			bonusEligible[term] = true
+			continue
+		}
+		df := 0
+		for _, sf := range fileScores {
+			if sf.TermsFound[term] {
+				df++
+			}
+		}
+		bonusEligible[term] = df < genericThreshold
+	}
+
 	for _, sf := range fileScores {
 		// (a) Term coverage: distinct query terms found / total query terms
 		if len(queryTerms) > 0 {
@@ -414,14 +444,10 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		}
 		sf.Score *= weight
 
-		// (c) Filename match bonus. Only substantive terms count (stemmed,
-		// >=4 chars): ubiquitous short tokens like "a"/"the" otherwise match
-		// nearly every filename, inflating every score and saturating the
-		// title-match signal (#11).
-		filenameLower := strings.ToLower(filepath.Base(sf.RelPath))
+		// (c) Filename match bonus: token-boundary, stem-aware, and only for
+		// terms outside the generic band (#11, #27).
 		for _, term := range queryTerms {
-			stem := termStem(term)
-			if len(stem) >= 4 && strings.Contains(filenameLower, stem) {
+			if bonusEligible[term] && filenameMatchesTerm(sf.RelPath, term) {
 				sf.Score += 2.0
 				sf.TitleMatch = true
 				break
@@ -1474,14 +1500,38 @@ func hitCoversTerm(sf *scoredFile, term string) bool {
 		return true
 	}
 	stem := termStem(term)
+	if filenameMatchesTerm(sf.RelPath, term) {
+		return true
+	}
 	if stem == term {
 		return false
 	}
-	if strings.Contains(strings.ToLower(filepath.Base(sf.RelPath)), stem) {
-		return true
-	}
 	for _, snip := range sf.Snippets {
 		if strings.Contains(strings.ToLower(snip.Text), stem) {
+			return true
+		}
+	}
+	return false
+}
+
+// filenameMatchesTerm reports whether a query term matches the filename at a
+// token boundary, stem-aware ("linking" matches a "link" slug token).
+// Substring matching let "form" match "transform" and bought rank for slug
+// coincidences (#27); every filename-match signal routes through here so the
+// bonus, the coverage fallback, and the title counts agree.
+func filenameMatchesTerm(filename, term string) bool {
+	term = strings.ToLower(strings.TrimSpace(term))
+	stem := termStem(term)
+	if len(stem) < 4 {
+		return false
+	}
+	base := strings.ToLower(filepath.Base(filename))
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	tokens := strings.FieldsFunc(base, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, token := range tokens {
+		if token == term || token == stem || termStem(token) == stem {
 			return true
 		}
 	}
@@ -1536,7 +1586,7 @@ func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary 
 		seenCoverage[term] = true
 		entry := TermCoverageEntry{Term: term, ContentMatches: df[term]}
 		for _, sf := range ranked {
-			if strings.Contains(strings.ToLower(filepath.Base(sf.RelPath)), stem) {
+			if filenameMatchesTerm(sf.RelPath, term) {
 				entry.TitleMatches++
 			}
 		}
@@ -1568,12 +1618,11 @@ func computeSalience(ranked []*scoredFile, queryTerms []string) SalienceSummary 
 	for _, sf := range ranked {
 		content := false
 		title := false
-		filenameLower := strings.ToLower(filepath.Base(sf.RelPath))
 		for _, term := range summary.Terms {
 			if hitCoversTerm(sf, term) {
 				content = true
 			}
-			if strings.Contains(filenameLower, termStem(term)) {
+			if filenameMatchesTerm(sf.RelPath, term) {
 				title = true
 			}
 		}

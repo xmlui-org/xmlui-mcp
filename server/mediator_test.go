@@ -868,3 +868,86 @@ func TestCitationFooterGating(t *testing.T) {
 		t.Fatalf("tie order not deterministic by path: %+v vs %+v", first, second)
 	}
 }
+
+// The #27 rank-13 shape: generic-slug docs must not outrank the doc whose
+// body answers the query. The filename bonus is token-boundary and gated on
+// term rarity over the candidate set.
+func TestFilenameBonusGatedOnRarity(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Four generic-slug docs: "component" in every filename and body.
+	for _, name := range []string{"create-a-reusable-component.md", "handle-errors-on-a-component.md", "theme-a-component.md", "confine-input-to-a-component.md"} {
+		writeHowtoFixture(t, howtoDir, name,
+			"# "+name+"\nWork with a component in your app.\nEvery component does this.\n")
+	}
+	// The answering doc: body restates the query, slug shares no query token.
+	writeHowtoFixture(t, howtoDir, "run-a-one-time-action-on-page-load.md",
+		"# Run a one-time action on page load\nUse onMount to run initialization once when that component mounts.\nThe onMount initialization hook runs once per component.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"run initialization once when component mounts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	topPath, topScore := "", 0.0
+	for _, items := range summary.Sections {
+		for _, item := range items {
+			if item.Score > topScore {
+				topScore, topPath = item.Score, item.Path
+			}
+		}
+	}
+	if !strings.Contains(topPath, "run-a-one-time-action") {
+		t.Fatalf("answering doc must rank first, got %s (%.2f)", topPath, topScore)
+	}
+}
+
+func TestFilenameMatchesTermTokenBoundary(t *testing.T) {
+	cases := []struct {
+		file string
+		term string
+		want bool
+	}{
+		{"transform-nested-api-responses.md", "form", false},       // substring, not a token
+		{"enable-multi-row-selection-in-a-table.md", "tab", false}, // short stem never matches
+		{"deep-link-to-a-tab-or-section.md", "linking", true},      // stem matches token
+		{"pin-sticky-content-below-the-appheader.md", "appheader", true},
+		{"wrap-long-text-in-a-link.md", "text", true},
+		// "coding" keeps its suffix (trimming would leave a <4-char stem),
+		// and "coding" != "code", so no match: stems must agree exactly.
+		{"generate-a-qr-code-from-user-input.md", "coding", false},
+	}
+
+	for _, tc := range cases {
+		if got := filenameMatchesTerm(tc.file, tc.term); got != tc.want {
+			t.Fatalf("filenameMatchesTerm(%q, %q) = %v, want %v", tc.file, tc.term, tc.want, got)
+		}
+	}
+}
+
+// #27's positive control: an exact-slug match keeps its decisive win.
+func TestFilenameBonusKeepsExactSlugWin(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "pin-sticky-content-below-the-appheader.md",
+		"# Pin sticky content below the AppHeader\nPin sticky content below the appheader with position settings.\n")
+	writeHowtoFixture(t, howtoDir, "unrelated.md", "# Unrelated\nNothing here about appheader pinning.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"pin sticky content below the AppHeader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence != "high" {
+		t.Fatalf("exact slug match must stay high, got %q", summary.Confidence)
+	}
+}
