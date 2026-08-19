@@ -92,8 +92,13 @@ func NewServer(config ServerConfig) (*MCPServer, error) {
 		mcpserver.SetUpdateNotice(updateNotice)
 	}
 
-	// Create MCP server
-	mcpServer := server.NewMCPServer("XMLUI", "0.1.0", serverOptions...)
+	// Create MCP server. serverInfo reports the embedding CLI's real build
+	// version so an agent can tell which build it is talking to (#30).
+	serverVersion := strings.TrimSpace(config.CLIVersion)
+	if serverVersion == "" {
+		serverVersion = "dev"
+	}
+	mcpServer := server.NewMCPServer("XMLUI", serverVersion, serverOptions...)
 
 	// Long-lived sessions learn about releases cut after startup.
 	startPeriodicUpdateCheck(config.CLIVersion, 6*time.Hour)
