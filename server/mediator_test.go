@@ -517,3 +517,70 @@ func TestSalientAggregatesConsistentWithTermCoverage(t *testing.T) {
 		}
 	}
 }
+
+// Citation labels must be the document's own H1, not a title-cased slug (#23).
+func TestDocumentTitleUsesRealHeading(t *testing.T) {
+	dir := t.TempDir()
+
+	divergent := filepath.Join(dir, "drive-a-slider-with-a-runtime-domain.md")
+	if err := os.WriteFile(divergent, []byte("# Drive a Slider whose min/max domain changes at runtime\nBody.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	acronym := filepath.Join(dir, "generate-a-qr-code-from-user-input.md")
+	if err := os.WriteFile(acronym, []byte("# Generate a QR code from user input\nBody.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	headingless := filepath.Join(dir, "no-heading.md")
+	if err := os.WriteFile(headingless, []byte("Just prose, no heading.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := documentTitle(divergent, "howto/drive-a-slider-with-a-runtime-domain.md"); got != "Drive a Slider whose min/max domain changes at runtime" {
+		t.Fatalf("divergent title = %q", got)
+	}
+	if got := documentTitle(acronym, "howto/generate-a-qr-code-from-user-input.md"); got != "Generate a QR code from user input" {
+		t.Fatalf("acronym title = %q", got)
+	}
+	// No heading: fall back to the slug transform.
+	if got := documentTitle(headingless, "howto/no-heading.md"); got != "No Heading" {
+		t.Fatalf("headingless fallback = %q", got)
+	}
+	// Unreadable path: fall back.
+	if got := documentTitle(filepath.Join(dir, "absent.md"), "howto/absent-doc.md"); got != "Absent Doc" {
+		t.Fatalf("unreadable fallback = %q", got)
+	}
+}
+
+func TestCitationFooterUsesRealTitles(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHowtoFixture(t, howtoDir, "generate-a-qr-code-from-user-input.md",
+		"# Generate a QR code from user input\nRender a barcode qrcode from input.\n")
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"qrcode barcode input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AgentGuidance == nil || len(summary.AgentGuidance.DocumentationURLs) == 0 {
+		t.Fatalf("expected documentation URLs, got %+v", summary.AgentGuidance)
+	}
+	for _, doc := range summary.AgentGuidance.DocumentationURLs {
+		if doc.Title == "Generate A Qr Code From User Input" {
+			t.Fatalf("fabricated slug-cased title leaked into citations: %+v", doc)
+		}
+	}
+	found := false
+	for _, doc := range summary.AgentGuidance.DocumentationURLs {
+		if doc.Title == "Generate a QR code from user input" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("real H1 title missing from citations: %+v", summary.AgentGuidance.DocumentationURLs)
+	}
+}

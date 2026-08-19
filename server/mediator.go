@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // mdLinkRe matches markdown links like [text](path)
@@ -1221,7 +1222,7 @@ func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) 
 			if url != "" && !seen[url] {
 				seen[url] = true
 				urls = append(urls, DocumentationURL{
-					Title: extractTitleFromPath(item.Path),
+					Title: documentTitle(item.AbsPath, item.Path),
 					URL:   url,
 					Type:  sectionName,
 				})
@@ -1230,6 +1231,52 @@ func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) 
 	}
 
 	return urls
+}
+
+// documentTitleCache memoizes first-heading lookups per absolute path.
+var (
+	documentTitleMu    sync.Mutex
+	documentTitleCache = map[string]string{}
+)
+
+// documentTitle returns the document's real H1 heading, falling back to the
+// slug-derived transform only when the file has no heading or cannot be read.
+// Title-casing the slug fabricates titles that appear nowhere in the corpus
+// and mangles acronyms ("Qr", "Contentseparator") — citation labels must be
+// the document's own words (#23).
+func documentTitle(absPath, relPath string) string {
+	if absPath != "" {
+		documentTitleMu.Lock()
+		cached, seen := documentTitleCache[absPath]
+		documentTitleMu.Unlock()
+		if !seen {
+			cached = readFirstHeading(absPath)
+			documentTitleMu.Lock()
+			documentTitleCache[absPath] = cached
+			documentTitleMu.Unlock()
+		}
+		if cached != "" {
+			return cached
+		}
+	}
+	return extractTitleFromPath(relPath)
+}
+
+// readFirstHeading returns the first "# " heading near the top of the file.
+func readFirstHeading(absPath string) string {
+	f, err := os.Open(absPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for lines := 0; scanner.Scan() && lines < 50; lines++ {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(line[2:])
+		}
+	}
+	return ""
 }
 
 // extractTitleFromPath extracts a human-readable title from a file path
