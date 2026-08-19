@@ -68,6 +68,7 @@ type FacetCounts struct {
 // DocumentationURL represents a specific documentation link
 type DocumentationURL struct {
 	Title string `json:"title"`
+	Path  string `json:"path,omitempty"`
 	URL   string `json:"url"`
 	Type  string `json:"type"` // "component", "howto", "example", etc.
 }
@@ -122,6 +123,7 @@ type MediatorJSON struct {
 	SearchToolHierarchy []string                `json:"search_tool_hierarchy,omitempty"`
 	TopicMatches        []string                `json:"topic_matches,omitempty"`
 	Suggestions         []string                `json:"suggestions,omitempty"`
+	OutOfScopePointers  []DocumentationURL      `json:"out_of_scope_pointers,omitempty"`
 }
 
 // ExecuteMediatedSearch runs the staged scan and returns:
@@ -530,6 +532,16 @@ func ExecuteMediatedSearch(homeDir string, cfg MediatorConfig, originalQuery str
 		jsonOut.AgentGuidance.DocumentationURLs = corroboratedTopicURLs(topicMatches, ranked, registry.ValidateURL, maxDocumentationURLs)
 	}
 
+	// Out-of-scope pointers (#25): a sectioned search (e.g. how-to-only) can
+	// match a topic whose canonical docs live outside the searched roots —
+	// the corroboration gate above rightly excludes them from citations, but
+	// discarding them entirely turns "answered elsewhere" into a false gap.
+	// Emit them as bounded, explicitly-labeled leads instead. Suppressed on
+	// high confidence: the search answered, leads would be noise.
+	if len(topicMatches) > 0 && jsonOut.Confidence != "high" {
+		jsonOut.OutOfScopePointers = outOfScopePointers(homeDir, topicMatches, ranked, jsonOut.AgentGuidance)
+	}
+
 	// "Did You Mean?" suggestions (Rec #5)
 	if len(ranked) == 0 || jsonOut.Confidence == "low" {
 		suggestions := suggestAlternatives(originalQuery, homeDir, 3)
@@ -658,6 +670,13 @@ func writeGuidanceBlock(out *strings.Builder, jsonOut MediatorJSON) {
 			for _, doc := range jsonOut.AgentGuidance.DocumentationURLs {
 				fmt.Fprintf(out, "  - %s: %s\n", doc.Title, doc.URL)
 			}
+		}
+	}
+
+	if len(jsonOut.OutOfScopePointers) > 0 {
+		out.WriteString("\nPossibly relevant outside these results (leads to verify, not citations):\n")
+		for _, doc := range jsonOut.OutOfScopePointers {
+			fmt.Fprintf(out, "  - %s (%s): %s\n", doc.Title, doc.Path, doc.URL)
 		}
 	}
 }
@@ -940,6 +959,45 @@ func corroboratedTopicURLs(topicMatches []TopicEntry, ranked []*scoredFile, vali
 			}
 			seen[u] = true
 			out = append(out, DocumentationURL{Title: tm.Name, URL: u, Type: "topic"})
+		}
+	}
+	return out
+}
+
+const maxOutOfScopePointers = 3
+
+// outOfScopePointers returns leads for matched topics whose canonical docs do
+// not appear among the ranked results: the document's real H1 title, its
+// relative path, and its URL. Deduplicated against the corroborated citation
+// list and capped (#25).
+func outOfScopePointers(homeDir string, topicMatches []TopicEntry, ranked []*scoredFile, guidance *AgentGuidance) []DocumentationURL {
+	seen := make(map[string]bool)
+	if guidance != nil {
+		for _, doc := range guidance.DocumentationURLs {
+			seen[doc.URL] = true
+		}
+	}
+	registry := GetURLRegistry(homeDir)
+	var out []DocumentationURL
+	for _, tm := range topicMatches {
+		if topicCorroborated(tm, ranked) {
+			continue
+		}
+		for _, rel := range tm.CanonicalDocs {
+			if len(out) >= maxOutOfScopePointers {
+				return out
+			}
+			url := constructDocURL(rel)
+			if url == "" || seen[url] || registry.ValidateURL(url) == "" {
+				continue
+			}
+			seen[url] = true
+			out = append(out, DocumentationURL{
+				Title: documentTitle(filepath.Join(homeDir, rel), rel),
+				Path:  rel,
+				URL:   url,
+				Type:  "pointer",
+			})
 		}
 	}
 	return out
@@ -1273,7 +1331,13 @@ func readFirstHeading(absPath string) string {
 	for lines := 0; scanner.Scan() && lines < 50; lines++ {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "# ") {
-			return strings.TrimSpace(line[2:])
+			title := strings.TrimSpace(line[2:])
+			// Drop trailing anchor markup like "[#layout-summary]" — it is
+			// site plumbing, not part of the document's title.
+			if idx := strings.LastIndex(title, "[#"); idx > 0 && strings.HasSuffix(title, "]") {
+				title = strings.TrimSpace(title[:idx])
+			}
+			return title
 		}
 	}
 	return ""

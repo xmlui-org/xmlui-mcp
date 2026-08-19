@@ -584,3 +584,174 @@ func TestCitationFooterUsesRealTitles(t *testing.T) {
 		t.Fatalf("real H1 title missing from citations: %+v", summary.AgentGuidance.DocumentationURLs)
 	}
 }
+
+// #25: a sectioned (howto-only) search can match a topic whose canonical doc
+// lives outside the searched roots. The corroboration gate rightly excludes
+// it from citations, but the computed location must still surface as a
+// bounded, labeled lead rather than being discarded outright.
+func TestOutOfScopePointersSurfaceUnreachableAnswers(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pagesDir := filepath.Join(root, "pages")
+	if err := os.MkdirAll(pagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "build-a-fullscreen-modal-dialog.md",
+		"# Build a fullscreen modal dialog\nModal dialog padding whitespace.\n")
+	writeHowtoFixture(t, pagesDir, "working-with-text.md",
+		"# Working with text\nBody.\n")
+
+	topicIndex = []TopicEntry{
+		{
+			Name:          "whiteSpace",
+			TriggerTerms:  []string{"whitespace", "preserve"},
+			CanonicalDocs: []string{"pages/working-with-text.md"},
+		},
+	}
+
+	human, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"preserve whitespace monospace logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.OutOfScopePointers) != 1 {
+		t.Fatalf("expected exactly one out-of-scope pointer, got %+v", summary.OutOfScopePointers)
+	}
+	doc := summary.OutOfScopePointers[0]
+	if doc.Title != "Working with text" {
+		t.Fatalf("pointer title = %q, want %q", doc.Title, "Working with text")
+	}
+	if doc.Path != "pages/working-with-text.md" {
+		t.Fatalf("pointer path = %q, want %q", doc.Path, "pages/working-with-text.md")
+	}
+	if !strings.Contains(doc.URL, "working-with-text") {
+		t.Fatalf("pointer URL = %q, want it to contain %q", doc.URL, "working-with-text")
+	}
+	if !strings.Contains(human, "Possibly relevant outside these results") {
+		t.Fatalf("expected out-of-scope pointer block in human output, got: %s", human)
+	}
+	if !strings.Contains(human, doc.URL) {
+		t.Fatalf("expected pointer URL in human output, got: %s", human)
+	}
+}
+
+// High confidence means the search already answered the query; leads to
+// elsewhere would only add noise, so they must be suppressed.
+func TestOutOfScopePointersSuppressedOnHighConfidence(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pagesDir := filepath.Join(root, "pages")
+	if err := os.MkdirAll(pagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "sync-tilegrid-selection-across-grids.md",
+		"# Sync tilegrid selection across grids\nKeep tilegrid selection in sync across grids.\nSync the selection whenever either tilegrid changes.\n")
+	writeHowtoFixture(t, howtoDir, "unrelated-topic.md",
+		"# Unrelated topic\nNothing relevant here.\n")
+	writeHowtoFixture(t, pagesDir, "elsewhere.md",
+		"# Elsewhere\nBody.\n")
+
+	// Trigger terms overlap two of the query's tokens, but the canonical doc
+	// is not among the (howto-only) ranked results.
+	topicIndex = []TopicEntry{
+		{
+			Name:          "Elsewhere Topic",
+			TriggerTerms:  []string{"sync", "tilegrid"},
+			CanonicalDocs: []string{"pages/elsewhere.md"},
+		},
+	}
+
+	human, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"sync tilegrid selection across grids")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence != "high" {
+		t.Fatalf("expected high confidence, got %q", summary.Confidence)
+	}
+	if len(summary.OutOfScopePointers) != 0 {
+		t.Fatalf("expected no out-of-scope pointers on high confidence, got %+v", summary.OutOfScopePointers)
+	}
+	if strings.Contains(human, "Possibly relevant outside") {
+		t.Fatalf("expected no out-of-scope pointer block on high confidence, got: %s", human)
+	}
+}
+
+// Pointers are capped and deduplicated against each other and against the
+// corroborated citation list.
+func TestOutOfScopePointersCapAndDedupe(t *testing.T) {
+	resetTopicIndexForTest(t)
+	root := t.TempDir()
+	howtoDir := filepath.Join(root, "howto")
+	if err := os.MkdirAll(howtoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pagesDir := filepath.Join(root, "pages")
+	if err := os.MkdirAll(pagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeHowtoFixture(t, howtoDir, "unrelated-content.md",
+		"# Unrelated content\nEntirely different subject matter.\n")
+
+	names := []string{"alpha", "bravo", "charlie", "delta", "echo"}
+	var topics []TopicEntry
+	for _, n := range names {
+		title := strings.ToUpper(n[:1]) + n[1:]
+		writeHowtoFixture(t, pagesDir, n+".md",
+			"# "+title+" page\nBody.\n")
+		topics = append(topics, TopicEntry{
+			Name:          n,
+			TriggerTerms:  []string{n},
+			CanonicalDocs: []string{"pages/" + n + ".md"},
+		})
+	}
+	topicIndex = topics
+
+	_, summary, err := ExecuteMediatedSearch(root, howtoMediatorConfig(howtoDir),
+		"alpha bravo charlie delta echo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confidence == "high" {
+		t.Fatalf("expected non-high confidence for weak howto corpus, got %q", summary.Confidence)
+	}
+	if len(summary.OutOfScopePointers) > maxOutOfScopePointers {
+		t.Fatalf("expected at most %d pointers, got %d: %+v", maxOutOfScopePointers, len(summary.OutOfScopePointers), summary.OutOfScopePointers)
+	}
+	seenURLs := map[string]bool{}
+	for _, doc := range summary.OutOfScopePointers {
+		if seenURLs[doc.URL] {
+			t.Fatalf("duplicate pointer URL: %s", doc.URL)
+		}
+		seenURLs[doc.URL] = true
+	}
+	if summary.AgentGuidance != nil {
+		for _, cited := range summary.AgentGuidance.DocumentationURLs {
+			if seenURLs[cited.URL] {
+				t.Fatalf("pointer URL %s duplicates a corroborated citation", cited.URL)
+			}
+		}
+	}
+}
+
+func TestReadFirstHeadingStripsAnchorMarkup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "layout-props.md")
+	if err := os.WriteFile(path, []byte("# Layout Properties [#layout-summary]\nBody.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFirstHeading(path); got != "Layout Properties" {
+		t.Fatalf("anchor markup not stripped: %q", got)
+	}
+}
