@@ -820,3 +820,51 @@ func TestSalienceLinesSuppressedOnHigh(t *testing.T) {
 		t.Fatalf("coverage vector must be suppressed at high:\n%s", human)
 	}
 }
+
+// Citations are gated on the ranking's own evidence (#20): nothing cited at
+// low confidence, tail results dropped by the relevance floor, capped, and
+// deterministically ordered.
+func TestCitationFooterGating(t *testing.T) {
+	// Low confidence: no citations, even with results.
+	low := extractDocumentationURLs(map[string][]resultItem{
+		"howtos": {{Path: "howto/a.md", Score: 2.6}, {Path: "howto/b.md", Score: 0.5}},
+	}, "low")
+	if len(low) != 0 {
+		t.Fatalf("low confidence must cite nothing, got %+v", low)
+	}
+
+	// Floor: sub-40%-of-top tail dropped; order deterministic by score.
+	medium := extractDocumentationURLs(map[string][]resultItem{
+		"howtos": {
+			{Path: "howto/tail.md", Score: 0.53},
+			{Path: "howto/top.md", Score: 2.63},
+			{Path: "howto/near.md", Score: 2.0},
+		},
+	}, "medium")
+	if len(medium) != 2 {
+		t.Fatalf("expected floor to keep 2 of 3, got %+v", medium)
+	}
+	if !strings.Contains(medium[0].URL, "top") || !strings.Contains(medium[1].URL, "near") {
+		t.Fatalf("citations not score-ordered: %+v", medium)
+	}
+
+	// Cap at maxDocumentationURLs even when all clear the floor.
+	items := []resultItem{}
+	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		items = append(items, resultItem{Path: "howto/" + name + ".md", Score: 2.0})
+	}
+	capped := extractDocumentationURLs(map[string][]resultItem{"howtos": items}, "medium")
+	if len(capped) != maxDocumentationURLs {
+		t.Fatalf("cap = %d entries, got %d", maxDocumentationURLs, len(capped))
+	}
+
+	// Determinism: equal scores tie-break by path, stable across calls.
+	tie := map[string][]resultItem{
+		"howtos": {{Path: "howto/z.md", Score: 1.0}, {Path: "howto/a.md", Score: 1.0}},
+	}
+	first := extractDocumentationURLs(tie, "medium")
+	second := extractDocumentationURLs(tie, "medium")
+	if first[0].URL != second[0].URL || !strings.Contains(first[0].URL, "/a") {
+		t.Fatalf("tie order not deterministic by path: %+v vs %+v", first, second)
+	}
+}

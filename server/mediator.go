@@ -1221,7 +1221,7 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 		guidance := &AgentGuidance{
 			RuleReminders:     append(baseGuidance, "Verify features work together in a single example"),
 			URLBase:           constructURLBase(),
-			DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
+			DocumentationURLs: extractDocumentationURLs(sections, confidence),
 			SuggestedApproach: "Search for examples showing the complete pattern",
 		}
 		return guidance
@@ -1231,7 +1231,7 @@ func generateAgentGuidance(confidence string, facets map[string]FacetCounts, sec
 	guidance := &AgentGuidance{
 		RuleReminders:     baseGuidance,
 		URLBase:           constructURLBase(),
-		DocumentationURLs: extractDocumentationURLs(sections, constructURLBase()),
+		DocumentationURLs: extractDocumentationURLs(sections, confidence),
 	}
 
 	// PRIORITY 3: Query type mismatch - example query without examples
@@ -1299,23 +1299,66 @@ func constructDocumentationURL(filePath string, lineNum int, baseURL string) str
 	return constructDocURL(filePath)
 }
 
-// extractDocumentationURLs extracts URLs from found documentation sections
-func extractDocumentationURLs(sections map[string][]resultItem, baseURL string) []DocumentationURL {
-	urls := []DocumentationURL{}
-	seen := make(map[string]bool)
+// citationScoreFloor drops tail results from the citation footer: only
+// results scoring at least this fraction of the top score are cited (#20).
+const citationScoreFloor = 0.4
 
+// extractDocumentationURLs extracts citation URLs from found documentation
+// sections, gated on the evidence the ranking already produced (#20): nothing
+// is cited at low confidence (the tool just said it found nothing worth
+// citing), tail results below the relevance floor are dropped, the list is
+// capped, and order is deterministic (score then path — the sections map's
+// iteration order is not).
+func extractDocumentationURLs(sections map[string][]resultItem, confidence string) []DocumentationURL {
+	if confidence == "low" {
+		return []DocumentationURL{}
+	}
+
+	type citation struct {
+		item    resultItem
+		section string
+	}
+	best := make(map[string]citation)
 	for sectionName, items := range sections {
 		for _, item := range items {
-			url := constructDocumentationURL(item.Path, item.Line, baseURL)
-			if url != "" && !seen[url] {
-				seen[url] = true
-				urls = append(urls, DocumentationURL{
-					Title: documentTitle(item.AbsPath, item.Path),
-					URL:   url,
-					Type:  sectionName,
-				})
+			url := constructDocumentationURL(item.Path, item.Line, constructURLBase())
+			if url == "" {
+				continue
+			}
+			if current, exists := best[url]; !exists || item.Score > current.item.Score {
+				best[url] = citation{item: item, section: sectionName}
 			}
 		}
+	}
+
+	ranked := make([]citation, 0, len(best))
+	topScore := 0.0
+	for _, c := range best {
+		ranked = append(ranked, c)
+		if c.item.Score > topScore {
+			topScore = c.item.Score
+		}
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].item.Score == ranked[j].item.Score {
+			return ranked[i].item.Path < ranked[j].item.Path
+		}
+		return ranked[i].item.Score > ranked[j].item.Score
+	})
+
+	urls := []DocumentationURL{}
+	for _, c := range ranked {
+		if len(urls) >= maxDocumentationURLs {
+			break
+		}
+		if c.item.Score < topScore*citationScoreFloor {
+			break
+		}
+		urls = append(urls, DocumentationURL{
+			Title: documentTitle(c.item.AbsPath, c.item.Path),
+			URL:   constructDocumentationURL(c.item.Path, c.item.Line, constructURLBase()),
+			Type:  c.section,
+		})
 	}
 
 	return urls
