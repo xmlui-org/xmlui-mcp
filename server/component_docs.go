@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -50,12 +53,22 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 			return mcp.NewToolResultError("Missing or invalid 'component' parameter"), nil
 		}
 
+		// Normalize slash-qualified or extension-qualified args (e.g. "Stack/VStack",
+		// "VStack.md") down to the bare component name the docs directory is keyed by (#29).
+		componentName = normalizeComponentArg(componentName)
+		if componentName == "" {
+			return mcp.NewToolResultError("Missing or invalid 'component' parameter"), nil
+		}
+
 		paths := GetRepoPaths(homeDir)
 		mdxPath := filepath.Join(homeDir, paths.ComponentDocs, componentName+".md")
 
 		content, err := os.ReadFile(mdxPath)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to read %s: %v", componentName, err)), nil
+			if errors.Is(err, fs.ErrNotExist) {
+				return mcp.NewToolResultError(componentNotFoundMessage(homeDir, paths, componentName)), nil
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to read %s under %s: %v", componentName, paths.ComponentDocs, errWithoutPath(err))), nil
 		}
 
 		contentStr := string(content)
@@ -165,4 +178,101 @@ func extractSections(content string, sectionNames []string) string {
 		}
 	}
 	return result.String()
+}
+
+// normalizeComponentArg trims whitespace and collapses slash-qualified or
+// extension-qualified component arguments (e.g. "Stack/VStack", "VStack.md")
+// down to the bare name the flat component docs directory is keyed by (#29).
+func normalizeComponentArg(raw string) string {
+	name := strings.TrimSpace(raw)
+	name = strings.ReplaceAll(name, "\\", "/")
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	name = strings.TrimSuffix(name, ".md")
+	return strings.TrimSpace(name)
+}
+
+// componentNotFoundMessage builds an actionable miss message: it names the
+// corpus-relative directory searched (never the absolute host path) and
+// offers near-match suggestions plus the discovery tool (#29).
+func componentNotFoundMessage(homeDir string, paths *RepoPaths, componentName string) string {
+	msg := fmt.Sprintf("Component %q not found under %s.", componentName, paths.ComponentDocs)
+	if suggestions := suggestComponentDocNames(homeDir, paths, componentName); len(suggestions) > 0 {
+		msg += fmt.Sprintf(" Did you mean: %s?", strings.Join(suggestions, ", "))
+	}
+	msg += " Call xmlui_list_components to see all available component names."
+	return msg
+}
+
+// suggestComponentDocNames returns up to 3 near matches for componentName
+// drawn from the component docs directory the lookup itself reads (#29).
+// Ranking is case-insensitive exact match first, then prefix match, then
+// substring match; _-prefixed index files are skipped, matching the
+// existing xmlui_list_components filtering convention.
+func suggestComponentDocNames(homeDir string, paths *RepoPaths, componentName string) []string {
+	dir := filepath.Join(homeDir, paths.ComponentDocs)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		fileName := entry.Name()
+		if strings.HasPrefix(fileName, "_") || !strings.HasSuffix(fileName, ".md") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(fileName, ".md"))
+	}
+
+	target := strings.ToLower(componentName)
+	var exact, prefix, substr []string
+	for _, name := range names {
+		lower := strings.ToLower(name)
+		switch {
+		case lower == target:
+			exact = append(exact, name)
+		case strings.HasPrefix(lower, target):
+			prefix = append(prefix, name)
+		case strings.Contains(lower, target):
+			substr = append(substr, name)
+		}
+	}
+	sort.Strings(exact)
+	sort.Strings(prefix)
+	sort.Strings(substr)
+
+	suggestions := append(append(exact, prefix...), substr...)
+	if len(suggestions) > 3 {
+		suggestions = suggestions[:3]
+	}
+	return suggestions
+}
+
+// toRepoRelative strips the homeDir prefix from an absolute filesystem path
+// so error messages never leak the host's absolute cache/checkout path
+// (e.g. /Users/<name>/Library/Caches/xmlui/...) into model context (#29).
+// Shared by component_docs.go and read_file.go.
+func toRepoRelative(homeDir, path string) string {
+	rel, err := filepath.Rel(homeDir, path)
+	if err != nil {
+		return path
+	}
+	return filepath.ToSlash(rel)
+}
+
+// errWithoutPath extracts the underlying OS error from a *fs.PathError
+// without its embedded absolute path, so wrapping "%v" around a read/stat
+// error can't leak the host filesystem layout (#29). Shared by
+// component_docs.go and read_file.go.
+func errWithoutPath(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err.Error()
+	}
+	return err.Error()
 }
