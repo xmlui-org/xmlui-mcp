@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -32,20 +34,44 @@ func NewListHowtoTool(xmluiDir string) (mcp.Tool, func(context.Context, mcp.Call
 		mcp.WithDescription("List all 'How To' entry titles from the howto directory."),
 	)
 	handler := func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Read all howto files from the howto directory
+		// List howto files from the howto directory
 		paths := GetRepoPaths(xmluiDir)
 		howtoDir := filepath.Join(xmluiDir, paths.Howto)
 		WriteDebugLog("xmlui_list_howto: xmluiDir=%s, howtoDir=%s\n", xmluiDir, howtoDir)
-		var docs []string
-		if moreDocs, err := readAllHowtoFiles(howtoDir); err == nil {
-			docs = append(docs, moreDocs...)
-			WriteDebugLog("xmlui_list_howto: found %d docs\n", len(docs))
-		} else {
-			WriteDebugLog("xmlui_list_howto: error reading howto files: %v\n", err)
+
+		entries, err := os.ReadDir(howtoDir)
+		if err != nil {
+			WriteDebugLog("xmlui_list_howto: error reading howto dir: %v\n", err)
+			return mcp.NewToolResultText("No how-to entries found."), nil
 		}
-		_, titles := parseHowtoSectionsMulti(docs)
-		WriteDebugLog("xmlui_list_howto: found %d titles\n", len(titles))
-		return mcp.NewToolResultText(strings.Join(titles, "\n")), nil
+
+		var rows []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, "_") {
+				continue
+			}
+			slug := strings.TrimSuffix(name, ".md")
+			absPath := filepath.Join(howtoDir, name)
+			relPath := filepath.Join("howto", name)
+			title := documentTitle(absPath, relPath)
+			url := HowtoURL(slug)
+			// Each row is a followable citation: title, slug, URL (#17).
+			rows = append(rows, fmt.Sprintf("- %s (%s) — %s", title, slug, url))
+		}
+		WriteDebugLog("xmlui_list_howto: found %d rows\n", len(rows))
+
+		if len(rows) == 0 {
+			return mcp.NewToolResultText("No how-to entries found."), nil
+		}
+
+		sort.Slice(rows, func(i, j int) bool {
+			return strings.ToLower(rows[i]) < strings.ToLower(rows[j])
+		})
+		return mcp.NewToolResultText(strings.Join(rows, "\n")), nil
 	}
 	return tool, handler
 }
@@ -110,50 +136,4 @@ func HowtoClassifier(homeDir string) func(rel string, absPath string) string {
 // Helper functions for backwards compatibility
 func readFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
-}
-
-func readAllHowtoFiles(howtoDir string) ([]string, error) {
-	files, err := os.ReadDir(howtoDir)
-	if err != nil {
-		return nil, err
-	}
-	var docs []string
-	for _, file := range files {
-		if !file.IsDir() {
-			path := filepath.Join(howtoDir, file.Name())
-			data, err := os.ReadFile(path)
-			if err == nil {
-				docs = append(docs, string(data))
-			}
-		}
-	}
-	return docs, nil
-}
-
-func parseHowtoSectionsMulti(docs []string) ([]string, []string) {
-	var sections []string
-	var titles []string
-	for _, doc := range docs {
-		var current strings.Builder
-		var currentTitle string
-		lines := strings.Split(doc, "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "# ") {
-				if current.Len() > 0 {
-					sections = append(sections, current.String())
-					titles = append(titles, currentTitle)
-					current.Reset()
-				}
-				currentTitle = strings.TrimSpace(line[2:])
-			}
-			if current.Len() > 0 || strings.HasPrefix(line, "# ") {
-				current.WriteString(line + "\n")
-			}
-		}
-		if current.Len() > 0 {
-			sections = append(sections, current.String())
-			titles = append(titles, currentTitle)
-		}
-	}
-	return sections, titles
 }
