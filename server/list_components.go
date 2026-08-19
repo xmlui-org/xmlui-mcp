@@ -45,6 +45,13 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 				return nil
 			}
 
+			// Skip index files like _overview.md — they are section indexes,
+			// not components (#22). Filter by filename, not path: a second
+			// _overview.md exists under docs/pages/wrap-component/.
+			if strings.HasPrefix(d.Name(), "_") {
+				return nil
+			}
+
 			rel, err := filepath.Rel(componentRoot, path)
 			if err != nil {
 				return err
@@ -95,7 +102,7 @@ func NewListComponentsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.
 			out.WriteString(fmt.Sprintf("## %s\n\n", group))
 			for _, c := range groups[group] {
 				name := filepath.Base(c)
-				out.WriteString(fmt.Sprintf("- %s → call xmlui_docs with component: \"%s\"\n", name, c))
+				out.WriteString(fmt.Sprintf("- %s → call xmlui_component_docs with component: \"%s\"\n", name, c))
 			}
 			out.WriteString("\n")
 		}
