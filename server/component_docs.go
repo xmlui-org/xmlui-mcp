@@ -33,10 +33,26 @@ var parentComponentMap = map[string]string{
 func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
 
 	tool := mcp.NewTool("xmlui_component_docs",
-		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component."),
+		mcp.WithDescription("Returns the Markdown documentation for a given XMLUI component. "+
+			"By default returns the full reference page (can be 60KB+ for large components). "+
+			"Use 'section' to scope to one part of the page (overview, properties/props, "+
+			"events, methods/apis/exposed/exposed-methods, styling/theme-vars/theming), or "+
+			"'member' to fetch just one named property/event/method's block (optionally "+
+			"combined with 'section' to search within it)."),
 		mcp.WithString("component",
 			mcp.Required(),
 			mcp.Description("Component name, e.g. 'Button', 'Avatar', or 'Stack/VStack'"),
+		),
+		mcp.WithString("section",
+			mcp.Description("Optional: scope the result to one section of the page. One of "+
+				"'overview', 'properties' (alias 'props'), 'events', 'methods' (aliases "+
+				"'apis', 'exposed', 'exposed-methods'), or 'styling' (aliases 'theme-vars', "+
+				"'theming'). Case-insensitive."),
+		),
+		mcp.WithString("member",
+			mcp.Description("Optional: fetch just the block for one named property, event, "+
+				"or exposed method (e.g. 'scrollToTop'). Case-insensitive. If 'section' is "+
+				"also given, only that section is searched."),
 		),
 	)
 
@@ -73,19 +89,85 @@ func NewComponentDocsTool(homeDir string) (mcp.Tool, func(context.Context, mcp.C
 
 		contentStr := string(content)
 
-		// Supplement thin docs (Rec #3)
-		if len(contentStr) < 500 {
-			supplement := getComponentSupplement(homeDir, componentName)
-			if supplement != "" {
-				contentStr += "\n\n---\n## Additional Context\n\n" + supplement
+		section, _ := req.Params.Arguments["section"].(string)
+		member, _ := req.Params.Arguments["member"].(string)
+		section = strings.TrimSpace(section)
+		member = strings.Trim(strings.TrimSpace(member), "`")
+
+		// No section/member requested: preserve today's full-page behavior
+		// byte-for-byte (issue #26 requires the no-parameter default to be
+		// unchanged).
+		if section == "" && member == "" {
+			// Supplement thin docs (Rec #3)
+			if len(contentStr) < 500 {
+				supplement := getComponentSupplement(homeDir, componentName)
+				if supplement != "" {
+					contentStr += "\n\n---\n## Additional Context\n\n" + supplement
+				}
 			}
+
+			// Add source URL
+			componentURL := ComponentURL(componentName)
+			contentWithURL := contentStr + "\n\n**Source:** " + componentURL
+
+			return mcp.NewToolResultText(contentWithURL), nil
 		}
 
-		// Add source URL
 		componentURL := ComponentURL(componentName)
-		contentWithURL := contentStr + "\n\n**Source:** " + componentURL
+		lines := strings.Split(contentStr, "\n")
 
-		return mcp.NewToolResultText(contentWithURL), nil
+		if member != "" {
+			rangeStart, rangeEnd := 0, len(lines)
+			contextHeading := ""
+			if section != "" {
+				term, isOverview := resolveSectionTerm(section)
+				if isOverview {
+					return mcp.NewToolResultError(fmt.Sprintf(
+						"The 'overview' section of %s has no '### ' members. Omit 'section' "+
+							"to search the whole page, or use 'properties', 'events', "+
+							"'methods', or 'styling'.", componentName)), nil
+				}
+				s, e, h, found := h2Range(lines, term)
+				if !found {
+					return mcp.NewToolResultError(sectionNotFoundMessage(componentName, section, lines)), nil
+				}
+				rangeStart, rangeEnd, contextHeading = s, e, h
+			}
+
+			s, e, _, found := h3Range(lines, rangeStart, rangeEnd, member)
+			if !found {
+				return mcp.NewToolResultError(memberNotFoundMessage(componentName, member, lines, rangeStart, rangeEnd)), nil
+			}
+			if contextHeading == "" {
+				contextHeading = enclosingH2At(lines, s)
+			}
+
+			body := strings.TrimRight(strings.Join(lines[s:e], "\n"), "\n")
+			var b strings.Builder
+			b.WriteString("From " + componentName)
+			if contextHeading != "" {
+				b.WriteString(" › " + contextHeading)
+			}
+			b.WriteString(":\n\n")
+			b.WriteString(body)
+			b.WriteString("\n\n**Source:** " + componentURL)
+			return mcp.NewToolResultText(b.String()), nil
+		}
+
+		// section only (member == "")
+		term, isOverview := resolveSectionTerm(section)
+		if isOverview {
+			body := extractOverview(lines)
+			result := body + "\n\n**Source:** " + componentURL
+			return mcp.NewToolResultText(result), nil
+		}
+		s, e, _, found := h2Range(lines, term)
+		if !found {
+			return mcp.NewToolResultError(sectionNotFoundMessage(componentName, section, lines)), nil
+		}
+		body := strings.TrimRight(strings.Join(lines[s:e], "\n"), "\n")
+		result := body + "\n\n**Source:** " + componentURL
+		return mcp.NewToolResultText(result), nil
 	}
 
 	return tool, handler
@@ -275,4 +357,186 @@ func errWithoutPath(err error) string {
 		return pathErr.Err.Error()
 	}
 	return err.Error()
+}
+
+// --- section/member granularity (#26) ---
+
+// resolveSectionTerm canonicalizes a requested section name (case-insensitive,
+// aliases included) down to the substring used to match it against the page's
+// actual "## " heading text. "overview" has no heading of its own (it's the
+// page intro before the first "## " heading), so it's reported separately via
+// isOverview rather than as a search term. Unrecognized values pass through
+// unchanged so they can still be substring-matched against real headings (and
+// so a miss can list what headings actually exist).
+func resolveSectionTerm(section string) (term string, isOverview bool) {
+	key := strings.ToLower(strings.TrimSpace(section))
+	switch key {
+	case "overview":
+		return "", true
+	case "properties", "props":
+		return "properties", false
+	case "events":
+		return "events", false
+	case "methods", "apis", "exposed", "exposed-methods":
+		return "methods", false
+	case "styling", "theme-vars", "theming":
+		return "styling", false
+	default:
+		return key, false
+	}
+}
+
+// stripHeadingAnchor removes a trailing " [#anchor]" fragment from a heading
+// line's text (e.g. "Properties [#properties]" -> "Properties").
+func stripHeadingAnchor(s string) string {
+	s = strings.TrimSpace(s)
+	if idx := strings.LastIndex(s, "[#"); idx >= 0 && strings.HasSuffix(s, "]") {
+		s = strings.TrimSpace(s[:idx])
+	}
+	return s
+}
+
+// stripMemberName reduces a "### " member heading's text to its bare name,
+// stripping both the anchor fragment and surrounding backticks (e.g.
+// "`scrollToTop` [#scrolltotop]" -> "scrollToTop").
+func stripMemberName(s string) string {
+	return strings.Trim(stripHeadingAnchor(s), "`")
+}
+
+// h2Heading reports whether line is a "## " heading, returning its
+// anchor-stripped text.
+func h2Heading(line string) (string, bool) {
+	if !strings.HasPrefix(line, "## ") {
+		return "", false
+	}
+	return stripHeadingAnchor(strings.TrimPrefix(line, "## ")), true
+}
+
+// h2Range finds the first "## " heading whose anchor-stripped text contains
+// term as a case-insensitive substring, and returns the line range [start,end)
+// spanning that heading through the line before the next "## " heading (or
+// EOF), plus the matched heading text.
+func h2Range(lines []string, term string) (start, end int, heading string, ok bool) {
+	lowerTerm := strings.ToLower(term)
+	for i, line := range lines {
+		h, isH2 := h2Heading(line)
+		if !isH2 {
+			continue
+		}
+		if strings.Contains(strings.ToLower(h), lowerTerm) {
+			end = len(lines)
+			for j := i + 1; j < len(lines); j++ {
+				if _, isH2b := h2Heading(lines[j]); isH2b {
+					end = j
+					break
+				}
+			}
+			return i, end, h, true
+		}
+	}
+	return 0, 0, "", false
+}
+
+// h3Range searches lines[rangeStart:rangeEnd] for a "### " member heading
+// whose stripped name case-insensitively equals memberName, returning the
+// absolute line range [start,end) spanning that heading through the line
+// before the next "### " or "## " heading (or the end of the search range),
+// plus the matched member name.
+func h3Range(lines []string, rangeStart, rangeEnd int, memberName string) (start, end int, name string, ok bool) {
+	for i := rangeStart; i < rangeEnd; i++ {
+		if !strings.HasPrefix(lines[i], "### ") {
+			continue
+		}
+		mn := stripMemberName(strings.TrimPrefix(lines[i], "### "))
+		if strings.EqualFold(mn, memberName) {
+			end = rangeEnd
+			for j := i + 1; j < rangeEnd; j++ {
+				if strings.HasPrefix(lines[j], "### ") || strings.HasPrefix(lines[j], "## ") {
+					end = j
+					break
+				}
+			}
+			return i, end, mn, true
+		}
+	}
+	return 0, 0, "", false
+}
+
+// enclosingH2At returns the anchor-stripped text of the nearest "## " heading
+// at or before line index idx, or "" if idx precedes any "## " heading.
+func enclosingH2At(lines []string, idx int) string {
+	heading := ""
+	for i := 0; i < idx && i < len(lines); i++ {
+		if h, ok := h2Heading(lines[i]); ok {
+			heading = h
+		}
+	}
+	return heading
+}
+
+// extractOverview returns the page intro: everything from the top through
+// the line before the first "## " heading.
+func extractOverview(lines []string) string {
+	var out []string
+	for _, line := range lines {
+		if _, ok := h2Heading(line); ok {
+			break
+		}
+		out = append(out, line)
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+// listH2Headings returns the anchor-stripped text of every "## " heading in
+// document order.
+func listH2Headings(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		if h, ok := h2Heading(line); ok {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// listH3Names returns the stripped names of every "### " member heading in
+// lines[rangeStart:rangeEnd], in document order.
+func listH3Names(lines []string, rangeStart, rangeEnd int) []string {
+	var out []string
+	for i := rangeStart; i < rangeEnd && i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "### ") {
+			out = append(out, stripMemberName(strings.TrimPrefix(lines[i], "### ")))
+		}
+	}
+	return out
+}
+
+// sectionNotFoundMessage builds an actionable miss message naming the
+// headings that actually exist on the page, in #29's style (no host paths).
+func sectionNotFoundMessage(componentName, section string, lines []string) string {
+	headings := listH2Headings(lines)
+	msg := fmt.Sprintf("Section %q not found in the %s docs.", section, componentName)
+	if len(headings) == 0 {
+		return msg + " This page has no '## ' sections."
+	}
+	return msg + fmt.Sprintf(" Available sections: %s.", strings.Join(headings, ", "))
+}
+
+// memberNotFoundMessage builds an actionable miss message listing the member
+// names that actually exist (bounded to ~20, noting "and N more"), in #29's
+// style (no host paths).
+func memberNotFoundMessage(componentName, member string, lines []string, rangeStart, rangeEnd int) string {
+	names := listH3Names(lines, rangeStart, rangeEnd)
+	msg := fmt.Sprintf("Member %q not found in the %s docs.", member, componentName)
+	if len(names) == 0 {
+		return msg + " This page (or section) has no '### ' members."
+	}
+	const limit = 20
+	shown := names
+	suffix := ""
+	if len(shown) > limit {
+		suffix = fmt.Sprintf(" and %d more", len(shown)-limit)
+		shown = shown[:limit]
+	}
+	return msg + fmt.Sprintf(" Available members: %s%s.", strings.Join(shown, ", "), suffix)
 }
