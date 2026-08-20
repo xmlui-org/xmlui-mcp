@@ -40,7 +40,9 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 		// Then check the allowlist.
 		fullPath := filepath.Join(homeDir, relPath)
 		paths := GetRepoPaths(homeDir)
-		allowedRoots := []string{paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages}
+		// Blog is allowed too (#4): xmlui_search already searches it, and the
+		// read-follows-search contract holds for every searched section.
+		allowedRoots := []string{paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages, paths.Blog}
 		var matchedRoot string
 		for _, root := range allowedRoots {
 			if strings.HasPrefix(fullPath, filepath.Join(homeDir, root)) {
@@ -49,7 +51,7 @@ func NewReadFileTool(homeDir string) (mcp.Tool, func(context.Context, mcp.CallTo
 			}
 		}
 		if matchedRoot == "" {
-			return mcp.NewToolResultError(fmt.Sprintf("Path not allowed. Must be under %s, %s, %s, or %s.", paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("Path not allowed. Must be under %s, %s, %s, %s, or %s.", paths.ComponentDocs, paths.ComponentSource, paths.ExtensionDocs, paths.Pages, paths.Blog)), nil
 		}
 
 		// Only then check existence, so the message reflects the actual problem.
